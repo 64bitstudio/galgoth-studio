@@ -1,0 +1,62 @@
+/**
+ * Reset mínimo — no un CSS reset genérico completo, solo lo necesario
+ * para que los tokens de tokens.css se apliquen de forma predecible.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Datos técnicos (coordenadas, UUIDs, UV, tiempos de animación) —
+   master prompt §2. */
+.mono,
+code,
+kbd {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* Estado de foco visible por teclado — nunca solo color (Visual Contract
+   punto 10, master prompt §24). Se apoya en :focus-visible para no
+   mostrar el anillo en clics de mouse. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
