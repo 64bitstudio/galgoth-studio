@@ -3,19 +3,23 @@
 // dominio real este ciclo, solo Docker Compose local). Sin vhostFile ni
 // certbotDomains por el mismo motivo.
 //
-// buildAndTest (ticket in-process/002-sistema-diseno-base-visual-contract.md):
-// primer código real del frontend (sistema de diseño base) -- lint +
-// tests (Vitest, con cobertura lcov) + build + análisis de SonarQube.
+// buildAndTest corre frontend (ticket 002) y backend (ticket 003) en
+// secuencia dentro del mismo closure -- corePipeline solo admite un
+// buildAndTest por Jenkinsfile.
 //
-// Corrección real (encontrada en el primer build, ver log de Jenkins):
-// el contrato de corePipeline (platform/vars/corePipeline.groovy) exige
-// que buildAndTest llame withSonarQubeEnv('sonarqube-vm') -- la etapa
-// "Quality Gate de SonarQube" de la librería corre siempre que
-// buildAndTest esté definido, sin análisis previo waitForQualityGate
-// falla con IllegalStateException. Esto usa el credential de SonarQube
-// YA configurado en Jenkins (mismo que auth-core-mc/mail-core-mc) --
-// no depende de SONARQUBE_CLI_TOKEN_VM (ese es solo para el CLI
-// personal de Marco en su Mac, un mecanismo distinto y no relacionado).
+// Frontend: lint + tests (Vitest, cobertura lcov) + build + Sonar.
+// Backend: ./gradlew build sonar -- build ya corre test (JUnit +
+// Testcontainers, requiere docker.sock, Jenkins ya lo monta -- mismo
+// patrón que mail-core-mc) y jacocoTestReport (dependencia explícita de
+// la tarea sonar en build.gradle); toolchain Java 25 -- Jenkins ya tiene
+// Temurin 25 instalado (mismo que auth-core-mc).
+//
+// Ambos con withSonarQubeEnv('sonarqube-vm') real -- corePipeline exige
+// un análisis previo o la etapa "Quality Gate de SonarQube" falla con
+// IllegalStateException (gotcha real encontrado en el primer build del
+// ticket 002, documentado también en el skill bootstrap-proyecto). Usa
+// el credential de Sonar YA configurado en Jenkins -- no depende de
+// SONARQUBE_CLI_TOKEN_VM (CLI personal de Marco, mecanismo aparte).
 @Library('platform') _
 
 corePipeline(
@@ -31,6 +35,11 @@ corePipeline(
                 withSonarQubeEnv('sonarqube-vm') {
                     sh 'sonar-scanner'
                 }
+            }
+        }
+        dir('backend') {
+            withSonarQubeEnv('sonarqube-vm') {
+                sh './gradlew build sonar'
             }
         }
     }

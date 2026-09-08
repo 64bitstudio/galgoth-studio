@@ -6,16 +6,38 @@ Ciclo actual: **Technical Alpha (Fase 1 + Fase 2)**. Ver `docs/definiciones/galg
 
 ## Estado
 
-Repositorio recién bootstrapeado (ticket `pending/001-bootstrap-repo.md`). Todavía no hay código de aplicación — `frontend/`, `backend/`, `contracts/` y `docker/` son andamiaje vacío. Este archivo se completa con instrucciones reales de instalación/setup/run conforme avance el ticket 001 y los siguientes del milestone M0.
+Sistema de diseño base del frontend (`done/002-...`) y esqueleto real del backend (`done/003-...`, Spring Boot 4.1.0 + Java 25 + Postgres vía Flyway) ya funcionando. Todavía sin pantallas productivas ni lógica de negocio (`project`/`asset`/`ai-orchestrator`/`model-validation`/`export`) — llegan en los tickets 004+.
+
+## Setup local
+
+Requiere: Node 24+, JDK 25 (toolchain vía Gradle si no está instalado), Docker (Testcontainers y `docker compose` lo necesitan).
+
+**Base de datos:**
+```bash
+cd docker && docker compose up -d
+```
+
+**Backend** (desde `backend/`):
+```bash
+./gradlew bootRun      # arranca contra el Postgres de docker-compose (autodetectado)
+./gradlew test         # tests reales contra Postgres vía Testcontainers, no mocks
+```
+
+**Frontend** (desde `frontend/`):
+```bash
+npm install
+npm run dev             # http://localhost:5173 — /dev/design-system es la vitrina de componentes
+npm run test            # Vitest
+```
 
 ## Estructura del repo
 
 ```text
 frontend/       Vue 3 + TypeScript + Vite + Pinia + Three.js
-backend/        Spring Boot 3 + Java 21, monolito modular
-contracts/      JSON Schemas compartidos (MobProjectModel, ModelIntent, GeometryOperation[])
-docker/         docker-compose.yml (Postgres + backend + MinIO) para desarrollo local
-postman/        Colección Postman de la API REST
+backend/        Spring Boot 4.1.0 + Java 25, monolito modular (Gradle)
+contracts/      JSON Schemas compartidos (MobProjectModel, ModelIntent, GeometryOperation[]) -- todavía vacío
+docker/         docker-compose.yml (Postgres) para desarrollo local -- MinIO se agrega en el ticket 024
+postman/        Colección Postman de la API REST -- todavía vacío, sin endpoints
 docs/           Documentación viva (este directorio)
 pending/ in-process/ done/    Tickets del proyecto (skill nuevo-ticket)
 ```
