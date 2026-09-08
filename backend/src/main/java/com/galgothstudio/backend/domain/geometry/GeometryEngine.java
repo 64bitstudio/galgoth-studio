@@ -9,6 +9,7 @@ import com.galgothstudio.backend.domain.model.UvLayout;
 import com.galgothstudio.backend.domain.model.UvRegion;
 import com.galgothstudio.backend.domain.model.Vec3;
 import com.galgothstudio.backend.domain.model.Vec4;
+import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -66,6 +67,48 @@ public final class GeometryEngine {
 				model.animations(),
 				model.exportSettings(),
 				model.referenceImages());
+	}
+
+	/**
+	 * Igual que {@link #apply(MobProjectModel, List)}, pero además invoca
+	 * {@code uvLayoutStrategy} (ticket 006) sobre el modelo resultante
+	 * cuando el batch incluyó un {@code createCuboid} o {@code resizeCuboid}
+	 * -- backend es la autoridad canónica de UV, nunca confía en la UV que
+	 * ya calculó el frontend localmente (`docs/definiciones/galgoth-studio-mvp.md`
+	 * Diseño técnico §6). {@code AlphaAutoPackStrategy} es intercambiable
+	 * por cualquier otra {@link UvLayoutStrategy} sin tocar este método.
+	 *
+	 * <p>Los límites del atlas se toman de {@code MobProjectModel.texture}
+	 * (el documento de textura real) -- fuente única de verdad del tamaño
+	 * del atlas, per el ticket 006 -- y {@code uv.textureWidth/textureHeight}
+	 * (bookkeeping) se sincroniza con esos mismos valores en el resultado,
+	 * nunca se deja divergir.
+	 */
+	public static MobProjectModel apply(
+			MobProjectModel model, List<GeometryOperation> operations, UvLayoutStrategy uvLayoutStrategy) {
+		MobProjectModel afterOps = apply(model, operations);
+
+		boolean touchesUv = operations.stream().anyMatch(op -> op instanceof CreateCuboid || op instanceof ResizeCuboid);
+		if (!touchesUv) {
+			return afterOps;
+		}
+
+		int atlasWidth = afterOps.texture().width();
+		int atlasHeight = afterOps.texture().height();
+		UvLayoutStrategy.Result uvResult = uvLayoutStrategy.layout(afterOps.cuboids(), atlasWidth, atlasHeight);
+		return new MobProjectModel(
+				afterOps.mobId(),
+				afterOps.projectId(),
+				afterOps.name(),
+				afterOps.baseType(),
+				afterOps.units(),
+				afterOps.bones(),
+				uvResult.cuboids(),
+				afterOps.texture(),
+				new UvLayout(atlasWidth, atlasHeight, uvResult.regions()),
+				afterOps.animations(),
+				afterOps.exportSettings(),
+				afterOps.referenceImages());
 	}
 
 	private static void applyOne(
