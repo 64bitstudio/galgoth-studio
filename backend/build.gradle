@@ -32,6 +32,11 @@ dependencies {
 	implementation 'org.flywaydb:flyway-database-postgresql'
 	developmentOnly 'org.springframework.boot:spring-boot-docker-compose'
 	runtimeOnly 'org.postgresql:postgresql'
+	// Ticket 004: valida MobProjectModel contra contracts/schemas/*.json
+	// (draft 2020-12) -- se necesita en producción, no solo en test, ya
+	// que la validación de invariantes vive en backend (Diseño técnico §5
+	// de docs/definiciones/galgoth-studio-mvp.md).
+	implementation 'com.networknt:json-schema-validator:1.5.6'
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-actuator-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
@@ -40,6 +45,12 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
 	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 	testImplementation 'org.testcontainers:testcontainers-postgresql'
+	// Ticket 004: compara JSON semánticamente (0 == 0.0, sin importar el
+	// tipo numérico Java exacto que produjo cada lado) para el round-trip
+	// DTO Java -> JSON contra el fixture -- JsonNode.equals() por sí solo
+	// distingue IntNode de DoubleNode, lo que rompería la comparación sin
+	// aportar nada real (el JSON en sí no distingue "0" de "0.0").
+	testImplementation 'org.skyscreamer:jsonassert:1.5.3'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

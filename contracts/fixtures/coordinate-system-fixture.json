@@ -1,0 +1,24 @@
+{
+  "singleAxisRotation": {
+    "description": "Caso analítico verificable a mano: rotar (1,0,0) 90° alrededor de Z (pivote en el origen) da (0,1,0) -- regla de la mano derecha, eje Z, sentido antihorario visto desde +Z.",
+    "point": [1, 0, 0],
+    "origin": [0, 0, 0],
+    "rotationDeg": [0, 0, 90],
+    "expected": [0, 1, 0]
+  },
+  "offsetPivotRotation": {
+    "description": "Mismo caso pero con pivote desplazado (4,0,0) -- el punto relativo al pivote es (1,0,0), se rota igual, y se vuelve a sumar el pivote.",
+    "point": [5, 0, 0],
+    "origin": [4, 0, 0],
+    "rotationDeg": [0, 0, 90],
+    "expected": [4, 1, 0]
+  },
+  "parentChildComposition": {
+    "description": "Grounded en samples/carcomido_minecraft_cuboids.bbmodel: pivote y punto reales del cuboid 'handRight' (origin [-4,22,0], esquina 'from' [-8.2,10.2,-2.3]), rotación propia real -18° en Z. boneRotationDeg es sintético (el sample no rota el grupo 'armRight') para ejercitar la composición padre-hijo del AC #4. Ambas rotaciones comparten pivote y eje Z -> la composición dos pasos (cuboid, luego bone) debe coincidir con una única rotación combinada (bone+cuboid) alrededor del mismo pivote -- el test verifica esa igualdad, no solo paridad TS/Java.",
+    "point": [-8.2, 10.2, -2.3],
+    "cuboidOrigin": [-4, 22, 0],
+    "cuboidRotationDeg": [0, 0, -18],
+    "boneOrigin": [-4, 22, 0],
+    "boneRotationDeg": [0, 0, 10]
+  }
+}
