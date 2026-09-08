@@ -15,6 +15,7 @@ import com.galgothstudio.backend.domain.model.UvLayout;
 import com.galgothstudio.backend.domain.model.Vec3;
 import com.galgothstudio.backend.domain.model.Vec4;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -122,7 +123,7 @@ final class BlockbenchBbmodelTestParser {
 	}
 
 	private static CuboidFaces readFaces(JsonNode facesNode) {
-		Map<FaceName, Face> faces = new HashMap<>();
+		Map<FaceName, Face> faces = new EnumMap<>(FaceName.class);
 		for (FaceName faceName : FaceName.values()) {
 			JsonNode faceNode = facesNode.path(faceName.name().toLowerCase());
 			JsonNode uvNode = faceNode.path("uv");

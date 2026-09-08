@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.galgothstudio.backend.domain.export.BBModelExporterV5;
 import com.galgothstudio.backend.domain.jackson.Vec3JacksonModule;
 import com.galgothstudio.backend.domain.jackson.Vec4JacksonModule;
+import com.galgothstudio.backend.domain.model.Bone;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.networknt.schema.JsonSchema;
 import com.networknt.schema.JsonSchemaFactory;
@@ -85,7 +86,7 @@ class BlockbenchRealFixtureConformanceTest {
 		MobProjectModel model =
 				BlockbenchBbmodelTestParser.parse(root, "conformance-carcomido", "conformance-project").model();
 
-		List<String> boneNames = model.bones().stream().map(b -> b.name()).toList();
+		List<String> boneNames = model.bones().stream().map(Bone::name).toList();
 		assertThat(boneNames).doesNotContain("hitbox").noneMatch(name -> name.startsWith("mount_"));
 	}
 
