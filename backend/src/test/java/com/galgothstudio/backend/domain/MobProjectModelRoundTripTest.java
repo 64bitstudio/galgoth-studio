@@ -2,6 +2,7 @@ package com.galgothstudio.backend.domain;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.galgothstudio.backend.domain.jackson.Vec3JacksonModule;
+import com.galgothstudio.backend.domain.jackson.Vec4JacksonModule;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import java.io.File;
 import java.io.IOException;
@@ -24,7 +25,8 @@ class MobProjectModelRoundTripTest {
 
 	@Test
 	void parsearYVolverASerializarProduceJsonEstructuralmenteIdentico() throws IOException, org.json.JSONException {
-		ObjectMapper mapper = new ObjectMapper().registerModule(new Vec3JacksonModule());
+		ObjectMapper mapper =
+				new ObjectMapper().registerModule(new Vec3JacksonModule()).registerModule(new Vec4JacksonModule());
 		String original = Files.readString(FIXTURE_FILE.toPath());
 
 		MobProjectModel model = mapper.readValue(original, MobProjectModel.class);

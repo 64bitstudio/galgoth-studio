@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.within;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.galgothstudio.backend.domain.jackson.Vec3JacksonModule;
+import com.galgothstudio.backend.domain.jackson.Vec4JacksonModule;
 import com.galgothstudio.backend.domain.model.Vec3;
+import com.galgothstudio.backend.domain.model.Vec4;
 import java.io.File;
 import java.io.IOException;
 import org.junit.jupiter.api.Test;
@@ -100,6 +102,25 @@ class CoordinateSystemTest {
 
 		Vec3 parsed = mapper.readValue("[1.5,-2.0,3.0]", Vec3.class);
 		assertThat(parsed).isEqualTo(new Vec3(1.5, -2.0, 3.0));
+	}
+
+	@Test
+	void vec4JacksonModule_serializaComoArrayDe4Numeros() throws IOException {
+		ObjectMapper mapper = new ObjectMapper().registerModule(new Vec4JacksonModule());
+		String json = mapper.writeValueAsString(new Vec4(0, 0, 8, 8));
+		assertThat(json).isEqualTo("[0.0,0.0,8.0,8.0]");
+
+		Vec4 parsed = mapper.readValue("[0.0,0.0,8.0,8.0]", Vec4.class);
+		assertThat(parsed).isEqualTo(new Vec4(0, 0, 8, 8));
+	}
+
+	@Test
+	void vec4_equalsCompareContenidoNoReferencia() {
+		// Hallazgo real de SonarQube (java:S2384): un record con un campo
+		// double[] hereda equals/hashCode por referencia para ese campo.
+		// Vec4 (a,b,c,d primitivos) no tiene ese problema -- este test lo
+		// deja explícito.
+		assertThat(new Vec4(0, 0, 8, 8)).isEqualTo(new Vec4(0, 0, 8, 8));
 	}
 
 }
