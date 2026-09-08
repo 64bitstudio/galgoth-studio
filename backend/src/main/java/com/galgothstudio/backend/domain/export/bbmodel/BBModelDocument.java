@@ -23,6 +23,6 @@ public record BBModelDocument(
 		List<BBElement> elements,
 		List<BBOutlinerEntry> outliner,
 		List<BBGroup> groups,
-		List<Object> textures,
+		List<BBTexture> textures,
 		List<Object> animations) {
 }

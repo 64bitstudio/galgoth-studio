@@ -11,15 +11,20 @@ import com.galgothstudio.backend.domain.export.bbmodel.BBOutlinerEntry;
 import com.galgothstudio.backend.domain.export.bbmodel.BBOutlinerGroupRef;
 import com.galgothstudio.backend.domain.export.bbmodel.BBOutlinerLeaf;
 import com.galgothstudio.backend.domain.export.bbmodel.BBResolution;
+import com.galgothstudio.backend.domain.export.bbmodel.BBTexture;
 import com.galgothstudio.backend.domain.jackson.Vec3JacksonModule;
 import com.galgothstudio.backend.domain.jackson.Vec4JacksonModule;
 import com.galgothstudio.backend.domain.model.Bone;
 import com.galgothstudio.backend.domain.model.Cuboid;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
+import com.galgothstudio.backend.domain.model.UvLayout;
 import com.galgothstudio.backend.domain.model.Vec3;
+import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -53,8 +58,50 @@ public final class BBModelExporterV5 {
 	private BBModelExporterV5() {
 	}
 
+	/**
+	 * Export sin recomputar UV -- para callers que ya garantizan una UV
+	 * fresca/válida (o que deliberadamente no la necesitan, ej. tests de
+	 * estructura pura). Sin textura embebida (ticket 010, alcance original).
+	 */
 	public static String export(MobProjectModel model) {
-		BBModelDocument document = buildDocument(model);
+		return serialize(buildDocument(model, List.of()));
+	}
+
+	/**
+	 * Export completo (ticket 011): SIEMPRE recomputa la UV vía
+	 * {@code uvLayoutStrategy} antes de exportar -- backend es la autoridad
+	 * canónica de UV también en el punto de export
+	 * (`docs/definiciones/galgoth-studio-mvp.md` Diseño técnico §6, HU-16:
+	 * "...o se exporta, cuando esas acciones corren en backend, entonces
+	 * AutoUv del backend recomputa/revalida la UV de forma canónica").
+	 * Genera y embebe una textura placeholder con las MISMAS dimensiones
+	 * que el atlas (`MobProjectModel.texture`). Si el modelo no cabe en el
+	 * atlas, {@code uvLayoutStrategy.layout(...)} lanza
+	 * {@link com.galgothstudio.backend.domain.uv.UvAtlasOverflowException}
+	 * -- se propaga tal cual, el export falla explícito, nunca genera una
+	 * textura más grande en silencio (AC #3).
+	 */
+	public static String export(MobProjectModel model, UvLayoutStrategy uvLayoutStrategy) {
+		int width = model.texture().width();
+		int height = model.texture().height();
+
+		UvLayoutStrategy.Result uvResult = uvLayoutStrategy.layout(model.cuboids(), width, height);
+		MobProjectModel modelWithFreshUv = new MobProjectModel(
+				model.mobId(), model.projectId(), model.name(), model.baseType(), model.units(), model.bones(),
+				uvResult.cuboids(), model.texture(), new UvLayout(width, height, uvResult.regions()),
+				model.animations(), model.exportSettings(), model.referenceImages());
+
+		BBTexture placeholder = buildPlaceholderTexture(width, height);
+		return serialize(buildDocument(modelWithFreshUv, List.of(placeholder)));
+	}
+
+	private static BBTexture buildPlaceholderTexture(int width, int height) {
+		byte[] png = PlaceholderTexture.generatePng(width, height);
+		String dataUri = "data:image/png;base64," + Base64.getEncoder().encodeToString(png);
+		return new BBTexture(UUID.randomUUID().toString(), "placeholder", "0", false, width, height, dataUri);
+	}
+
+	private static String serialize(BBModelDocument document) {
 		try {
 			ObjectMapper mapper = new ObjectMapper()
 					.registerModule(new Vec3JacksonModule())
@@ -66,7 +113,7 @@ public final class BBModelExporterV5 {
 		}
 	}
 
-	private static BBModelDocument buildDocument(MobProjectModel model) {
+	private static BBModelDocument buildDocument(MobProjectModel model, List<BBTexture> textures) {
 		List<BBElement> elements = model.cuboids().stream().map(BBModelExporterV5::toElement).toList();
 		List<BBGroup> groups = model.bones().stream().map(BBModelExporterV5::toGroup).toList();
 		List<BBOutlinerEntry> outliner = buildOutliner(model);
@@ -80,7 +127,7 @@ public final class BBModelExporterV5 {
 				elements,
 				outliner,
 				groups,
-				List.of(),
+				List.copyOf(textures),
 				List.of());
 	}
 
