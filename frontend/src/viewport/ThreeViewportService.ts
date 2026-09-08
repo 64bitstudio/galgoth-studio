@@ -45,7 +45,7 @@ export class ThreeViewportService {
 
   detach(): void {
     this.stopRenderLoop()
-    this.canvas.parentElement?.removeChild(this.canvas)
+    this.canvas.remove()
   }
 
   resizeToContainer(container: HTMLElement): void {
