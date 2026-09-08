@@ -16,13 +16,13 @@ final class BBOutlinerEntrySerializer extends JsonSerializer<BBOutlinerEntry> {
 	@Override
 	public void serialize(BBOutlinerEntry value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
 		switch (value) {
-			case BBOutlinerLeaf leaf -> gen.writeString(leaf.uuid());
-			case BBOutlinerGroupRef group -> {
+			case BBOutlinerLeaf(String uuid) -> gen.writeString(uuid);
+			case BBOutlinerGroupRef(String uuid, boolean isOpen, var children) -> {
 				gen.writeStartObject();
-				gen.writeStringField("uuid", group.uuid());
-				gen.writeBooleanField("isOpen", group.isOpen());
+				gen.writeStringField("uuid", uuid);
+				gen.writeBooleanField("isOpen", isOpen);
 				gen.writeFieldName("children");
-				serializers.defaultSerializeValue(group.children(), gen);
+				serializers.defaultSerializeValue(children, gen);
 				gen.writeEndObject();
 			}
 		}
