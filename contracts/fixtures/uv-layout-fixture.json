@@ -1,0 +1,43 @@
+{
+  "description": "Ticket 007 -- verifica que AlphaAutoPackStrategy (Java) y su espejo TS (autoUv.ts) producen EXACTAMENTE el mismo layout dado el mismo conjunto de cuboids. 'head' (8x8x8) y 'body' (8x12x4) caben en la misma fila de un atlas de 64x64 (footprints 32x16 y 24x16 respectivamente, 32+24=56 <= 64). Valores de 'expectedFaces' derivados a mano de la fórmula de box-UV-unwrap documentada en AlphaAutoPackStrategy (verificada contra el código fuente real de Blockbench, ver Hecho del ticket 006) -- no producidos corriendo el propio código bajo prueba.",
+  "atlas": { "textureWidth": 64, "textureHeight": 64 },
+  "cuboids": [
+    {
+      "id": "head",
+      "name": "head",
+      "boneId": "bone-1",
+      "from": [-4, 24, -4],
+      "to": [4, 32, 4],
+      "origin": [0, 28, 0],
+      "rotation": [0, 0, 0]
+    },
+    {
+      "id": "body",
+      "name": "body",
+      "boneId": "bone-1",
+      "from": [-4, 12, -2],
+      "to": [4, 24, 2],
+      "origin": [0, 18, 0],
+      "rotation": [0, 0, 0]
+    }
+  ],
+  "expectedFaces": {
+    "head": {
+      "up": [8, 0, 16, 8],
+      "down": [16, 0, 24, 8],
+      "west": [0, 8, 8, 16],
+      "north": [8, 8, 16, 16],
+      "east": [16, 8, 24, 16],
+      "south": [24, 8, 32, 16]
+    },
+    "body": {
+      "up": [36, 0, 44, 4],
+      "down": [44, 0, 52, 4],
+      "west": [32, 4, 36, 16],
+      "north": [36, 4, 44, 16],
+      "east": [44, 4, 48, 16],
+      "south": [48, 4, 56, 16]
+    }
+  },
+  "expectedRegionCount": 12
+}
