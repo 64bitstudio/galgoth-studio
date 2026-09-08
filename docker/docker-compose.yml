@@ -1,0 +1,38 @@
+# Desarrollo local — Galgoth Studio Technical Alpha.
+#
+# Solo Postgres por ahora (ticket 003). MinIO se agrega cuando el
+# asset-service lo necesite de verdad (ticket 024, HU-10) en vez de sumar
+# un servicio sin usar de forma especulativa — el documento de definición
+# (docs/definiciones/galgoth-studio-mvp.md, Diseño técnico §1) menciona
+# MinIO en el docker-compose final; este archivo se completa
+# incrementalmente, no de una sola vez.
+#
+# backend/src/main/resources/application.properties apunta aquí
+# (spring.docker.compose.file=../docker/docker-compose.yml) -- Spring Boot
+# (spring-boot-docker-compose, developmentOnly) detecta el servicio
+# "postgres" por su imagen y autoconfigura spring.datasource.* solo.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: galgoth_studio
+      POSTGRES_USER: galgoth_studio
+      POSTGRES_PASSWORD: galgoth_studio_dev
+    ports:
+      # Puerto de host aleatorio (no 5432 fijo): en esta Mac ya hay otros
+      # proyectos ocupando 5432 Y 5433 -- spring-boot-docker-compose (ver
+      # application.properties) resuelve el puerto real automáticamente
+      # inspeccionando el contenedor, así que no depende de un puerto fijo.
+      # Para psql manual: `docker compose port postgres 5432`.
+      - "5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U galgoth_studio"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

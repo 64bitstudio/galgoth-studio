@@ -413,7 +413,7 @@ Criterios de aceptación:
 ```text
 galgoth-studio/
   frontend/                 # Vue3 + TS + Vite
-  backend/                  # Spring Boot 3 modular monolith
+  backend/                  # Spring Boot 4.1.0 modular monolith (Java 25, ver §2)
   contracts/                # JSON Schemas compartidos (ModelIntent, GeometryOperation[], MobProjectModel)
   docker/                   # docker-compose.yml, Dockerfiles, .env.example
   postman/galgoth-studio/   # colección + environments
@@ -426,7 +426,7 @@ galgoth-studio/
 
 ### 2. Backend — modular monolith, persistencia, progreso de IA
 
-**Confirmado sin cambios:** Spring Boot 3.x + Java 21 + PostgreSQL + storage S3-compatible (MinIO), monolito modular con ArchUnit (paquetes `project`, `asset`, `ai-orchestrator`, `model-validation`, `export`).
+**Confirmado, con una corrección de versión (2026-09-08, ver Addendum):** Spring Boot 4.1.0 + Java 25 (no 3.x/21, desactualizado) + PostgreSQL + storage S3-compatible (MinIO), monolito modular con ArchUnit (paquetes `project`, `asset`, `ai-orchestrator`, `model-validation`, `export`).
 
 **Esquema Postgres actualizado** (agrega `draft_version`, `base_draft_version`, `thumbnail_key`; corrige la fuente de verdad de autoría):
 
@@ -902,3 +902,5 @@ Acordado al desglosar tickets, **después** del VoBo de este documento. No reabr
 - **Orden de entrega detallado (milestones M0-M6, 33 tickets numerados 001-033, 3 de ellos épicas con subtareas)** vive en `pending/` (skill `nuevo-ticket`), no en este documento — este documento define QUÉ se construye, los tickets definen EN QUÉ ORDEN.
 - **Corrección de mecanismo de CI/CD (bloqueo técnico real, encontrado al bootstrapear, 2026-09-08):** este documento (Diseño técnico §10) asumía GitHub Actions, vigente cuando se escribió. La infra real del equipo cambió mientras tanto (`platform` ticket 002, cerrado 2026-09-01): cada proyecto usa un `Jenkinsfile` que invoca la Shared Library centralizada de `64bitstudio/platform`, corriendo en la VM compartida — no GitHub Actions por repo. No es un cambio de alcance ni de arquitectura del Technical Alpha, solo del mecanismo de CI/CD — detalle corregido en `pending/001-bootstrap-repo.md` y en el skill `bootstrap-proyecto`.
 - **Corrección del texto de Visual Contract §6 (sidebar), confirmada por el PO, 2026-09-08:** al implementar el ticket 002 y contrastar contra `mockups/00_all_views.png` (fuente de verdad visual, como exige el propio Visual Contract), se encontró que el texto original de este documento (copiado del master prompt §3: "Nuevo proyecto, Mis proyectos, Recientes, Configuración") no coincidía con el mockup real ("Inicio, Mis proyectos, Explorar, Plantillas" arriba + "Configuración, Usuario" abajo, "Nuevo proyecto" como tarjeta CTA del dashboard, no ítem de sidebar). El PO confirmó que el mockup es la fuente de verdad — el texto de la sección "Visual Contract" arriba ya quedó corregido. No cambia alcance ni arquitectura, corrige un error de transcripción del master prompt detectado en implementación.
+- **Corrección de versión Spring Boot/Java (bloqueo técnico real, encontrado al implementar el ticket 003, 2026-09-08), confirmada por el PO:** este documento (Diseño técnico §2) decía "Spring Boot 3.x + Java 21", vigente cuando se escribió. `auth-core-mc` (el otro backend Java real del equipo) ya corre **Spring Boot 4.1.0 + Java 25** — Jenkins ya tiene Temurin 25 instalado para ese proyecto, y esta Mac no tiene JDK 21 instalado (solo 26). Corregido a Spring Boot 4.1.0 + Java 25 para `galgoth-studio`, mismo patrón (Gradle Groovy DSL, Flyway, Testcontainers, JaCoCo, plugin de Sonar) que `auth-core-mc`. No cambia alcance ni arquitectura, corrige una versión de stack desactualizada — mismo tipo de hallazgo que la corrección de CI/CD.
+- **Resolución de la "Nota abierta de implementación" sobre FK compuesta (ticket 003):** `ai_jobs.base_revision_number` y `exports.revision_number` SÍ son FK compuesta real hacia `mob_revisions(mob_id, revision_number)` — ambos referencian un snapshot inmutable que existe para siempre. `ai_jobs.base_draft_version` **no** es FK: `mob_drafts` no tiene historial (una sola fila mutable por mob), así que ese valor es un snapshot de concurrencia optimista en capa de aplicación (HU-18), no una referencia a una fila que siga existiendo con ese valor exacto — una FK real rompería el caso de uso que existe para detectar (que el draft avanzó). Ver `backend/src/main/resources/db/migration/V1__init_schema.sql` para el detalle.
