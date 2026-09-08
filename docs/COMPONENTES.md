@@ -14,6 +14,14 @@ Implementado en `frontend/src/design-system/`:
 
 Pantallas reales (dashboard, editor, wizard, etc.) todavía no existen — llegan en los tickets 021+.
 
+## Viewport Three.js (ticket `008-threejs-viewport-solo-render-dev-harness`)
+
+Implementado en `frontend/src/viewport/`:
+
+- **`ThreeViewport.vue`**: wrapper que adjunta el canvas Three.js compartido (`ThreeViewportService`, singleton) a su contenedor mientras está montado. No crea su propio `WebGLRenderer` — sienta la base para que 016 (viewport interactivo) y 023 (thumbnails) reutilicen el mismo canvas sin agotar contextos WebGL.
+- **`ViewportHarness.vue`** (ruta `/dev/viewport-harness`, NO enlazada desde la navegación productiva): abre el sample real Carcomido directamente en el viewport, sin pasar por creación de proyecto/mob (021/022, que no existen todavía). Se retira o queda oculta detrás de un flag una vez M3 esté listo, igual que `/dev/design-system`.
+- Renderiza los 24 cuboids del sample (más un marcador esférico por cada uno de los 6 bones, en su pivote mundial compuesto — puede quedar visualmente oculto dentro de la geometría opaca, es cosmético) usando exclusivamente el `CoordinateSystemContract` para toda transformación.
+
 ## Pantallas previstas (12, ver mockups/00_all_views.png del build pack)
 
 1. Inicio / Mis proyectos

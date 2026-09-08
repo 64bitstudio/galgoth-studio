@@ -48,4 +48,11 @@ describe('MobProjectModel JSON Schema', () => {
       expect.arrayContaining(['texture', 'uv', 'animations', 'exportSettings', 'referenceImages']),
     )
   })
+
+  it('valida contracts/fixtures/carcomido-mob-project-model.json sin errores (ticket 008, dev harness)', () => {
+    const carcomido = readJson('contracts/fixtures/carcomido-mob-project-model.json')
+    const valid = validate(carcomido)
+    expect(validate.errors ?? []).toEqual([])
+    expect(valid).toBe(true)
+  })
 })

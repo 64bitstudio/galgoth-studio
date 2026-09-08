@@ -1,0 +1,2060 @@
+{
+  "mobId": "dev-fixture-carcomido",
+  "projectId": "dev-fixture-project",
+  "name": "Carcomido_Cuboids",
+  "baseType": "humanoid",
+  "units": "minecraft_pixels",
+  "bones": [
+    {
+      "id": "efbc832e-863d-415a-9644-d0ed72daf4e0",
+      "name": "body",
+      "parentId": null,
+      "pivot": [
+        0.0,
+        12.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "921be428-5708-46ca-aaf3-0747c4c2741d",
+      "name": "head",
+      "parentId": "efbc832e-863d-415a-9644-d0ed72daf4e0",
+      "pivot": [
+        0.0,
+        24.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "fff18773-7641-4861-af9a-265355f5c189",
+      "name": "armRight",
+      "parentId": "efbc832e-863d-415a-9644-d0ed72daf4e0",
+      "pivot": [
+        -4.0,
+        22.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "def2ba34-2f40-4ab6-8dc2-b14aa80ab390",
+      "name": "armLeft",
+      "parentId": "efbc832e-863d-415a-9644-d0ed72daf4e0",
+      "pivot": [
+        4.0,
+        22.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "faf42aa4-9cfb-4549-a3f8-bd0d819785c9",
+      "name": "legRight",
+      "parentId": "efbc832e-863d-415a-9644-d0ed72daf4e0",
+      "pivot": [
+        -2.0,
+        12.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "eb4bd0ab-8053-4ac0-ba47-7630467b89a8",
+      "name": "legLeft",
+      "parentId": "efbc832e-863d-415a-9644-d0ed72daf4e0",
+      "pivot": [
+        2.0,
+        12.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "cuboids": [
+    {
+      "id": "dbb56531-1177-457d-abb4-623d1836717f",
+      "name": "body",
+      "boneId": "efbc832e-863d-415a-9644-d0ed72daf4e0",
+      "from": [
+        -4.0,
+        12.0,
+        -2.0
+      ],
+      "to": [
+        4.0,
+        24.0,
+        2.0
+      ],
+      "origin": [
+        0.0,
+        18.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        2
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "47c14f1e-fdde-449a-8c9f-159230343948",
+      "name": "tornChestPlate",
+      "boneId": "efbc832e-863d-415a-9644-d0ed72daf4e0",
+      "from": [
+        -4.6,
+        17.3,
+        -2.6
+      ],
+      "to": [
+        4.5,
+        24.2,
+        2.5
+      ],
+      "origin": [
+        0.0,
+        20.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        2
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "c37fbfbb-fcc9-45d3-b60f-17577c4c875e",
+      "name": "raggedWaist",
+      "boneId": "efbc832e-863d-415a-9644-d0ed72daf4e0",
+      "from": [
+        -4.8,
+        10.8,
+        -2.5
+      ],
+      "to": [
+        4.8,
+        13.2,
+        2.5
+      ],
+      "origin": [
+        0.0,
+        12.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        2
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "690386cc-2e2d-4fb1-9fc6-a5816228ebb5",
+      "name": "crack_chest",
+      "boneId": "efbc832e-863d-415a-9644-d0ed72daf4e0",
+      "from": [
+        -0.35,
+        14.5,
+        -2.18
+      ],
+      "to": [
+        0.55,
+        22.0,
+        -1.85
+      ],
+      "origin": [
+        0.10000000000000003,
+        18.25,
+        -2.015
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        4
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "b9b94539-b808-4c0b-bdc5-bb7d04b6a142",
+      "name": "cloth_front_L",
+      "boneId": "efbc832e-863d-415a-9644-d0ed72daf4e0",
+      "from": [
+        -4.2,
+        8.0,
+        -2.35
+      ],
+      "to": [
+        -1.8,
+        12.2,
+        -2.0
+      ],
+      "origin": [
+        -3.0,
+        10.1,
+        -2.175
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        -8
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "f71cdd3f-772f-4dd6-bdd5-fd28cf4952eb",
+      "name": "cloth_front_R",
+      "boneId": "efbc832e-863d-415a-9644-d0ed72daf4e0",
+      "from": [
+        1.1,
+        7.2,
+        -2.35
+      ],
+      "to": [
+        4.3,
+        12.2,
+        -2.0
+      ],
+      "origin": [
+        2.7,
+        9.7,
+        -2.175
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        6
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "87e2ff5d-54f9-4867-82d1-2754c8d4bf87",
+      "name": "cloth_back",
+      "boneId": "efbc832e-863d-415a-9644-d0ed72daf4e0",
+      "from": [
+        -1.0,
+        8.5,
+        2.0
+      ],
+      "to": [
+        2.2,
+        12.2,
+        2.35
+      ],
+      "origin": [
+        0.6000000000000001,
+        10.35,
+        2.175
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        4
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "f0f86251-a6a2-40a7-8181-69ae96b34f45",
+      "name": "head",
+      "boneId": "921be428-5708-46ca-aaf3-0747c4c2741d",
+      "from": [
+        -4.0,
+        24.0,
+        -4.0
+      ],
+      "to": [
+        4.0,
+        32.0,
+        4.0
+      ],
+      "origin": [
+        0.0,
+        28.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        -7
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "a6e31f31-9149-4b8c-9853-ef0cde3c5386",
+      "name": "armRight",
+      "boneId": "fff18773-7641-4861-af9a-265355f5c189",
+      "from": [
+        -8.0,
+        11.0,
+        -2.0
+      ],
+      "to": [
+        -4.0,
+        23.0,
+        2.0
+      ],
+      "origin": [
+        -4.0,
+        22.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        -18
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "6ee13239-695f-429b-b3ff-a235378cf6f4",
+      "name": "raggedShoulder_R",
+      "boneId": "fff18773-7641-4861-af9a-265355f5c189",
+      "from": [
+        -8.6,
+        20.5,
+        -2.7
+      ],
+      "to": [
+        -3.8,
+        24.3,
+        2.7
+      ],
+      "origin": [
+        -4.0,
+        22.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        -18
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "7ae29c59-8fcc-4c88-a15b-f504950dfcd6",
+      "name": "handRight",
+      "boneId": "fff18773-7641-4861-af9a-265355f5c189",
+      "from": [
+        -8.2,
+        10.2,
+        -2.3
+      ],
+      "to": [
+        -3.7,
+        14.0,
+        2.3
+      ],
+      "origin": [
+        -4.0,
+        22.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        -18
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "a70e287a-761d-4cbd-84ab-027b663421cd",
+      "name": "crack_arm_r",
+      "boneId": "fff18773-7641-4861-af9a-265355f5c189",
+      "from": [
+        -8.2,
+        13.8,
+        -2.2
+      ],
+      "to": [
+        -7.5,
+        20.5,
+        -1.85
+      ],
+      "origin": [
+        -7.85,
+        17.15,
+        -2.0250000000000004
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        -18
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "89082b6c-505e-4fce-88c0-7ba5e87b6642",
+      "name": "shoulder_r_strip",
+      "boneId": "fff18773-7641-4861-af9a-265355f5c189",
+      "from": [
+        -8.4,
+        17.0,
+        -2.3
+      ],
+      "to": [
+        -7.1,
+        21.8,
+        -1.9
+      ],
+      "origin": [
+        -7.75,
+        19.4,
+        -2.0999999999999996
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        -18
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "80ab2dfd-1e9e-420a-aa62-0e195c2ca713",
+      "name": "armLeft",
+      "boneId": "def2ba34-2f40-4ab6-8dc2-b14aa80ab390",
+      "from": [
+        4.0,
+        12.0,
+        -2.0
+      ],
+      "to": [
+        8.0,
+        24.0,
+        2.0
+      ],
+      "origin": [
+        4.0,
+        22.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        8
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "231d4df4-5761-4318-af38-9f703572b6bc",
+      "name": "raggedShoulder_L",
+      "boneId": "def2ba34-2f40-4ab6-8dc2-b14aa80ab390",
+      "from": [
+        3.8,
+        20.8,
+        -2.7
+      ],
+      "to": [
+        8.4,
+        24.2,
+        2.7
+      ],
+      "origin": [
+        4.0,
+        22.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        8
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "d54f064d-11cb-4eaa-8f54-7c800d16a20f",
+      "name": "handLeft",
+      "boneId": "def2ba34-2f40-4ab6-8dc2-b14aa80ab390",
+      "from": [
+        3.8,
+        10.8,
+        -2.3
+      ],
+      "to": [
+        8.2,
+        14.4,
+        2.3
+      ],
+      "origin": [
+        4.0,
+        22.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        8
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "0ee9d71b-24b3-4138-bd3f-0c3bbee96d08",
+      "name": "crack_arm_l",
+      "boneId": "def2ba34-2f40-4ab6-8dc2-b14aa80ab390",
+      "from": [
+        7.2,
+        14.2,
+        -2.2
+      ],
+      "to": [
+        7.9,
+        21.0,
+        -1.85
+      ],
+      "origin": [
+        7.550000000000001,
+        17.6,
+        -2.0250000000000004
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        8
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "537020fc-9063-4b01-9f34-1a1df0249eb6",
+      "name": "shoulder_l_strip",
+      "boneId": "def2ba34-2f40-4ab6-8dc2-b14aa80ab390",
+      "from": [
+        7.0,
+        17.2,
+        -2.3
+      ],
+      "to": [
+        8.2,
+        21.2,
+        -1.9
+      ],
+      "origin": [
+        7.6,
+        19.2,
+        -2.0999999999999996
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        8
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "e6b673fa-1320-42d9-8ab1-fb145dffb461",
+      "name": "legRight",
+      "boneId": "faf42aa4-9cfb-4549-a3f8-bd0d819785c9",
+      "from": [
+        -4.0,
+        0.0,
+        -2.0
+      ],
+      "to": [
+        0.0,
+        12.0,
+        2.0
+      ],
+      "origin": [
+        -2.0,
+        12.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        5
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "2c0d7856-6d57-4000-a5b8-25e444ebd90c",
+      "name": "footRight",
+      "boneId": "faf42aa4-9cfb-4549-a3f8-bd0d819785c9",
+      "from": [
+        -4.2,
+        -0.2,
+        -3.0
+      ],
+      "to": [
+        0.3,
+        3.2,
+        2.6
+      ],
+      "origin": [
+        -2.0,
+        12.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        5
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "011db6c1-66cc-471a-99ae-bec398a36c86",
+      "name": "crack_leg_r",
+      "boneId": "faf42aa4-9cfb-4549-a3f8-bd0d819785c9",
+      "from": [
+        -3.1,
+        2.0,
+        -2.2
+      ],
+      "to": [
+        -2.4,
+        9.0,
+        -1.86
+      ],
+      "origin": [
+        -2.75,
+        5.5,
+        -2.0300000000000002
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        5
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "a6af776d-a614-41d4-9790-52c6207bcb27",
+      "name": "legLeft",
+      "boneId": "eb4bd0ab-8053-4ac0-ba47-7630467b89a8",
+      "from": [
+        0.0,
+        0.0,
+        -2.0
+      ],
+      "to": [
+        4.0,
+        12.0,
+        2.0
+      ],
+      "origin": [
+        2.0,
+        12.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        -7
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "61144a57-d225-4cc8-bad1-ed63a757f96a",
+      "name": "footLeft",
+      "boneId": "eb4bd0ab-8053-4ac0-ba47-7630467b89a8",
+      "from": [
+        -0.2,
+        -0.1,
+        -2.8
+      ],
+      "to": [
+        4.4,
+        3.0,
+        2.8
+      ],
+      "origin": [
+        2.0,
+        12.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        -7
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    },
+    {
+      "id": "24b75ea4-3987-4e40-b270-8fe7edfae05a",
+      "name": "crack_leg_l",
+      "boneId": "eb4bd0ab-8053-4ac0-ba47-7630467b89a8",
+      "from": [
+        2.1,
+        1.2,
+        -2.2
+      ],
+      "to": [
+        2.8,
+        8.3,
+        -1.86
+      ],
+      "origin": [
+        2.45,
+        4.75,
+        -2.0300000000000002
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        -7
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "east": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "west": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "up": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        },
+        "down": {
+          "uv": [
+            0.0,
+            0.0,
+            8.0,
+            8.0
+          ],
+          "texture": null
+        }
+      }
+    }
+  ],
+  "texture": {
+    "width": 64,
+    "height": 64,
+    "storageKey": null
+  },
+  "uv": {
+    "textureWidth": 64,
+    "textureHeight": 64,
+    "regions": []
+  },
+  "animations": [],
+  "exportSettings": {
+    "preferredFormatVersion": "v4"
+  },
+  "referenceImages": []
+}
