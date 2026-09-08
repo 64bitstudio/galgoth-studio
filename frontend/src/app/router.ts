@@ -20,6 +20,11 @@ const router = createRouter({
       name: 'design-system-showcase',
       component: () => import('../design-system/Showcase.vue'),
     },
+    {
+      path: '/dev/viewport-harness',
+      name: 'viewport-harness',
+      component: () => import('../viewport/ViewportHarness.vue'),
+    },
   ],
 })
 
