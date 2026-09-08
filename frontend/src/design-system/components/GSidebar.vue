@@ -1,30 +1,47 @@
 <script setup lang="ts">
 /**
- * Sidebar global compacta (Visual Contract punto 6 / master prompt §3):
- * Nuevo proyecto, Mis proyectos, Recientes, Configuración. Sin ítem
- * "Volver" -- a propósito, no es un descuido.
+ * Sidebar global compacta. Corregida contra mockups/00_all_views.png /
+ * 01_inicio_mis_proyectos.png (fuente de verdad visual, confirmado por
+ * el Product Owner el 2026-09-08 -- el texto original del master
+ * prompt §3 no coincidía con el mockup real, ver Addendum de
+ * docs/definiciones/galgoth-studio-mvp.md): Inicio, Mis proyectos,
+ * Explorar, Plantillas arriba; Configuración, Usuario abajo. "Nuevo
+ * proyecto" NO es un ítem de sidebar -- es la tarjeta CTA "Crear un
+ * mob con IA" dentro del dashboard (mockup 01, ticket 021+).
  *
- * Presentacional: quien la usa controla la navegación real (router)
- * pasando `active` y escuchando `select`.
+ * Simplificación consciente de este ticket: "Usuario" se renderiza
+ * como un ítem de nav más, sin el tratamiento de tarjeta de perfil
+ * (avatar + subtítulo "Creador de mundos") que muestra el mockup --
+ * eso depende de datos reales de proyecto/usuario que no existen
+ * todavía. Documentado como gap conocido, no una reinterpretación
+ * silenciosa.
  */
-import IconNewProject from '../icons/IconNewProject.vue'
+import IconHome from '../icons/IconHome.vue'
 import IconProjects from '../icons/IconProjects.vue'
-import IconRecent from '../icons/IconRecent.vue'
+import IconExplore from '../icons/IconExplore.vue'
+import IconTemplates from '../icons/IconTemplates.vue'
 import IconSettings from '../icons/IconSettings.vue'
+import IconUser from '../icons/IconUser.vue'
 
-export type GSidebarKey = 'new-project' | 'projects' | 'recent' | 'settings'
+export type GSidebarKey =
+  | 'home'
+  | 'projects'
+  | 'explore'
+  | 'templates'
+  | 'settings'
+  | 'user'
 
 const items: Array<{ key: GSidebarKey; label: string; icon: unknown }> = [
-  { key: 'new-project', label: 'Nuevo proyecto', icon: IconNewProject },
+  { key: 'home', label: 'Inicio', icon: IconHome },
   { key: 'projects', label: 'Mis proyectos', icon: IconProjects },
-  { key: 'recent', label: 'Recientes', icon: IconRecent },
+  { key: 'explore', label: 'Explorar', icon: IconExplore },
+  { key: 'templates', label: 'Plantillas', icon: IconTemplates },
 ]
 
-const bottomItem = {
-  key: 'settings' as const,
-  label: 'Configuración',
-  icon: IconSettings,
-}
+const bottomItems: Array<{ key: GSidebarKey; label: string; icon: unknown }> = [
+  { key: 'settings', label: 'Configuración', icon: IconSettings },
+  { key: 'user', label: 'Usuario', icon: IconUser },
+]
 
 defineProps<{ active: GSidebarKey }>()
 const emit = defineEmits<{ select: [GSidebarKey] }>()
@@ -52,16 +69,16 @@ const emit = defineEmits<{ select: [GSidebarKey] }>()
     <div class="g-sidebar__spacer" />
 
     <ul class="g-sidebar__list">
-      <li>
+      <li v-for="item in bottomItems" :key="item.key">
         <button
           type="button"
           class="g-sidebar__item"
-          :class="{ 'g-sidebar__item--active': active === bottomItem.key }"
-          :aria-current="active === bottomItem.key ? 'page' : undefined"
-          @click="emit('select', bottomItem.key)"
+          :class="{ 'g-sidebar__item--active': active === item.key }"
+          :aria-current="active === item.key ? 'page' : undefined"
+          @click="emit('select', item.key)"
         >
-          <component :is="bottomItem.icon" :size="18" />
-          <span>{{ bottomItem.label }}</span>
+          <component :is="item.icon" :size="18" />
+          <span>{{ item.label }}</span>
         </button>
       </li>
     </ul>

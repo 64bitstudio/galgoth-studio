@@ -3,9 +3,10 @@ import IconBase from './IconBase.vue'
 </script>
 
 <template>
-  <!-- Dos cuboides pequeños apilados — "mis proyectos" (colección de mobs) -->
+  <!-- Carpeta -- "Mis proyectos", fiel a mockups/01_inicio_mis_proyectos.png -->
   <IconBase>
-    <rect x="3.5" y="10.5" width="8" height="8" rx="1" />
-    <rect x="12.5" y="5.5" width="8" height="8" rx="1" />
+    <path
+      d="M4 7.5 a1.5 1.5 0 0 1 1.5 -1.5 h4 l2 2 h7 a1.5 1.5 0 0 1 1.5 1.5 v8 a1.5 1.5 0 0 1 -1.5 1.5 h-13 a1.5 1.5 0 0 1 -1.5 -1.5 z"
+    />
   </IconBase>
 </template>

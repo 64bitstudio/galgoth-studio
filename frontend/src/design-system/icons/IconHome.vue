@@ -4,7 +4,7 @@ import IconBase from './IconBase.vue'
 
 <template>
   <IconBase>
-    <circle cx="12" cy="12" r="8.5" />
-    <path d="M12 7.5 V12 L15.5 14" />
+    <path d="M4 11.5 12 4.5 20 11.5" />
+    <path d="M6 10 V19.5 H18 V10" />
   </IconBase>
 </template>
