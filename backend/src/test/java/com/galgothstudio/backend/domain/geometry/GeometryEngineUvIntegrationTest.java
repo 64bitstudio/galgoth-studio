@@ -36,7 +36,7 @@ class GeometryEngineUvIntegrationTest {
 		MobProjectModel result = GeometryEngine.apply(model, operations, new AlphaAutoPackStrategy());
 
 		Cuboid cuboid = result.cuboids().get(0);
-		assertThat(cuboid.faces().north().texture()).isEqualTo(0); // ya no es el placeholder null del motor puro
+		assertThat(cuboid.faces().north().texture()).isZero(); // ya no es el placeholder null del motor puro
 		assertThat(cuboid.faces().north().uv().toArray()).doesNotContain(0.0, 0.0, 0.0, 0.0);
 		assertThat(result.uv().regions()).hasSize(6); // una uv.region por cara
 	}
@@ -121,7 +121,7 @@ class GeometryEngineUvIntegrationTest {
 
 		assertThat(result.uv().textureWidth()).isEqualTo(64);
 		assertThat(result.uv().textureHeight()).isEqualTo(64);
-		assertThat(result.cuboids().get(0).faces().north().texture()).isEqualTo(0);
+		assertThat(result.cuboids().get(0).faces().north().texture()).isZero();
 	}
 
 }

@@ -137,7 +137,7 @@ public final class AlphaAutoPackStrategy implements UvLayoutStrategy {
 	}
 
 	private static Face faceAt(int u0, int v0, int width, int height) {
-		return new Face(new Vec4(u0, v0, u0 + width, v0 + height), SINGLE_TEXTURE_INDEX);
+		return new Face(new Vec4(u0, v0, (double) u0 + width, (double) v0 + height), SINGLE_TEXTURE_INDEX);
 	}
 
 	private static Face faceOf(CuboidFaces faces, FaceName name) {

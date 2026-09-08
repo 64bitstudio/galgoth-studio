@@ -51,7 +51,7 @@ class AlphaAutoPackStrategyTest {
 		assertUv(faces.east(), 16, 8, 24, 16);
 		assertUv(faces.south(), 24, 8, 32, 16);
 		// texture=0 -- único atlas que existe este ciclo (ver Face#texture()).
-		assertThat(faces.north().texture()).isEqualTo(0);
+		assertThat(faces.north().texture()).isZero();
 	}
 
 	@Test
