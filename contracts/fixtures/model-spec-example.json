@@ -48,9 +48,46 @@
       { "cuboidId": "head_main", "face": "down", "rect": [40, 0, 48, 8] }
     ]
   },
-  "animations": [],
+  "animations": [
+    {
+      "id": "walk",
+      "name": "Walk",
+      "duration": 1.2,
+      "loop": true,
+      "category": "locomotion",
+      "style": {
+        "weight": 0.85,
+        "asymmetry": 0.72,
+        "aggression": 0.5,
+        "dragLeg": "leg_right"
+      },
+      "tracks": [
+        {
+          "boneId": "arm_right",
+          "channel": "rotation",
+          "interpolation": "linear",
+          "keyframes": [
+            { "time": 0.0, "value": [-25, 0, 4] },
+            { "time": 0.6, "value": [18, 0, -3] },
+            { "time": 1.2, "value": [-25, 0, 4] }
+          ]
+        }
+      ],
+      "events": [
+        { "time": 0.18, "type": "footstep", "payload": { "foot": "left" } }
+      ]
+    }
+  ],
   "exportSettings": {
     "preferredFormatVersion": "v5"
   },
-  "referenceImages": []
+  "referenceImages": [
+    {
+      "id": "ref_carcomido_01",
+      "storageKey": "reference-images/carcomido/carcomido_reference.png",
+      "width": 1024,
+      "height": 1024,
+      "contentType": "image/png"
+    }
+  ]
 }
