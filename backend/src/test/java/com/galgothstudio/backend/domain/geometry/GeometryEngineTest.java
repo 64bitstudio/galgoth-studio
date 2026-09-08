@@ -104,9 +104,9 @@ class GeometryEngineTest {
 		// to.x == from.x -> dimensión 0 en X.
 		GeometryOperation op = new CreateCuboid(
 				"tmp-bad", "bad", boneId, new Vec3(0, 0, 0), new Vec3(0, 4, 4), new Vec3(0, 0, 0), new Vec3(0, 0, 0));
+		List<GeometryOperation> operations = List.of(op);
 
-		assertThatThrownBy(() -> GeometryEngine.apply(model, List.of(op)))
-				.isInstanceOf(GeometryValidationException.class);
+		assertThatThrownBy(() -> GeometryEngine.apply(model, operations)).isInstanceOf(GeometryValidationException.class);
 	}
 
 	// -- AC #3: tempRef createBone -> createCuboid en el mismo batch -----
@@ -140,9 +140,9 @@ class GeometryEngineTest {
 
 		GeometryOperation valid = new MoveCuboid(cuboidId, new Vec3(1, 0, 0));
 		GeometryOperation invalid = new ResizeCuboid(cuboidId, new Vec3(1, 0, 1)); // scale.y = 0 -> inválido
+		List<GeometryOperation> operations = List.of(valid, invalid);
 
-		assertThatThrownBy(() -> GeometryEngine.apply(model, List.of(valid, invalid)))
-				.isInstanceOf(GeometryValidationException.class);
+		assertThatThrownBy(() -> GeometryEngine.apply(model, operations)).isInstanceOf(GeometryValidationException.class);
 
 		// El modelo de entrada es inmutable y nunca se tocó -- sigue igual.
 		assertThat(model.bones()).hasSize(bonesBefore);
@@ -155,9 +155,9 @@ class GeometryEngineTest {
 		MobProjectModel model = GeometryFixtures.modelWithBoneAndCuboid(
 				UUID.randomUUID().toString(), UUID.randomUUID().toString());
 		GeometryOperation op = new MoveCuboid("no-existe-ni-es-tempref", new Vec3(1, 0, 0));
+		List<GeometryOperation> operations = List.of(op);
 
-		assertThatThrownBy(() -> GeometryEngine.apply(model, List.of(op)))
-				.isInstanceOf(GeometryValidationException.class);
+		assertThatThrownBy(() -> GeometryEngine.apply(model, operations)).isInstanceOf(GeometryValidationException.class);
 	}
 
 	// -- AC #4: resizeCuboid / moveCuboid con dimensión resultante <= 0 --
@@ -184,9 +184,9 @@ class GeometryEngineTest {
 		String cuboidId = UUID.randomUUID().toString();
 		MobProjectModel model = GeometryFixtures.modelWithBoneAndCuboid(boneId, cuboidId);
 		GeometryOperation op = new ResizeCuboid(cuboidId, new Vec3(1, 0, 1));
+		List<GeometryOperation> operations = List.of(op);
 
-		assertThatThrownBy(() -> GeometryEngine.apply(model, List.of(op)))
-				.isInstanceOf(GeometryValidationException.class);
+		assertThatThrownBy(() -> GeometryEngine.apply(model, operations)).isInstanceOf(GeometryValidationException.class);
 	}
 
 	@Test
@@ -213,7 +213,10 @@ class GeometryEngineTest {
 		// es la MISMA función compartida (validatePositiveDimensions,
 		// package-private) que moveCuboid invoca tras trasladar -- se
 		// ejercita aquí directamente, sin reflexión.
-		assertThatThrownBy(() -> GeometryEngine.validatePositiveDimensions(new Vec3(0, 0, 0), new Vec3(0, 4, 4), "moveCuboid"))
+		Vec3 degenerateFrom = new Vec3(0, 0, 0);
+		Vec3 degenerateTo = new Vec3(0, 4, 4);
+
+		assertThatThrownBy(() -> GeometryEngine.validatePositiveDimensions(degenerateFrom, degenerateTo, "moveCuboid"))
 				.isInstanceOf(GeometryValidationException.class);
 	}
 
@@ -314,9 +317,9 @@ class GeometryEngineTest {
 		String id = UUID.randomUUID().toString();
 		Bone bone = new Bone(id, "bone", null, new Vec3(0, 0, 0), new Vec3(0, 0, 0));
 		MobProjectModel model = withBones(bone);
+		List<GeometryOperation> operations = List.of(new ParentBone(id, id));
 
-		assertThatThrownBy(() -> GeometryEngine.apply(model, List.of(new ParentBone(id, id))))
-				.isInstanceOf(GeometryValidationException.class);
+		assertThatThrownBy(() -> GeometryEngine.apply(model, operations)).isInstanceOf(GeometryValidationException.class);
 	}
 
 	@Test
@@ -328,8 +331,9 @@ class GeometryEngineTest {
 		MobProjectModel model = withBones(a, b);
 
 		// Intentar hacer que 'a' (padre de 'b') pase a ser hijo de 'b' -> ciclo.
-		assertThatThrownBy(() -> GeometryEngine.apply(model, List.of(new ParentBone(aId, bId))))
-				.isInstanceOf(GeometryValidationException.class);
+		List<GeometryOperation> operations = List.of(new ParentBone(aId, bId));
+
+		assertThatThrownBy(() -> GeometryEngine.apply(model, operations)).isInstanceOf(GeometryValidationException.class);
 	}
 
 	// -- AC #5: removeCuboid deja referencias válidas ----------------------
