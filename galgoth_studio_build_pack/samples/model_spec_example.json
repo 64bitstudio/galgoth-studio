@@ -1,0 +1,35 @@
+{
+  "projectId": "galgoth",
+  "mobId": "carcomido",
+  "name": "Carcomido",
+  "baseType": "humanoid",
+  "units": "minecraft_pixels",
+  "texture": {"width": 128, "height": 128},
+  "bones": [
+    {"id": "body", "name": "body", "parentId": null, "pivot": [0, 12, 0], "rotation": [0, 0, 0]},
+    {"id": "head", "name": "head", "parentId": "body", "pivot": [0, 24, 0], "rotation": [0, 0, 0]},
+    {"id": "arm_right", "name": "armRight", "parentId": "body", "pivot": [-5, 22, 0], "rotation": [0, 0, 0]},
+    {"id": "arm_left", "name": "armLeft", "parentId": "body", "pivot": [5, 22, 0], "rotation": [0, 0, 0]},
+    {"id": "leg_right", "name": "legRight", "parentId": "body", "pivot": [-2, 12, 0], "rotation": [0, 0, 0]},
+    {"id": "leg_left", "name": "legLeft", "parentId": "body", "pivot": [2, 12, 0], "rotation": [0, 0, 0]}
+  ],
+  "cuboids": [
+    {
+      "id": "head_main",
+      "name": "head_main",
+      "boneId": "head",
+      "from": [-4, 20, -4],
+      "to": [4, 28, 4],
+      "origin": [0, 24, 0],
+      "rotation": [0, 0, 0],
+      "faces": {
+        "north": {"uv": [0, 0, 8, 8], "texture": 0},
+        "south": {"uv": [8, 0, 16, 8], "texture": 0},
+        "east": {"uv": [16, 0, 24, 8], "texture": 0},
+        "west": {"uv": [24, 0, 32, 8], "texture": 0},
+        "up": {"uv": [32, 0, 40, 8], "texture": 0},
+        "down": {"uv": [40, 0, 48, 8], "texture": 0}
+      }
+    }
+  ]
+}
