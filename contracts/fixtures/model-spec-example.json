@@ -1,0 +1,93 @@
+{
+  "mobId": "carcomido",
+  "projectId": "galgoth",
+  "name": "Carcomido",
+  "baseType": "humanoid",
+  "units": "minecraft_pixels",
+  "bones": [
+    { "id": "body", "name": "body", "parentId": null, "pivot": [0, 12, 0], "rotation": [0, 0, 0] },
+    { "id": "head", "name": "head", "parentId": "body", "pivot": [0, 24, 0], "rotation": [0, 0, 0] },
+    { "id": "arm_right", "name": "armRight", "parentId": "body", "pivot": [-5, 22, 0], "rotation": [0, 0, 0] },
+    { "id": "arm_left", "name": "armLeft", "parentId": "body", "pivot": [5, 22, 0], "rotation": [0, 0, 0] },
+    { "id": "leg_right", "name": "legRight", "parentId": "body", "pivot": [-2, 12, 0], "rotation": [0, 0, 0] },
+    { "id": "leg_left", "name": "legLeft", "parentId": "body", "pivot": [2, 12, 0], "rotation": [0, 0, 0] }
+  ],
+  "cuboids": [
+    {
+      "id": "head_main",
+      "name": "head_main",
+      "boneId": "head",
+      "from": [-4, 20, -4],
+      "to": [4, 28, 4],
+      "origin": [0, 24, 0],
+      "rotation": [0, 0, 0],
+      "faces": {
+        "north": { "uv": [0, 0, 8, 8], "texture": 0 },
+        "south": { "uv": [8, 0, 16, 8], "texture": 0 },
+        "east": { "uv": [16, 0, 24, 8], "texture": 0 },
+        "west": { "uv": [24, 0, 32, 8], "texture": 0 },
+        "up": { "uv": [32, 0, 40, 8], "texture": 0 },
+        "down": { "uv": [40, 0, 48, 8], "texture": 0 }
+      }
+    }
+  ],
+  "texture": {
+    "width": 128,
+    "height": 128,
+    "storageKey": null
+  },
+  "uv": {
+    "textureWidth": 128,
+    "textureHeight": 128,
+    "regions": [
+      { "cuboidId": "head_main", "face": "north", "rect": [0, 0, 8, 8] },
+      { "cuboidId": "head_main", "face": "south", "rect": [8, 0, 16, 8] },
+      { "cuboidId": "head_main", "face": "east", "rect": [16, 0, 24, 8] },
+      { "cuboidId": "head_main", "face": "west", "rect": [24, 0, 32, 8] },
+      { "cuboidId": "head_main", "face": "up", "rect": [32, 0, 40, 8] },
+      { "cuboidId": "head_main", "face": "down", "rect": [40, 0, 48, 8] }
+    ]
+  },
+  "animations": [
+    {
+      "id": "walk",
+      "name": "Walk",
+      "duration": 1.2,
+      "loop": true,
+      "category": "locomotion",
+      "style": {
+        "weight": 0.85,
+        "asymmetry": 0.72,
+        "aggression": 0.5,
+        "dragLeg": "leg_right"
+      },
+      "tracks": [
+        {
+          "boneId": "arm_right",
+          "channel": "rotation",
+          "interpolation": "linear",
+          "keyframes": [
+            { "time": 0.0, "value": [-25, 0, 4] },
+            { "time": 0.6, "value": [18, 0, -3] },
+            { "time": 1.2, "value": [-25, 0, 4] }
+          ]
+        }
+      ],
+      "events": [
+        { "time": 0.18, "type": "footstep", "payload": { "foot": "left" } }
+      ]
+    }
+  ],
+  "exportSettings": {
+    "preferredFormatVersion": "v5"
+  },
+  "referenceImages": [
+    {
+      "id": "ref_carcomido_01",
+      "storageKey": "reference-images/carcomido/carcomido_reference.png",
+      "width": 1024,
+      "height": 1024,
+      "contentType": "image/png"
+    }
+  ]
+}

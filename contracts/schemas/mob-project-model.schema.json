@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://galgothstudio.com/schemas/mob-project-model.schema.json",
+  "title": "MobProjectModel",
+  "description": "Contrato compartido del dominio de Galgoth Studio -- fuente de verdad para los tipos TS (frontend/src/domain/) y los DTOs Java (backend). Ticket 004. Ver docs/adr/0001-coordinate-system-contract.md para la semántica de coordenadas/rotación.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mobId",
+    "projectId",
+    "name",
+    "baseType",
+    "units",
+    "bones",
+    "cuboids",
+    "texture",
+    "uv",
+    "animations",
+    "exportSettings",
+    "referenceImages"
+  ],
+  "properties": {
+    "mobId": { "type": "string" },
+    "projectId": { "type": "string" },
+    "name": { "type": "string", "minLength": 1 },
+    "baseType": {
+      "type": "string",
+      "enum": ["humanoid", "arachnid", "quadruped", "flying", "custom"]
+    },
+    "units": {
+      "description": "Fijo -- ver docs/adr/0001-coordinate-system-contract.md. Autodocumenta el archivo JSON, no una opción configurable.",
+      "const": "minecraft_pixels"
+    },
+    "bones": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/bone" }
+    },
+    "cuboids": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/cuboid" }
+    },
+    "texture": { "$ref": "#/$defs/textureDocument" },
+    "uv": { "$ref": "#/$defs/uvLayout" },
+    "animations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/animationSpec" }
+    },
+    "exportSettings": { "$ref": "#/$defs/exportSettings" },
+    "referenceImages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/referenceImage" }
+    }
+  },
+  "$defs": {
+    "vec3": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "faceName": {
+      "type": "string",
+      "enum": ["north", "south", "east", "west", "up", "down"]
+    },
+    "bone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "parentId", "pivot", "rotation"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "minLength": 1 },
+        "parentId": { "type": ["string", "null"] },
+        "pivot": { "$ref": "#/$defs/vec3" },
+        "rotation": { "$ref": "#/$defs/vec3" }
+      }
+    },
+    "face": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uv", "texture"],
+      "properties": {
+        "uv": {
+          "description": "[u0, v0, u1, v1] en píxeles de textura -- ver ADR.",
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "texture": {
+          "description": "Índice del atlas de textura, o null si todavía no se asignó (AutoUv lo llena, ticket 006).",
+          "type": ["integer", "null"]
+        }
+      }
+    },
+    "cuboid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "boneId", "from", "to", "origin", "rotation", "faces"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "minLength": 1 },
+        "boneId": { "type": "string" },
+        "from": { "$ref": "#/$defs/vec3" },
+        "to": { "$ref": "#/$defs/vec3" },
+        "origin": { "$ref": "#/$defs/vec3" },
+        "rotation": { "$ref": "#/$defs/vec3" },
+        "faces": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["north", "south", "east", "west", "up", "down"],
+          "properties": {
+            "north": { "$ref": "#/$defs/face" },
+            "south": { "$ref": "#/$defs/face" },
+            "east": { "$ref": "#/$defs/face" },
+            "west": { "$ref": "#/$defs/face" },
+            "up": { "$ref": "#/$defs/face" },
+            "down": { "$ref": "#/$defs/face" }
+          }
+        }
+      }
+    },
+    "textureDocument": {
+      "description": "Sin lógica/UI funcional este ciclo (Fase 3) -- presente en el esquema por diseño (AC #5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "storageKey"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "storageKey": {
+          "description": "Clave del PNG en MinIO -- null hasta que exista una textura real o el placeholder de export (ticket 011).",
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "uvRegion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cuboidId", "face", "rect"],
+      "properties": {
+        "cuboidId": { "type": "string" },
+        "face": { "$ref": "#/$defs/faceName" },
+        "rect": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 4,
+          "maxItems": 4
+        }
+      }
+    },
+    "uvLayout": {
+      "description": "Bookkeeping del atlas a nivel de mob -- lo puebla AutoUv (ticket 006/007), no este ticket. La UV real por cara ya vive en cuboid.faces[x].uv; esto es el índice de qué región del atlas está ocupada, para que el packing no genere overlaps.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["textureWidth", "textureHeight", "regions"],
+      "properties": {
+        "textureWidth": { "type": "integer", "minimum": 1 },
+        "textureHeight": { "type": "integer", "minimum": 1 },
+        "regions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/uvRegion" }
+        }
+      }
+    },
+    "keyframe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["time", "value"],
+      "properties": {
+        "time": { "type": "number", "minimum": 0 },
+        "value": { "$ref": "#/$defs/vec3" }
+      }
+    },
+    "animationTrack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boneId", "channel", "interpolation", "keyframes"],
+      "properties": {
+        "boneId": { "type": "string" },
+        "channel": {
+          "type": "string",
+          "enum": ["rotation", "position", "scale"]
+        },
+        "interpolation": {
+          "type": "string",
+          "enum": ["linear", "step", "catmullrom"]
+        },
+        "keyframes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/keyframe" }
+        }
+      }
+    },
+    "animationEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["time", "type", "payload"],
+      "properties": {
+        "time": { "type": "number", "minimum": 0 },
+        "type": { "type": "string" },
+        "payload": { "type": "object" }
+      }
+    },
+    "animationSpec": {
+      "description": "Sin generador/timeline funcional este ciclo (Fase 4) -- presente en el esquema por diseño (AC #5). Forma fiel a samples/animation_spec_example.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "duration", "loop", "category", "tracks", "events"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "minLength": 1 },
+        "duration": { "type": "number", "exclusiveMinimum": 0 },
+        "loop": { "type": "boolean" },
+        "category": { "type": "string" },
+        "style": {
+          "type": "object",
+          "properties": {
+            "weight": { "type": "number" },
+            "asymmetry": { "type": "number" },
+            "aggression": { "type": "number" },
+            "dragLeg": { "type": "string" }
+          }
+        },
+        "tracks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/animationTrack" }
+        },
+        "events": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/animationEvent" }
+        }
+      }
+    },
+    "exportSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preferredFormatVersion"],
+      "properties": {
+        "preferredFormatVersion": {
+          "type": "string",
+          "enum": ["v4", "v5"]
+        }
+      }
+    },
+    "referenceImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "storageKey", "width", "height", "contentType"],
+      "properties": {
+        "id": { "type": "string" },
+        "storageKey": { "type": "string" },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "contentType": { "type": "string" }
+      }
+    }
+  }
+}
