@@ -5,23 +5,33 @@
 //
 // buildAndTest (ticket in-process/002-sistema-diseno-base-visual-contract.md):
 // primer código real del frontend (sistema de diseño base) -- lint +
-// tests (Vitest) + build de verdad, no un placeholder vacío.
+// tests (Vitest, con cobertura lcov) + build + análisis de SonarQube.
 //
-// Análisis de SonarQube NO incluido todavía a propósito: SONARQUBE_CLI_TOKEN_VM
-// sigue pendiente de que Marco lo genere (ver pending/001-bootstrap-repo.md) --
-// se agrega en un ticket posterior una vez que el registro del proyecto en
-// sonarqube.64bitstudio.com deje de estar bloqueado.
+// Corrección real (encontrada en el primer build, ver log de Jenkins):
+// el contrato de corePipeline (platform/vars/corePipeline.groovy) exige
+// que buildAndTest llame withSonarQubeEnv('sonarqube-vm') -- la etapa
+// "Quality Gate de SonarQube" de la librería corre siempre que
+// buildAndTest esté definido, sin análisis previo waitForQualityGate
+// falla con IllegalStateException. Esto usa el credential de SonarQube
+// YA configurado en Jenkins (mismo que auth-core-mc/mail-core-mc) --
+// no depende de SONARQUBE_CLI_TOKEN_VM (ese es solo para el CLI
+// personal de Marco en su Mac, un mecanismo distinto y no relacionado).
 @Library('platform') _
 
 corePipeline(
     projectName: 'galgoth-studio',
     deploy: false,
     buildAndTest: {
-        dir('frontend') {
-            sh 'npm ci'
-            sh 'npm run lint'
-            sh 'npm run test'
-            sh 'npm run build'
+        withEnv(["PATH+SONAR=/opt/sonar-scanner/bin"]) {
+            dir('frontend') {
+                sh 'npm ci'
+                sh 'npm run lint'
+                sh 'npm run test:coverage'
+                sh 'npm run build'
+                withSonarQubeEnv('sonarqube-vm') {
+                    sh 'sonar-scanner'
+                }
+            }
         }
     }
 )

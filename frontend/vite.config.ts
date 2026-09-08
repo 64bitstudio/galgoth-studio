@@ -16,7 +16,9 @@ export default defineConfig({
     globals: true,
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'html'],
+      // 'lcov' es el formato que consume sonar.javascript.lcov.reportPaths
+      // (frontend/sonar-project.properties) en el pipeline de Jenkins.
+      reporter: ['text', 'html', 'lcov'],
     },
   },
 })
