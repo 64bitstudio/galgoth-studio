@@ -1,11 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 /**
- * Router mínimo de este ticket (002 — sistema de diseño). Las rutas
- * productivas reales (/projects, /projects/:id, editor de mob, etc. —
- * ver docs/definiciones/galgoth-studio-mvp.md §3) aterrizan en los
- * tickets 021+. Por ahora solo existe la ruta raíz (placeholder) y la
- * vitrina de componentes usada para QA visual contra los mockups.
+ * Ticket 021: primeras rutas productivas reales -- "/" y "/projects"
+ * apuntan al mismo dashboard "Mis proyectos" (simplificación consciente,
+ * ver el comentario de cabecera de `ProjectsDashboard.vue`: el mockup
+ * separa "Inicio" de "Mis proyectos", el AC de este ticket solo describe
+ * el listado completo). "/projects/:id" es un detalle MÍNIMO -- el grid
+ * completo de mobs llega en el ticket 022, que reemplaza ese componente.
  */
 const router = createRouter({
   history: createWebHistory(),
@@ -13,7 +14,17 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: () => import('./HomePlaceholder.vue'),
+      component: () => import('../projects/ProjectsDashboard.vue'),
+    },
+    {
+      path: '/projects',
+      name: 'projects-dashboard',
+      component: () => import('../projects/ProjectsDashboard.vue'),
+    },
+    {
+      path: '/projects/:id',
+      name: 'project-detail',
+      component: () => import('../projects/ProjectDetailPlaceholder.vue'),
     },
     {
       path: '/dev/design-system',

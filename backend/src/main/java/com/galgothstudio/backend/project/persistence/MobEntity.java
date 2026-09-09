@@ -49,6 +49,27 @@ public class MobEntity {
 		// JPA
 	}
 
+	public MobEntity(
+			UUID id,
+			UUID projectId,
+			String name,
+			String baseType,
+			String status,
+			int currentRevisionNumber,
+			String thumbnailKey,
+			Instant createdAt,
+			Instant updatedAt) {
+		this.id = id;
+		this.projectId = projectId;
+		this.name = name;
+		this.baseType = baseType;
+		this.status = status;
+		this.currentRevisionNumber = currentRevisionNumber;
+		this.thumbnailKey = thumbnailKey;
+		this.createdAt = createdAt;
+		this.updatedAt = updatedAt;
+	}
+
 	public UUID getId() {
 		return id;
 	}
