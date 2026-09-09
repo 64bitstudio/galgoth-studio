@@ -1,16 +1,22 @@
 # Desarrollo local — Galgoth Studio Technical Alpha.
 #
-# Solo Postgres por ahora (ticket 003). MinIO se agrega cuando el
-# asset-service lo necesite de verdad (ticket 024, HU-10) en vez de sumar
-# un servicio sin usar de forma especulativa — el documento de definición
-# (docs/definiciones/galgoth-studio-mvp.md, Diseño técnico §1) menciona
-# MinIO en el docker-compose final; este archivo se completa
-# incrementalmente, no de una sola vez.
+# Postgres (ticket 003) + MinIO (ticket 023 -- adelantado desde el 024
+# original por decisión explícita del Product Owner: el pipeline de
+# thumbnails necesita subir el PNG generado como asset YA, y esperar al
+# asset-service genérico de imágenes de referencia habría bloqueado este
+# ticket sin necesidad real -- el documento de definición
+# (docs/definiciones/galgoth-studio-mvp.md, Diseño técnico §1) ya
+# nombraba MinIO en el docker-compose final, esto no es una decisión de
+# arquitectura nueva, solo adelantar CUÁNDO se levanta).
 #
 # backend/src/main/resources/application.properties apunta aquí
 # (spring.docker.compose.file=../docker/docker-compose.yml) -- Spring Boot
 # (spring-boot-docker-compose, developmentOnly) detecta el servicio
 # "postgres" por su imagen y autoconfigura spring.datasource.* solo.
+# MinIO NO tiene un connector de spring-boot-docker-compose (a diferencia
+# de Postgres) -- sus credenciales/endpoint se configuran a mano en
+# application.properties, apuntando al puerto fijo de abajo (9000/9001
+# confirmados libres en esta Mac, a diferencia de 5432/5433).
 
 services:
   postgres:
@@ -34,5 +40,23 @@ services:
       timeout: 3s
       retries: 10
 
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: galgoth_studio
+      MINIO_ROOT_PASSWORD: galgoth_studio_dev_minio
+    ports:
+      - "9000:9000" # API S3-compatible
+      - "9001:9001" # Consola web (http://localhost:9001)
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   pgdata:
+  miniodata:

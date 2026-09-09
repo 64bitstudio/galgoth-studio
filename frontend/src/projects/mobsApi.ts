@@ -3,7 +3,8 @@
  * `projectsApi.ts` (ticket 021): fetch directo, sin proxy de Vite (CORS
  * es la estrategia elegida, ver `docs/definiciones/galgoth-studio-mvp.md` §9).
  */
-import { ApiError } from './projectsApi'
+import { API_BASE_URL } from '../api/apiConfig'
+import { ApiError } from '../api/ApiError'
 
 export type BaseType = 'humanoid' | 'arachnid' | 'quadruped' | 'flying' | 'custom'
 export type MobStatus = 'draft' | 'in_progress' | 'ready'
@@ -16,8 +17,6 @@ export interface MobSummary {
   thumbnailKey: string | null
   updatedAt: string
 }
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {

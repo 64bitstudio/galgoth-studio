@@ -5,6 +5,8 @@
  * CORS habilitado como la estrategia elegida para el origen local de
  * desarrollo (ver `backend/.../config/WebConfig.java`), no un proxy.
  */
+import { API_BASE_URL } from '../api/apiConfig'
+import { ApiError } from '../api/ApiError'
 
 export interface MobThumbnail {
   mobId: string
@@ -34,18 +36,11 @@ interface ApiErrorBody {
   details?: string[] | null
 }
 
-export class ApiError extends Error {
-  readonly status: number
-  readonly code?: string
-
-  constructor(message: string, status: number, code?: string) {
-    super(message)
-    this.status = status
-    this.code = code
-  }
-}
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
+// Re-exportado por compatibilidad -- los consumidores existentes (ticket
+// 021/022) importan ApiError desde aquí; el tipo en sí ahora vive en
+// `src/api/ApiError.ts` (compartido con `mobsApi.ts` y los clientes
+// nuevos del ticket 023, en vez de que cada uno declare el suyo).
+export { ApiError }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {

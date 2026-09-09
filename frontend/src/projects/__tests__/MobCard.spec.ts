@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { API_BASE_URL } from '../../api/apiConfig'
 import MobCard from '../MobCard.vue'
 import type { MobSummary } from '../mobsApi'
 
@@ -21,10 +22,10 @@ describe('MobCard.vue', () => {
     expect(wrapper.find('.mob-card__placeholder').exists()).toBe(true)
   })
 
-  it('con thumbnailKey, renderiza la imagen real', () => {
-    const wrapper = mount(MobCard, { props: { mob: mob({ thumbnailKey: '/thumb.png' }) } })
+  it('con thumbnailKey, renderiza la imagen real con la URL completa del backend (ticket 023: la clave llega como ruta relativa)', () => {
+    const wrapper = mount(MobCard, { props: { mob: mob({ thumbnailKey: '/api/mobs/m1/thumbnail' }) } })
 
-    expect(wrapper.find('img').attributes('src')).toBe('/thumb.png')
+    expect(wrapper.find('img').attributes('src')).toBe(`${API_BASE_URL}/api/mobs/m1/thumbnail`)
   })
 
   it('mapea el status "draft" al pill correspondiente', () => {

@@ -1,0 +1,47 @@
+# 023 — Pipeline de thumbnails client-side
+
+**Milestone:** M3 · **Depende de:** 016, 020, 022 · **HUs:** HU-02, HU-04
+
+## Objetivo
+Nace de `docs/definiciones/galgoth-studio-mvp.md` (Diseño técnico §8). Generar miniaturas automáticamente en cada commit relevante (Guardar/Apply/Usar este modelo — este ticket cubre el disparo desde Guardar vía 020; Apply/Usar este modelo se conectan en 030/031), renderizando offscreen con el viewport ya montado (016) y subiendo el PNG como asset (`mobs.thumbnail_key`). Sin WebGL activo por card en los grids (021/022).
+
+## Criterios de aceptación (TDD)
+- Dado un commit relevante (Guardar, vía 020), cuando se confirma, entonces se dispara un render offscreen y se sube el PNG resultante, actualizando `mobs.thumbnail_key`.
+- Dado un grid de proyectos/mobs, cuando se renderiza, entonces muestra `<img>` desde `thumbnail_key` — cero contextos WebGL en la pantalla de listado.
+- Dado que la generación o subida del thumbnail falla, cuando ocurre, entonces el commit que la disparó **no se revierte**, se conserva el thumbnail anterior (o un placeholder genérico), y queda disponible para reintento posterior.
+- Dado un mob sin thumbnail generado todavía, cuando se muestra en el grid, entonces se ve un placeholder genérico sin bloquear el listado.
+
+## Hecho
+
+Dos decisiones de alcance confirmadas explícitamente por el Product Owner antes de implementar (`AskUserQuestion`, ver también `docs/ARQUITECTURA.md`/`docs/API.md`):
+- **Storage**: se levanta MinIO YA en este ticket (adelantado desde el 024 original) en vez de mockear/posponer — el documento de definición ya lo preveía en el docker-compose final, esto solo adelanta CUÁNDO.
+- **Botón "Guardar"**: el ticket 020 implementó `POST /api/mobs/{mobId}/revisions` solo en el backend; no existía ningún botón real en el frontend para dispararlo. Se agrega el botón "Guardar" real en este mismo ticket (en vez de dejar el AC de thumbnails sin ninguna forma real de probarse end-to-end).
+
+### Backend
+- `asset/` (paquete nuevo): `AssetStorageService` (cliente S3 genérico sobre AWS SDK v2, MinIO vía `endpointOverride`+`forcePathStyle(true)`) + `MinioConfig`/`AssetStorageProperties`. Bucket auto-creado en `@PostConstruct` (`headBucket`→`createBucket` si no existe).
+- `project/thumbnail/ThumbnailService` + `project/api/MobThumbnailController`: `POST`/`GET /api/mobs/{mobId}/thumbnail`. Key interna S3 fija (`mobs/{mobId}/thumbnail.png`, sobreescrita in-place — un upload fallido nunca corrompe el thumbnail anterior, AC #3 gratis por ser un PUT S3 atómico); `mobs.thumbnail_key` guarda el path servible relativo (`/api/mobs/{mobId}/thumbnail`), no la key interna.
+- `docker/docker-compose.yml`: servicio `minio` (puertos 9000/9001, healthcheck).
+- Tests: `MobThumbnailControllerTest` (6, Testcontainers con `MinIOContainer` real — round-trip byte-a-byte, path servible correcto, 404 sin thumbnail (AC #4), 404 mob inexistente, sobreescritura confirmada por re-descarga). **111 tests backend, 0 fallos** (suite completa, verificado en una corrida limpia sin ningún MinIO/Postgres local pre-levantado — solo Testcontainers).
+- **Hallazgo real, corregido en este mismo ticket (no solo documentado)**: `AssetStorageService.@PostConstruct` intenta conectar a MinIO al arrancar, y ese bean lo crea CUALQUIER `@SpringBootTest` (component scan normal), no solo los tests de thumbnails. Un primer intento de wiring vía `@DynamicPropertySource` solo en `MobThumbnailControllerTest` dejaba a TODOS los demás tests de `@SpringBootTest` (`ProjectControllerTest`, `MobControllerTest`, `SchemaConstraintsTest`, etc.) apuntando al MinIO de dev (`localhost:9000`) del `application.properties` -- rompiéndolos en cualquier entorno donde ese MinIO no esté corriendo (confirmado real: 35 tests fallaron al correr la suite completa con Docker Compose de dev apagado). Corregido publicando las credenciales/endpoint del `MinIOContainer` de test como *System properties* en el `static` de `TestcontainersConfiguration` (mismo archivo que ya arranca el contenedor eager) -- así CUALQUIER test que haga `@Import(TestcontainersConfiguration.class)` (el patrón ya estándar en todo el proyecto) queda bien configurado automáticamente, la use o no explícitamente, replicando para MinIO la misma garantía que `@ServiceConnection` ya le da a Postgres. Verificado: 111/111 tests en verde en una corrida limpia.
+- **Hallazgo real (naming de Testcontainers 2.x)**: el artefacto correcto es `org.testcontainers:testcontainers-minio:2.0.5`, no `org.testcontainers:minio` (no resuelve) -- Testcontainers 2.x renombró sus módulos con prefijo `testcontainers-`.
+
+### Frontend
+- `src/api/apiConfig.ts`/`src/api/ApiError.ts` (nuevos): se extraen `API_BASE_URL`/`ApiError`, antes duplicados/co-ubicados en `projectsApi.ts`, dándole contenido real por primera vez al scaffold `src/api/`. `projectsApi.ts`/`mobsApi.ts` reexportan `ApiError` por compatibilidad con sus imports existentes.
+- `editor/draftPersistenceApi.ts` (nuevo): primer cliente frontend de `POST /api/mobs/{mobId}/revisions` (el 020 solo lo implementó en el backend).
+- `editor/thumbnailApi.ts` (nuevo): cliente de `POST /api/mobs/{mobId}/thumbnail`.
+- `viewport/ThreeViewportService.captureThumbnail()`: reutiliza el renderer/escena singleton (008), mueve la cámara al ángulo isométrico fijo (`DEFAULT_CAMERA_POSITION`/`TARGET`, 016), renderiza, captura vía `canvas.toBlob()`, y restaura la cámara del usuario en un `finally` (incluso si la captura falla).
+- `editor/EditorToolbar.vue`: botón "Guardar" real -- `saveRevision()` primero; solo si tiene éxito, `captureThumbnail()`+`uploadThumbnail()` en un try/catch independiente que solo hace `console.warn` si falla (AC #3: el commit nunca se revierte por un fallo de thumbnail).
+- `api/apiConfig.ts#thumbnailUrl()` (nuevo helper) + `ProjectCard.vue`/`MobCard.vue` actualizados para anteponer `API_BASE_URL` al `thumbnailKey` (ya no es `null` para siempre -- ahora es una ruta relativa servible real).
+- `viewport/ViewportHarness.vue`: busca-o-crea un proyecto/mob real ("Dev Harness"/"carcomido-harness", vía las APIs de 021/022) al montar y sobreescribe `mobId`/`projectId` del fixture estático de Carcomido con los ids reales -- necesario porque Guardar/thumbnail requieren un mob que exista de verdad en el backend.
+- Tests nuevos/extendidos: `thumbnailApi.spec.ts` (2), `draftPersistenceApi.spec.ts` (4), `apiConfig.spec.ts` (2), `ThreeViewportService.spec.ts` (+2, con polyfill de `HTMLCanvasElement.toBlob` -- jsdom no lo implementa), `EditorToolbar.spec.ts` (+5, incluida la verificación de que un fallo de thumbnail NUNCA revierte el mensaje de Guardar exitoso), `ViewportHarness.spec.ts` (+3, cubriendo reutilización, creación desde cero, y el caso de backend no disponible), `ProjectCard.spec.ts`/`MobCard.spec.ts` (actualizados para la URL con prefijo). **216 tests frontend, 0 fallos** (suite completa). `vue-tsc -b` y `eslint --max-warnings 0` limpios. `npm run build` exitoso.
+
+### Verificación en vivo (Claude in Chrome, backend + Postgres + MinIO reales vía `docker compose` + `./gradlew bootRun`)
+Click en "Guardar" desde `/dev/viewport-harness` (fixture real Carcomido, 24 cuboids/6 bones) → revisión real creada (`current_revision_number=1` confirmado en Postgres) → thumbnail real generado y subido (PNG 1459×1221 descargado y confirmado visualmente como el ángulo isométrico correcto del mob, no un frame vacío) → `mobs.thumbnail_key` con el path servible correcto → visible de inmediato en `MobCard` (detalle de proyecto) y `ProjectCard` (dashboard). Un segundo Guardar sin cambios de geometría muestra correctamente "Sin cambios..." y aun así reintenta subir el thumbnail (sobreescritura in-place confirmada por el cambio de `updated_at`). Sin errores de consola en ningún paso.
+
+**Nota honesta sobre una anomalía observada (no un defecto de producto)**: durante la verificación en vivo, la herramienta de captura de red del navegador (Claude in Chrome) reportó un `503` en 2 de 4 intentos de `POST /thumbnail` disparados por clics reales. Se investigó a fondo: no hay ninguna traza en los logs del backend para esos intentos (a diferencia de un 400 real, que sí quedó logueado), y el estado persistido en Postgres/MinIO después de CADA click (incluidos los que mostraron "503") confirma que la subida SÍ se completó correctamente cada vez (`updated_at` avanza, el PNG descargado es válido y correcto). Reproducciones manuales idénticas (fetch directo desde la consola de la página, curl directo al backend) nunca fallaron. Se concluye que es un artefacto de la instrumentación de red de la extensión, no un fallo real de la aplicación -- documentado aquí por transparencia, no se investiga más a fondo dado que el comportamiento funcional observable (persistencia + UI) es consistentemente correcto.
+
+### AC verificados
+- ✅ Guardar dispara render offscreen + sube el PNG + actualiza `thumbnail_key` (verificado end-to-end en vivo, no solo en tests).
+- ✅ Grids muestran `<img>` desde `thumbnail_key` -- cero WebGL en listados (`ProjectCard`/`MobCard` nunca montan un canvas).
+- ✅ Un fallo de thumbnail no revierte el commit, conserva el thumbnail anterior (PUT atómico) y queda disponible para reintento -- el reintento es manual (el próximo Guardar del usuario vuelve a intentar la subida); no se agregó un botón de "reintentar thumbnail" dedicado por no estar en el AC ni pedido explícitamente.
+- ✅ Mob sin thumbnail muestra placeholder genérico sin bloquear el listado (comportamiento ya existente desde 021/022, preservado).

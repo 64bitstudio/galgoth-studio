@@ -1,5 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Cuboid, MobProjectModel } from '../../domain/MobProjectModel'
+
+// jsdom no implementa `HTMLCanvasElement.toBlob()` (requiere el paquete
+// nativo `canvas`, no instalado aquí) -- se agrega un polyfill mínimo
+// SOLO para estos tests, igual que el patrón ya usado para
+// `HTMLDialogElement.showModal()` en los specs de modales.
+beforeAll(() => {
+  HTMLCanvasElement.prototype.toBlob = function fakeToBlob(callback: BlobCallback): void {
+    callback(new Blob(['fake-png-bytes'], { type: 'image/png' }))
+  }
+})
 
 // jsdom no implementa un contexto WebGL real (`HTMLCanvasElement.getContext('webgl')`
 // devuelve null) -- `new THREE.WebGLRenderer()` lanza fuera de un navegador
@@ -245,5 +255,49 @@ describe('ThreeViewportService', () => {
 
     expect(service.renderer.setSize).toHaveBeenCalledWith(800, 400, false)
     expect(service.camera.aspect).toBe(2)
+  })
+
+  it('ticket 023: captureThumbnail devuelve un PNG y restaura la cámara del usuario al terminar', async () => {
+    service.camera.position.set(100, 5, -30)
+    service.controls.target.set(9, 9, 9)
+    service.camera.lookAt(service.controls.target)
+
+    const renderPositions: { x: number; y: number; z: number }[] = []
+    vi.mocked(service.renderer.render).mockImplementation(() => {
+      const { x, y, z } = service.camera.position
+      renderPositions.push({ x, y, z })
+    })
+
+    const blob = await service.captureThumbnail()
+
+    expect(blob).toBeInstanceOf(Blob)
+    expect(blob.type).toBe('image/png')
+    // El primer render (la captura en sí) ocurre con la cámara en el
+    // ángulo fijo de referencia, NUNCA con la del usuario.
+    expect(renderPositions[0]!.x).toBeCloseTo(40, 9)
+    expect(renderPositions[0]!.y).toBeCloseTo(40, 9)
+    expect(renderPositions[0]!.z).toBeCloseTo(40, 9)
+    // La vista del usuario no debe quedar "saltada" tras capturar.
+    expect(service.camera.position.x).toBeCloseTo(100, 9)
+    expect(service.camera.position.y).toBeCloseTo(5, 9)
+    expect(service.camera.position.z).toBeCloseTo(-30, 9)
+    expect(service.controls.target.x).toBeCloseTo(9, 9)
+    expect(service.controls.target.y).toBeCloseTo(9, 9)
+    expect(service.controls.target.z).toBeCloseTo(9, 9)
+  })
+
+  it('ticket 023: captureThumbnail restaura la cámara incluso si toBlob falla', async () => {
+    service.camera.position.set(100, 5, -30)
+    service.controls.target.set(9, 9, 9)
+    const originalToBlob = HTMLCanvasElement.prototype.toBlob
+    HTMLCanvasElement.prototype.toBlob = function failingToBlob(callback: BlobCallback): void {
+      callback(null)
+    }
+
+    await expect(service.captureThumbnail()).rejects.toThrow()
+
+    expect(service.camera.position.x).toBeCloseTo(100, 9)
+    expect(service.controls.target.x).toBeCloseTo(9, 9)
+    HTMLCanvasElement.prototype.toBlob = originalToBlob
   })
 })

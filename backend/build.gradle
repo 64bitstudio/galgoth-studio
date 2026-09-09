@@ -32,6 +32,12 @@ dependencies {
 	implementation 'org.flywaydb:flyway-database-postgresql'
 	developmentOnly 'org.springframework.boot:spring-boot-docker-compose'
 	runtimeOnly 'org.postgresql:postgresql'
+	// Ticket 023: MinIO (S3-compatible) para el pipeline de thumbnails --
+	// el AWS SDK v2 S3 client funciona contra cualquier endpoint
+	// S3-compatible (basta con apuntar `endpointOverride` a MinIO), sin
+	// depender de un cliente propietario de MinIO.
+	implementation platform('software.amazon.awssdk:bom:2.28.11')
+	implementation 'software.amazon.awssdk:s3'
 	// Ticket 004: valida MobProjectModel contra contracts/schemas/*.json
 	// (draft 2020-12) -- se necesita en producción, no solo en test, ya
 	// que la validación de invariantes vive en backend (Diseño técnico §5
@@ -56,6 +62,15 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
 	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 	testImplementation 'org.testcontainers:testcontainers-postgresql'
+	// Ticket 023: MinIO real vía Testcontainers (aislado por corrida, igual
+	// criterio que Postgres) -- nunca contra el MinIO local persistente de
+	// docker/docker-compose.yml, que es solo para dev manual. Versión
+	// fijada a mano -- el BOM de dependency-management de Spring Boot no
+	// gestiona este módulo puntual de Testcontainers (a diferencia de
+	// testcontainers-postgresql), así que sin versión explícita gradle no
+	// puede resolverlo -- se usa la misma versión ya resuelta para los
+	// demás módulos de Testcontainers (2.0.5) para mantener todo alineado.
+	testImplementation 'org.testcontainers:testcontainers-minio:2.0.5'
 	// Ticket 004: compara JSON semánticamente (0 == 0.0, sin importar el
 	// tipo numérico Java exacto que produjo cada lado) para el round-trip
 	// DTO Java -> JSON contra el fixture -- JsonNode.equals() por sí solo

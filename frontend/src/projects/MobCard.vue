@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
  * Tarjeta de mob del grid de detalle de proyecto (HU-04, mockup 12).
- * Miniatura (placeholder genérico mientras no exista pipeline de
- * thumbnails, mismo criterio que `ProjectCard.vue`, ticket 021) + nombre
- * + `GStatusPill` de estado.
+ * Miniatura (placeholder genérico si el mob todavía no tiene thumbnail
+ * -- ver pipeline del ticket 023, mismo criterio que `ProjectCard.vue`)
+ * + nombre + `GStatusPill` de estado.
  */
+import { thumbnailUrl } from '../api/apiConfig'
 import GStatusPill from '../design-system/components/GStatusPill.vue'
 import type { MobStatus, MobSummary } from './mobsApi'
 
@@ -19,7 +20,7 @@ function toPillStatus(status: MobStatus): 'draft' | 'in-progress' | 'ready' {
 <template>
   <div class="mob-card">
     <div class="mob-card__thumbnail">
-      <img v-if="mob.thumbnailKey" :src="mob.thumbnailKey" alt="" />
+      <img v-if="mob.thumbnailKey" :src="thumbnailUrl(mob.thumbnailKey)!" alt="" />
       <span v-else class="mob-card__placeholder" aria-hidden="true" />
     </div>
     <div class="mob-card__footer">

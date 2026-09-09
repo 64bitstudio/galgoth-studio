@@ -65,6 +65,25 @@ POST   /api/mobs/{mobId}/revisions    -- Guardar (valida y crea una revisión in
 
 **Todos los errores** siguen la misma forma: `{ error, message, details }` (`details` es `null` salvo en `INVALID_DRAFT`).
 
+### Pipeline de thumbnails (ticket `023`)
+
+Implementados en `backend/.../project/api/MobThumbnailController.java`. Autoridad de negocio: `ThumbnailService` (paquete `project.thumbnail`), sobre `AssetStorageService` (paquete `asset`, cliente S3 genérico contra MinIO — ver `docs/ARQUITECTURA.md`).
+
+```text
+POST   /api/mobs/{mobId}/thumbnail    -- subir el PNG generado client-side
+GET    /api/mobs/{mobId}/thumbnail    -- servir el PNG actual del mob
+```
+
+**`POST /api/mobs/{mobId}/thumbnail`** — body: bytes crudos del PNG, `Content-Type: image/png` (NO JSON, NO multipart).
+- `204 No Content` — sube el PNG a MinIO (key interna fija `mobs/{mobId}/thumbnail.png`, siempre sobreescrita in-place — un upload fallido nunca corrompe el thumbnail anterior, AC de "conserva el thumbnail anterior" gratis por ser un PUT S3 atómico) y actualiza `mobs.thumbnail_key` al **path servible relativo** `/api/mobs/{mobId}/thumbnail` (no la key interna de MinIO — el frontend antepone su propio `API_BASE_URL` para armar el `<img src>`, sin conocer el detalle de almacenamiento).
+- `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe.
+
+**`GET /api/mobs/{mobId}/thumbnail`**
+- `200 OK` — bytes del PNG, `Content-Type: image/png`.
+- `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe; `404 Not Found` sin cuerpo si el mob existe pero todavía no tiene thumbnail subido (AC #4).
+
+El thumbnail es un asset **derivado y best-effort**: el frontend lo genera/sube DESPUÉS de un Guardar exitoso (`EditorToolbar.vue`, botón "Guardar" real añadido en este mismo ticket — el ticket 020 solo implementó el backend de "Guardar"), en un paso separado cuyo fallo nunca revierte ni bloquea la revisión ya guardada (solo `console.warn` en el frontend).
+
 ## Rutas previstas (según `docs/definiciones/galgoth-studio-mvp.md`, sección 19 del master prompt)
 
 ```text

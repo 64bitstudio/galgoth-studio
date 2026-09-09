@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { API_BASE_URL } from '../../api/apiConfig'
 import ProjectCard from '../ProjectCard.vue'
 import type { ProjectSummary } from '../projectsApi'
 
@@ -52,11 +53,11 @@ describe('ProjectCard.vue', () => {
     expect(wrapper.find('.project-card__placeholder').exists()).toBe(true)
   })
 
-  it('una miniatura CON thumbnailKey renderiza la imagen real', () => {
-    const p = project({ mobCount: 1, mobThumbnails: [{ mobId: 'm1', thumbnailKey: '/thumb.png' }] })
+  it('una miniatura CON thumbnailKey renderiza la imagen real con la URL completa del backend (ticket 023: la clave llega como ruta relativa)', () => {
+    const p = project({ mobCount: 1, mobThumbnails: [{ mobId: 'm1', thumbnailKey: '/api/mobs/m1/thumbnail' }] })
     const wrapper = mount(ProjectCard, { props: { project: p } })
 
-    expect(wrapper.find('img').attributes('src')).toBe('/thumb.png')
+    expect(wrapper.find('img').attributes('src')).toBe(`${API_BASE_URL}/api/mobs/m1/thumbnail`)
   })
 
   it('clic en la tarjeta emite open con el id del proyecto', async () => {
