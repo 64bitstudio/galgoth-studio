@@ -102,6 +102,57 @@ class ClaudeMessagesClientTest {
 	}
 
 	@Test
+	void una_respuesta_truncada_por_max_tokens_sin_ningun_bloque_de_texto_da_un_error_especifico_hallazgo_real() {
+		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];
+		ClaudeMessagesClient client = newClientWithMockServer(serverBox, "test-api-key");
+		serverBox[0]
+				.expect(requestTo(BASE_URL + "/v1/messages"))
+				.andRespond(withSuccess(
+						"""
+						{"content":[{"type":"thinking","thinking":"..."}],"stop_reason":"max_tokens"}
+						""",
+						MediaType.APPLICATION_JSON));
+
+		assertThatThrownBy(() -> client.callWithText("s", "u"))
+				.isInstanceOf(AiProviderException.class)
+				.hasMessageContaining("max_tokens");
+	}
+
+	@Test
+	void una_respuesta_envuelta_en_un_bloque_de_codigo_markdown_se_despoja_del_fence_AC_hallazgo_real() {
+		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];
+		ClaudeMessagesClient client = newClientWithMockServer(serverBox, "test-api-key");
+		serverBox[0]
+				.expect(requestTo(BASE_URL + "/v1/messages"))
+				.andRespond(withSuccess(
+						"""
+						{"content":[{"type":"text","text":"```json\\n{\\"summary\\":\\"ok\\"}\\n```"}]}
+						""",
+						MediaType.APPLICATION_JSON));
+
+		String rawContent = client.callWithText("s", "u");
+
+		assertThat(rawContent).isEqualTo("{\"summary\":\"ok\"}");
+	}
+
+	@Test
+	void un_fence_generico_sin_el_lenguaje_json_tambien_se_despoja() {
+		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];
+		ClaudeMessagesClient client = newClientWithMockServer(serverBox, "test-api-key");
+		serverBox[0]
+				.expect(requestTo(BASE_URL + "/v1/messages"))
+				.andRespond(withSuccess(
+						"""
+						{"content":[{"type":"text","text":"```\\n[1,2,3]\\n```"}]}
+						""",
+						MediaType.APPLICATION_JSON));
+
+		String rawContent = client.callWithText("s", "u");
+
+		assertThat(rawContent).isEqualTo("[1,2,3]");
+	}
+
+	@Test
 	void una_respuesta_de_error_HTTP_se_propaga_como_AiProviderException() {
 		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];
 		ClaudeMessagesClient client = newClientWithMockServer(serverBox, "test-api-key");

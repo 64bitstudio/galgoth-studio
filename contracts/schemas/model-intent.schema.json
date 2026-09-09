@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://galgothstudio.com/schemas/model-intent.schema.json",
+  "title": "ModelIntent",
+  "description": "Salida cruda del VisionModelProvider (ticket 025) tras analizar una imagen de referencia -- master prompt §9.1. Ticket 028: base estructurada antes de planear geometría (nunca se persiste como MobProjectModel; solo alimenta el Geometry planner). El ejemplo del master prompt es literal, no inventado -- los 4 campos de `proportions` son exactamente los que el ejemplo usa.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["silhouette", "proportions", "asymmetry", "features", "materials"],
+  "properties": {
+    "silhouette": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Descripción corta y libre de la silueta general (ej. \"hunched humanoid\")."
+    },
+    "proportions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["headScale", "armLength", "handScale", "shoulderWidth"],
+      "properties": {
+        "headScale": { "type": "number", "exclusiveMinimum": 0 },
+        "armLength": { "type": "number", "exclusiveMinimum": 0 },
+        "handScale": { "type": "number", "exclusiveMinimum": 0 },
+        "shoulderWidth": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "asymmetry": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "0 = perfectamente simétrico, 1 = máxima asimetría deliberada."
+    },
+    "features": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1
+    },
+    "materials": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1
+    }
+  }
+}

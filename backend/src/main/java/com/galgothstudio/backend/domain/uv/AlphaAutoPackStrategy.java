@@ -8,6 +8,7 @@ import com.galgothstudio.backend.domain.model.UvRegion;
 import com.galgothstudio.backend.domain.model.Vec4;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.stereotype.Component;
 
 /**
  * Única implementación de {@link UvLayoutStrategy} este ciclo --
@@ -38,7 +39,13 @@ import java.util.List;
  * del ticket 006). Si el conjunto no cabe en {@code textureWidth}x{@code textureHeight},
  * lanza {@link UvAtlasOverflowException} con las dimensiones mínimas que
  * sí lo harían caber -- el atlas nunca crece en silencio.
+ *
+ * <p>{@code @Component} agregado en el ticket 028 -- primer consumidor
+ * Spring-managed real ({@code GeometryPlannerService}, que inyecta
+ * {@link UvLayoutStrategy} por interfaz); hasta entonces solo se
+ * instanciaba a mano en tests/exportadores.
  */
+@Component
 public final class AlphaAutoPackStrategy implements UvLayoutStrategy {
 
 	/** Único atlas de textura que existe este ciclo -- ver Face#texture(). */
