@@ -82,7 +82,10 @@ function handleSidebarSelect(key: GSidebarKey): void {
             <h1 class="project-detail__title">{{ project.name }}</h1>
             <p class="project-detail__meta">{{ project.mobCount }} criaturas</p>
           </div>
-          <button type="button" class="project-detail__add-mob" @click="showAddMobModal = true">+ Agregar mob</button>
+          <div class="project-detail__header-actions">
+            <router-link :to="`/projects/${projectId}/mobs/new-ai`" class="project-detail__ai-mob">Crear con IA</router-link>
+            <button type="button" class="project-detail__add-mob" @click="showAddMobModal = true">+ Agregar mob</button>
+          </div>
         </div>
 
         <p v-if="actionError" class="project-detail__error">{{ actionError }}</p>
@@ -135,6 +138,11 @@ function handleSidebarSelect(key: GSidebarKey): void {
   color: var(--muted);
 }
 
+.project-detail__header-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
 .project-detail__add-mob {
   min-height: var(--hit-target-min);
   padding: 0 var(--space-4);
@@ -145,6 +153,25 @@ function handleSidebarSelect(key: GSidebarKey): void {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.project-detail__ai-mob {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit-target-min);
+  padding: 0 var(--space-4);
+  background: var(--surface-2);
+  color: var(--text);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.project-detail__ai-mob:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .project-detail__search {

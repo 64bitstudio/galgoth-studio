@@ -34,6 +34,7 @@ async function routerAt(id: string): Promise<Router> {
     routes: [
       { path: '/', component: { template: '<div />' } },
       { path: '/projects/:id', component: ProjectDetail },
+      { path: '/projects/:projectId/mobs/new-ai', component: { template: '<div />' } },
     ],
   })
   await router.push(`/projects/${id}`)
@@ -169,6 +170,16 @@ describe('ProjectDetail.vue', () => {
       expect(wrapper.text()).toContain('Nuevo')
       expect(wrapper.text()).toContain('Draft')
     })
+  })
+
+  it('el enlace "Crear con IA" apunta al wizard del ticket 027, scoped al proyecto actual', async () => {
+    vi.stubGlobal('fetch', stubProjectAndMobs({ id: 'p1', name: 'Galgoth', mobCount: 0, createdAt: '', updatedAt: '' }, []))
+    const wrapper = mount(ProjectDetail, { global: { plugins: [await routerAt('p1')] } })
+    await flushPromises()
+
+    const link = wrapper.find('.project-detail__ai-mob')
+    expect(link.text()).toBe('Crear con IA')
+    expect(link.attributes('href')).toBe('/projects/p1/mobs/new-ai')
   })
 
   it('"Mis proyectos" en el sidebar navega de vuelta al dashboard', async () => {
