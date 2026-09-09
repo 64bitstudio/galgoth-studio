@@ -50,11 +50,18 @@ wait_for() {
 	return 1
 }
 
+# MINIO_HOST_PORT=0 -- Docker asigna un puerto de host libre (el fijo
+# 9000/9001 de docker-compose.yml puede estar ya ocupado en un agente de
+# CI compartido, hallazgo real de este ticket). Se descubre el puerto
+# real ya asignado ANTES de levantar el backend, y se lo pasa por env var
+# (GALGOTH_STORAGE_MINIO_ENDPOINT, ver application.properties).
 echo "--- levantando Postgres + MinIO ---"
-(cd "$ROOT_DIR" && docker compose -f docker/docker-compose.yml up -d)
+(cd "$ROOT_DIR" && MINIO_HOST_PORT=0 MINIO_CONSOLE_HOST_PORT=0 docker compose -f docker/docker-compose.yml up -d)
+MINIO_PORT="$(cd "$ROOT_DIR" && docker compose -f docker/docker-compose.yml port minio 9000 | cut -d: -f2)"
+echo "MinIO real en el puerto $MINIO_PORT"
 
 echo "--- levantando backend (AI_VISION_PROVIDER=mock, AI_REASONING_PROVIDER=mock) ---"
-(cd "$ROOT_DIR/backend" && AI_VISION_PROVIDER=mock AI_REASONING_PROVIDER=mock ./gradlew bootRun --console=plain >"$BACKEND_LOG" 2>&1) &
+(cd "$ROOT_DIR/backend" && AI_VISION_PROVIDER=mock AI_REASONING_PROVIDER=mock GALGOTH_STORAGE_MINIO_ENDPOINT="http://localhost:$MINIO_PORT" ./gradlew bootRun --console=plain >"$BACKEND_LOG" 2>&1) &
 BACKEND_PID=$!
 wait_for "http://localhost:8080/actuator/health" "backend"
 

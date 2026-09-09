@@ -47,8 +47,16 @@ services:
       MINIO_ROOT_USER: galgoth_studio
       MINIO_ROOT_PASSWORD: galgoth_studio_dev_minio
     ports:
-      - "9000:9000" # API S3-compatible
-      - "9001:9001" # Consola web (http://localhost:9001)
+      # Puerto de host fijo por default (9000/9001, confirmados libres en
+      # esta Mac) -- application.properties apunta ahí sin nada más que
+      # hacer para el flujo local de siempre. Overrideable con
+      # MINIO_HOST_PORT/MINIO_CONSOLE_HOST_PORT (mismo patrón relaxed-binding
+      # del resto del proyecto) -- hallazgo real, ticket 033: en un agente
+      # de CI compartido 9000 puede estar ya ocupado por otro job; ahí
+      # `scripts/e2e.sh` pasa `MINIO_HOST_PORT=0` (Docker asigna uno libre)
+      # y descubre el puerto real asignado antes de levantar el backend.
+      - "${MINIO_HOST_PORT:-9000}:9000" # API S3-compatible
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001" # Consola web
     volumes:
       - miniodata:/data
     healthcheck:
