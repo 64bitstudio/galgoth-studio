@@ -71,7 +71,7 @@ export const useDraftModelStore = defineStore('draftModel', () => {
     if (!model.value || undoStack.value.length === 0) {
       return
     }
-    const previous = undoStack.value[undoStack.value.length - 1]!
+    const previous = undoStack.value.at(-1)!
     undoStack.value = undoStack.value.slice(0, -1)
     redoStack.value = [...redoStack.value, model.value]
     model.value = previous
@@ -81,7 +81,7 @@ export const useDraftModelStore = defineStore('draftModel', () => {
     if (!model.value || redoStack.value.length === 0) {
       return
     }
-    const next = redoStack.value[redoStack.value.length - 1]!
+    const next = redoStack.value.at(-1)!
     redoStack.value = redoStack.value.slice(0, -1)
     undoStack.value = [...undoStack.value, model.value]
     model.value = next
