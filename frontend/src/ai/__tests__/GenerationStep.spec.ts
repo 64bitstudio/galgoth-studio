@@ -85,7 +85,7 @@ describe('GenerationStep.vue', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Creando hueso: body')
-    expect(wrapper.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('45')
+    expect(wrapper.find('progress.generation-step__progress').attributes('value')).toBe('45')
     expect(wrapper.find('.generation-step__stage--current').text()).toContain('Creando rig')
   })
 

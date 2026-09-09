@@ -65,6 +65,14 @@ function stageStatus(index: number): 'done' | 'current' | 'pending' {
   return index === currentStageIndex.value ? 'current' : 'pending'
 }
 
+/** `null` mientras la etapa no es una de las 3 terminales -- evita un ternario anidado (Sonar S3358) al traducir `stage` a `Outcome`. */
+function outcomeForStage(stage: string): Outcome | null {
+  if (stage === 'completado') return 'completed'
+  if (stage === 'fallido') return 'failed'
+  if (stage === 'cancelado') return 'cancelled'
+  return null
+}
+
 function handleProgressEvent(raw: MessageEvent): void {
   const event = JSON.parse(raw.data) as GenerationEvent
   if (seenSeqs.has(event.seq)) {
@@ -83,9 +91,10 @@ function handleProgressEvent(raw: MessageEvent): void {
     previewModel.value = event.payload.model
   }
 
-  if (event.stage === 'completado' || event.stage === 'fallido' || event.stage === 'cancelado') {
-    outcome.value = event.stage === 'completado' ? 'completed' : event.stage === 'fallido' ? 'failed' : 'cancelled'
-    if (outcome.value === 'failed') {
+  const terminalOutcome = outcomeForStage(event.stage)
+  if (terminalOutcome) {
+    outcome.value = terminalOutcome
+    if (terminalOutcome === 'failed') {
       failureMessage.value = event.message
     }
     closeStream()
@@ -164,9 +173,7 @@ onBeforeUnmount(closeStream)
       </ul>
 
       <p v-if="currentMessage" class="generation-step__message">{{ currentMessage }}</p>
-      <div class="generation-step__progress" role="progressbar" :aria-valuenow="progressPct" aria-valuemin="0" aria-valuemax="100">
-        <div class="generation-step__progress-fill" :style="{ width: `${progressPct}%` }" />
-      </div>
+      <progress class="generation-step__progress" :value="progressPct" max="100">{{ progressPct }}%</progress>
 
       <GenerationPreviewViewport :model="previewModel" />
 
@@ -250,16 +257,30 @@ onBeforeUnmount(closeStream)
   font-size: var(--text-sm);
 }
 
+/* `<progress>` nativo (Sonar S6819 -- accesible en todos los dispositivos sin reimplementar la semántica a mano con role="progressbar"). Estilos por pseudo-elemento porque el navegador no expone su barra de relleno como CSS normal. */
 .generation-step__progress {
+  appearance: none;
+  width: 100%;
   height: 8px;
+  border: none;
   border-radius: var(--radius-md);
-  background: var(--surface-2);
   overflow: hidden;
 }
 
-.generation-step__progress-fill {
-  height: 100%;
+.generation-step__progress::-webkit-progress-bar {
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+}
+
+.generation-step__progress::-webkit-progress-value {
   background: var(--accent);
+  border-radius: var(--radius-md);
+  transition: width 0.2s ease;
+}
+
+.generation-step__progress::-moz-progress-bar {
+  background: var(--accent);
+  border-radius: var(--radius-md);
   transition: width 0.2s ease;
 }
 

@@ -8,6 +8,12 @@
  * usar el store real del editor sería semánticamente incorrecto -- lo
  * mezclaría con el mob que el usuario sí está editando/guardando.
  * Tampoco expone selección/gizmos de transformación: es de solo lectura.
+ *
+ * `aria-hidden` (no `role="img"`, Sonar S6819 -- ningún rol ARIA
+ * reemplaza bien un canvas WebGL en vivo, que no es una imagen
+ * estática): la misma información (etapa/mensaje/resultado) ya está
+ * disponible como texto accesible en `GenerationStep.vue`, así que este
+ * canvas es genuinamente decorativo/complementario, no la única fuente.
  */
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { MobProjectModel } from '../domain/MobProjectModel'
@@ -43,7 +49,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="container" class="generation-preview-viewport" role="img" aria-label="Vista previa 3D del modelo generándose" />
+  <div ref="container" class="generation-preview-viewport" aria-hidden="true" />
 </template>
 
 <style scoped>
