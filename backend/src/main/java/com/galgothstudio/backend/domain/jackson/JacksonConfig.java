@@ -1,6 +1,7 @@
 package com.galgothstudio.backend.domain.jackson;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,11 +28,18 @@ public class JacksonConfig {
 	@Bean
 	@Primary
 	public ObjectMapper objectMapper() {
+		// WRITE_DATES_AS_TIMESTAMPS es el default de Jackson "puro" (aquí
+		// construido a mano, sin pasar por JacksonAutoConfiguration de
+		// Spring Boot, que normalmente lo desactiva) -- sin esto,
+		// Instant serializa como epoch-seconds fraccionario
+		// (ej. 1788924939.428339), no ISO-8601, hallazgo real visto en
+		// vivo al verificar el ticket 021 contra el navegador real.
 		return new ObjectMapper()
 				.findAndRegisterModules()
 				.registerModule(new JavaTimeModule())
 				.registerModule(new Vec3JacksonModule())
-				.registerModule(new Vec4JacksonModule());
+				.registerModule(new Vec4JacksonModule())
+				.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 	}
 
 	/**

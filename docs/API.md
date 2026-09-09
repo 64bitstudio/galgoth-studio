@@ -4,6 +4,27 @@ Este archivo se completa conforme cada ticket de `pending/`/`in-process/` aterri
 
 ## Endpoints implementados
 
+### CRUD de proyectos (ticket `021`, HU-01/HU-02)
+
+Implementados en `backend/.../project/api/ProjectController.java` + `ProjectService`.
+
+```text
+POST   /api/projects              -- crear (HU-01)
+GET    /api/projects              -- dashboard "Mis proyectos" (HU-02)
+GET    /api/projects/{id}         -- detalle mínimo (HU-01 AC #1)
+PATCH  /api/projects/{id}         -- Rename
+DELETE /api/projects/{id}         -- soft-delete (projects.deleted_at)
+POST   /api/projects/{id}/duplicate -- Duplicate (copia PROFUNDA: proyecto + todos sus mobs + su historial completo de mob_revisions + su mob_drafts actual, si tiene)
+```
+
+- **`POST /api/projects`** — body `{name}`. `201 Created` con el `ProjectDetail` si el nombre es válido; `400 Bad Request` (`error: "INVALID_PROJECT_NAME"`) si está vacío/en blanco (AC #2) -- ningún proyecto se crea.
+- **`GET /api/projects`** — devuelve `ProjectSummary[]` (id, name, mobCount, mobThumbnails ≤3, createdAt, updatedAt), sin los soft-deleted, ordenados por `updatedAt` descendente. `mobThumbnails[].thumbnailKey` es `null` mientras no exista pipeline de thumbnails (ticket futuro) -- el frontend renderiza un placeholder genérico, nunca bloquea el listado (AC #5). El frontend calcula el indicador "+N" como `mobCount - 3` cuando `mobCount > 3` (AC #3).
+- **`GET /api/projects/{id}`** — `ProjectDetail` (sin el grid completo de mobs, eso es HU-04/ticket 022); `404 Not Found` (`PROJECT_NOT_FOUND`) si no existe o está soft-deleted.
+- **`PATCH /api/projects/{id}`** — body `{name}`. Mismo criterio de validación que crear.
+- **`DELETE /api/projects/{id}`** — `204 No Content`. Soft-delete -- el proyecto deja de aparecer en cualquier consulta, tratado como "no existe" en adelante.
+- **`POST /api/projects/{id}/duplicate`** — `201 Created` con el `ProjectDetail` de la copia (`name` = original + `" (copia)"`). Copia profunda real: cada mob del original se recrea con nuevo id, y se copian TODAS sus `mob_revisions` (mismo `revision_number`, mismo `model_jsonb`) más su `mob_drafts` actual si existe -- decisión explícita del Product Owner (ticket 021).
+- **"Export"** del menú de acciones del dashboard (mockup 01) está deshabilitado en el frontend -- no existe ningún endpoint de exportación de proyecto expuesto todavía (decisión del Product Owner, ticket 021; el export de un MOB individual vía `BBModelExporterV5`/V4 es un servicio de dominio interno sin controlador REST, épica futura).
+
 ### Draft persistence + autosave + Guardar (ticket `020`)
 
 Implementados en `backend/.../project/api/MobDraftController.java`. Autoridad de negocio: `backend/.../project/draft/DraftPersistenceService.java` (ver `docs/ARQUITECTURA.md` para el diseño completo del ciclo Command → Draft → Revision).
