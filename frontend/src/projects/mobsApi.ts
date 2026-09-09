@@ -41,3 +41,8 @@ export function createMob(projectId: string, name: string, baseType: BaseType): 
     body: JSON.stringify({ name, baseType }),
   })
 }
+
+/** Ticket 034 -- resumen de un mob por su id solo, sin `projectId` en el path (ruta ya prevista desde el bootstrap del proyecto). */
+export function getMob(mobId: string): Promise<MobSummary> {
+  return request<MobSummary>(`/api/mobs/${mobId}`)
+}

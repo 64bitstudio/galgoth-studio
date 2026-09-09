@@ -116,6 +116,19 @@
             },
             "description": "MobSummary[] -- el filtro por nombre del buscador es client-side, sin parámetro de búsqueda aquí."
           }
+        },
+        {
+          "name": "Obtener un mob (ticket 034)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mobs", "{{mobId}}"]
+            },
+            "description": "200 con el MobSummary -- sin projectId en el path (el mob ya se identifica solo por su id). 404 (MOB_NOT_FOUND) si el mob no existe. Usado por MobEditor.vue para saber name/baseType reales cuando el mob todavía no tiene ningún draft."
+          }
         }
       ]
     },

@@ -34,6 +34,13 @@ const router = createRouter({
       component: () => import('../ai/AiMobWizard.vue'),
     },
     {
+      // Ticket 034: primera ruta productiva real del editor manual sobre
+      // un mob existente -- antes solo se ejercía vía /dev/viewport-harness.
+      path: '/projects/:projectId/mobs/:mobId/edit',
+      name: 'mob-editor',
+      component: () => import('../editor/MobEditor.vue'),
+    },
+    {
       path: '/dev/design-system',
       name: 'design-system-showcase',
       component: () => import('../design-system/Showcase.vue'),

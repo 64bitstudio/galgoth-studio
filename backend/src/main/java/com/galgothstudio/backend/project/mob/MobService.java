@@ -1,6 +1,7 @@
 package com.galgothstudio.backend.project.mob;
 
 import com.galgothstudio.backend.project.ProjectNotFoundException;
+import com.galgothstudio.backend.project.draft.MobNotFoundException;
 import com.galgothstudio.backend.project.persistence.MobEntity;
 import com.galgothstudio.backend.project.persistence.MobRepository;
 import com.galgothstudio.backend.project.persistence.ProjectRepository;
@@ -62,6 +63,13 @@ public class MobService {
 			throw new ProjectNotFoundException(projectId);
 		}
 		return mobRepository.findByProjectIdOrderByUpdatedAtDesc(projectId).stream().map(this::toSummary).toList();
+	}
+
+	/** Ticket 034 -- ruta prevista desde el bootstrap del proyecto (`docs/API.md`, "Rutas previstas"), sin `projectId` en el path a propósito (mismo criterio que `MobDraftController`/`MobThumbnailController`: el mob ya se identifica solo por su id). */
+	@Transactional(readOnly = true)
+	public MobSummary get(UUID mobId) {
+		MobEntity mob = mobRepository.findById(mobId).orElseThrow(() -> new MobNotFoundException(mobId));
+		return toSummary(mob);
 	}
 
 	private String requireValidName(String name) {

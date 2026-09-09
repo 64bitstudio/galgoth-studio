@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../api/ApiError'
-import { saveRevision } from '../draftPersistenceApi'
+import { getDraft, saveRevision } from '../draftPersistenceApi'
 import type { MobProjectModel } from '../../domain/MobProjectModel'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -76,5 +76,25 @@ describe('draftPersistenceApi', () => {
     )
 
     await expect(saveRevision('no-existe', emptyModel('no-existe'))).rejects.toMatchObject({ status: 404 })
+  })
+
+  it('getDraft hace GET a /api/mobs/{mobId}/draft y devuelve el draft real, ticket 034', async () => {
+    const draftView = { mobId: 'mob-1', draftVersion: 2, model: emptyModel('mob-1'), updatedAt: '2026-09-09T00:00:00Z' }
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(draftView))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await getDraft('mob-1')
+
+    expect(result).toEqual(draftView)
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('/api/mobs/mob-1/draft')
+  })
+
+  it('getDraft sobre un mob sin ningún draft todavía lanza un ApiError con DRAFT_NOT_FOUND', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () => jsonResponse({ error: 'DRAFT_NOT_FOUND', message: 'Sin draft todavía.' }, 404)),
+    )
+
+    await expect(getDraft('mob-1')).rejects.toMatchObject({ status: 404, code: 'DRAFT_NOT_FOUND' })
   })
 })

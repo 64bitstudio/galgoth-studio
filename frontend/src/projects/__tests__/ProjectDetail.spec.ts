@@ -35,6 +35,7 @@ async function routerAt(id: string): Promise<Router> {
       { path: '/', component: { template: '<div />' } },
       { path: '/projects/:id', component: ProjectDetail },
       { path: '/projects/:projectId/mobs/new-ai', component: { template: '<div />' } },
+      { path: '/projects/:projectId/mobs/:mobId/edit', component: { template: '<div />' } },
     ],
   })
   await router.push(`/projects/${id}`)
@@ -180,6 +181,18 @@ describe('ProjectDetail.vue', () => {
     const link = wrapper.find('.project-detail__ai-mob')
     expect(link.text()).toBe('Crear con IA')
     expect(link.attributes('href')).toBe('/projects/p1/mobs/new-ai')
+  })
+
+  it('cada tarjeta de mob del grid navega a su ruta real de edición, ticket 034', async () => {
+    vi.stubGlobal(
+      'fetch',
+      stubProjectAndMobs({ id: 'p1', name: 'Galgoth', mobCount: 1, createdAt: '', updatedAt: '' }, [mob({ id: 'm1', name: 'Carcomido' })]),
+    )
+    const wrapper = mount(ProjectDetail, { global: { plugins: [await routerAt('p1')] } })
+    await flushPromises()
+
+    const link = wrapper.find('.project-detail__mob-link')
+    expect(link.attributes('href')).toBe('/projects/p1/mobs/m1/edit')
   })
 
   it('"Mis proyectos" en el sidebar navega de vuelta al dashboard', async () => {

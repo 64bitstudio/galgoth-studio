@@ -17,6 +17,17 @@ GET    /api/projects/{projectId}/mobs   -- grid de mobs del detalle de proyecto 
 - **`GET /api/projects/{projectId}/mobs`** — `MobSummary[]` (id, name, baseType, status, thumbnailKey, updatedAt) de TODOS los mobs del proyecto, ordenados por `updatedAt` descendente. El filtro por nombre del buscador (AC #3) es **client-side** sobre esta lista -- sin parámetro de búsqueda en el backend, mismo criterio de simplicidad que el dashboard de proyectos (021). `404 Not Found` (`PROJECT_NOT_FOUND`) si el proyecto no existe.
 - Rename/Delete/Duplicate a nivel de mob individual **no están en el alcance de este ticket** (a diferencia de proyectos en el 021) -- el AC de 022 solo pide crear y listar.
 
+### Detalle de un mob (ticket `034`)
+
+Implementado en `backend/.../project/api/MobDetailController.java` -- ruta ya prevista desde el bootstrap del proyecto (ver "Rutas previstas" más abajo), sin `projectId` en el path (mismo criterio que `MobDraftController`/`MobThumbnailController`: el mob ya se identifica solo por su id).
+
+```text
+GET    /api/mobs/{mobId}   -- resumen de un mob (name/baseType/status/thumbnailKey), sin projectId en el path
+```
+
+- `200 OK` — `MobSummary` (mismo shape que el listado de 022). `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe.
+- Usado por `MobEditor.vue` (034) para conocer `name`/`baseType` reales cuando el mob todavía no tiene ningún draft con qué arrancar el editor.
+
 ### CRUD de proyectos (ticket `021`, HU-01/HU-02)
 
 Implementados en `backend/.../project/api/ProjectController.java` + `ProjectService`.
@@ -156,7 +167,6 @@ PATCH  /api/projects/{id}
 DELETE /api/projects/{id}
 
 POST   /api/projects/{id}/mobs
-GET    /api/mobs/{mobId}
 PATCH  /api/mobs/{mobId}
 
 POST   /api/mobs/{mobId}/references
