@@ -6,18 +6,20 @@
  * (021/022, que no existen todavía). Se retira o queda oculta detrás de
  * un flag una vez el milestone M3 esté listo (ver Objetivo del ticket).
  *
- * Ticket 017: reemplaza el `<select>` de prueba del ticket 016 por el
- * panel de jerarquía REAL (`HierarchyPanel`), lado a lado con el
- * viewport -- ambos comparten `useSelectionStore`, así que clickear un
- * cuboid en cualquiera de los dos resalta en el otro (AC del ticket).
+ * Ticket 017: panel de jerarquía real, lado a lado con el viewport.
+ * Ticket 018: el fixture se carga en `useDraftModelStore` (ya no un ref
+ * local) -- es el mismo draft editable que el toolbar de transformación
+ * mutará.
  */
 import { onMounted, ref } from 'vue'
 import ThreeViewport from './ThreeViewport.vue'
 import { threeViewportService } from './ThreeViewportService'
 import HierarchyPanel from '../editor/HierarchyPanel.vue'
+import EditorToolbar from '../editor/EditorToolbar.vue'
+import { useDraftModelStore } from '../editor/draftModelStore'
 import type { MobProjectModel } from '../domain/MobProjectModel'
 
-const model = ref<MobProjectModel | null>(null)
+const draft = useDraftModelStore()
 const loadError = ref<string | null>(null)
 
 onMounted(async () => {
@@ -26,23 +28,24 @@ onMounted(async () => {
     loadError.value = `No se pudo cargar el fixture de desarrollo (HTTP ${response.status}).`
     return
   }
-  model.value = (await response.json()) as MobProjectModel
+  draft.load((await response.json()) as MobProjectModel)
 })
 </script>
 
 <template>
   <div class="viewport-harness">
     <p v-if="loadError" class="viewport-harness__error">{{ loadError }}</p>
-    <template v-else-if="model">
+    <template v-else-if="draft.model">
       <div class="viewport-harness__toolbar">
         <span class="viewport-harness__label">
-          Dev harness -- {{ model.name }} ({{ model.cuboids.length }} cuboids, {{ model.bones.length }} bones)
+          Dev harness -- {{ draft.model.name }} ({{ draft.model.cuboids.length }} cuboids, {{ draft.model.bones.length }} bones)
         </span>
         <button type="button" @click="threeViewportService.resetCamera()">Reset cámara</button>
       </div>
+      <EditorToolbar />
       <div class="viewport-harness__body">
-        <HierarchyPanel :model="model" class="viewport-harness__hierarchy" />
-        <ThreeViewport :model="model" class="viewport-harness__canvas" />
+        <HierarchyPanel class="viewport-harness__hierarchy" />
+        <ThreeViewport class="viewport-harness__canvas" />
       </div>
     </template>
     <p v-else class="viewport-harness__label">Cargando fixture de desarrollo…</p>

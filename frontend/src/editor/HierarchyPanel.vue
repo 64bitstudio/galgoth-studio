@@ -4,15 +4,18 @@
  * `hierarchy | viewport | inspector`) -- muestra bones y sus cuboids
  * hijos en la estructura correcta (AC #1), sincronizado con el viewport
  * vía `useSelectionStore` (compartido con `ThreeViewport.vue`).
+ *
+ * Ticket 018: lee el modelo de `useDraftModelStore` (ya no como prop) --
+ * el mismo draft editable que las herramientas de transformación mutan.
  */
 import { computed } from 'vue'
-import type { MobProjectModel } from '../domain/MobProjectModel'
+import { useDraftModelStore } from './draftModelStore'
 import { buildHierarchyTree } from './hierarchyTree'
 import HierarchyBoneNode from './HierarchyBoneNode.vue'
 
-const props = defineProps<{ model: MobProjectModel }>()
+const draft = useDraftModelStore()
 
-const tree = computed(() => buildHierarchyTree(props.model))
+const tree = computed(() => (draft.model ? buildHierarchyTree(draft.model) : []))
 </script>
 
 <template>

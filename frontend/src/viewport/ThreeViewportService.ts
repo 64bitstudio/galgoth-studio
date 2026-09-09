@@ -11,12 +11,20 @@
  * cámara -- esta lógica vive en el servicio (no en el componente Vue)
  * para que cualquier pantalla que reutilice el singleton herede el mismo
  * comportamiento de cámara sin reconfigurarlo.
+ *
+ * Ticket 018: gizmos de transformación (`TransformControls`) sobre el
+ * cuboid seleccionado. Como `setModel` RECONSTRUYE el grupo del mob
+ * completo (mismos meshes nunca se reutilizan entre llamadas), cada
+ * `setModel` reatachea `transformControls` al mesh NUEVO que corresponda
+ * al cuboid seleccionado -- si se dejara el mesh viejo, el gizmo quedaría
+ * apuntando a un objeto huérfano ya removido de la escena.
  */
 import {
   AmbientLight,
   DirectionalLight,
   GridHelper,
   Group,
+  Object3D,
   PerspectiveCamera,
   Raycaster,
   Scene,
@@ -25,6 +33,7 @@ import {
   WebGLRenderer,
 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js'
 import { buildMobGroup } from './buildMobScene'
 import type { MobProjectModel } from '../domain/MobProjectModel'
 
@@ -38,6 +47,7 @@ export class ThreeViewportService {
   readonly scene: Scene
   readonly camera: PerspectiveCamera
   readonly controls: OrbitControls
+  readonly transformControls: TransformControls
 
   private currentMobGroup: Group | null = null
   private animationHandle: number | null = null
@@ -50,6 +60,15 @@ export class ThreeViewportService {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
     this.controls.enableDamping = true
 
+    this.transformControls = new TransformControls(this.camera, this.renderer.domElement)
+    this.transformControls.setSpace('local') // ejes del propio cuboid, no ejes globales -- ver docstring de la clase.
+    this.scene.add(this.transformControls.getHelper())
+    // Mientras se arrastra un gizmo, OrbitControls NO debe orbitar la
+    // cámara con el mismo drag -- competirían por el mismo puntero.
+    this.transformControls.addEventListener('dragging-changed', (event) => {
+      this.controls.enabled = !event.value
+    })
+
     // Iluminación y grid fijos del viewport compartido -- se crean una
     // única vez aquí (no en cada componente que lo consume) para no
     // duplicarlos cada vez que una pantalla se monta/desmonta y reutiliza
@@ -61,6 +80,11 @@ export class ThreeViewportService {
     this.scene.add(new GridHelper(GRID_SIZE, GRID_DIVISIONS))
 
     this.resetCamera()
+  }
+
+  /** 'translate' | 'rotate' | 'scale' -- ver `TransformControls.setMode`. */
+  setTransformMode(mode: 'translate' | 'rotate' | 'scale'): void {
+    this.transformControls.setMode(mode)
   }
 
   get canvas(): HTMLCanvasElement {
@@ -94,13 +118,29 @@ export class ThreeViewportService {
     this.controls.update()
   }
 
-  /** Reemplaza el mob actualmente en escena (si lo había) por el modelo dado. */
+  /**
+   * Reemplaza el mob actualmente en escena (si lo había) por el modelo
+   * dado, y reatachea `transformControls` al mesh nuevo del cuboid
+   * seleccionado (o lo desatachea si no hay selección) -- ver docstring
+   * de la clase sobre por qué esto es necesario en cada llamada.
+   */
   setModel(model: MobProjectModel, selectedCuboidId?: string | null): void {
     if (this.currentMobGroup) {
       this.scene.remove(this.currentMobGroup)
     }
     this.currentMobGroup = buildMobGroup(model, selectedCuboidId)
     this.scene.add(this.currentMobGroup)
+
+    const selectedMesh = selectedCuboidId ? this.findCuboidMesh(selectedCuboidId) : undefined
+    if (selectedMesh) {
+      this.transformControls.attach(selectedMesh)
+    } else {
+      this.transformControls.detach()
+    }
+  }
+
+  private findCuboidMesh(cuboidId: string): Object3D | undefined {
+    return this.currentMobGroup?.children.find((child) => child.userData.cuboidId === cuboidId)
   }
 
   /**

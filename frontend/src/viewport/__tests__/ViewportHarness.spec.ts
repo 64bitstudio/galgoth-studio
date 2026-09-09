@@ -1,5 +1,6 @@
 import { flushPromises, shallowMount } from '@vue/test-utils'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MobProjectModel } from '../../domain/MobProjectModel'
 
 // ViewportHarness.vue importa ThreeViewport.vue -> ThreeViewportService.ts,
@@ -36,6 +37,12 @@ function fixtureModel(): MobProjectModel {
 }
 
 describe('ViewportHarness.vue', () => {
+  beforeEach(() => {
+    // ViewportHarness.vue usa useDraftModelStore() (ticket 018) -- necesita
+    // una Pinia activa incluso montado fuera de una app real.
+    setActivePinia(createPinia())
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })
