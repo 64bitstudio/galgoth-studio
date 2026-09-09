@@ -23,10 +23,10 @@ public record StoredReferenceImage(byte[] content, String contentType) {
 		if (this == other) {
 			return true;
 		}
-		if (!(other instanceof StoredReferenceImage that)) {
+		if (!(other instanceof StoredReferenceImage(byte[] otherContent, String otherContentType))) {
 			return false;
 		}
-		return Arrays.equals(content, that.content) && contentType.equals(that.contentType);
+		return Arrays.equals(content, otherContent) && contentType.equals(otherContentType);
 	}
 
 	@Override
