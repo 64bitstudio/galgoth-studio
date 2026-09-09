@@ -1,0 +1,30 @@
+{
+  "generated_by": "ChatGPT fixture pack",
+  "cases": [
+    {
+      "case": "01_cuboid_simple",
+      "v5": "v5/01_cuboid_simple_v5.bbmodel",
+      "v4": "v4/01_cuboid_simple_v4.bbmodel"
+    },
+    {
+      "case": "02_parent_child_hierarchy",
+      "v5": "v5/02_parent_child_hierarchy_v5.bbmodel",
+      "v4": "v4/02_parent_child_hierarchy_v4.bbmodel"
+    },
+    {
+      "case": "03_pivot_rotation",
+      "v5": "v5/03_pivot_rotation_v5.bbmodel",
+      "v4": "v4/03_pivot_rotation_v4.bbmodel"
+    },
+    {
+      "case": "04_multiple_cuboids",
+      "v5": "v5/04_multiple_cuboids_v5.bbmodel",
+      "v4": "v4/04_multiple_cuboids_v4.bbmodel"
+    },
+    {
+      "case": "05_uv_real_texture",
+      "v5": "v5/05_uv_real_texture_v5.bbmodel",
+      "v4": "v4/05_uv_real_texture_v4.bbmodel"
+    }
+  ]
+}
