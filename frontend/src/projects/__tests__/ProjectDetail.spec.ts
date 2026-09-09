@@ -125,7 +125,7 @@ describe('ProjectDetail.vue', () => {
       const wrapper = mount(ProjectDetail, { global: { plugins: [await routerAt('p1')] } })
       await flushPromises()
 
-      await wrapper.findAll('button').find((b) => b.text() === '+ Agregar mob')!.trigger('click')
+      await wrapper.findAll('button').find((b) => b.text() === 'Agregar mob')!.trigger('click')
 
       expect(wrapper.findComponent({ name: 'AddMobModal' }).exists()).toBe(true)
     })
@@ -161,7 +161,7 @@ describe('ProjectDetail.vue', () => {
       const wrapper = mount(ProjectDetail, { global: { plugins: [await routerAt('p1')] } })
       await flushPromises()
 
-      await wrapper.findAll('button').find((b) => b.text() === '+ Agregar mob')!.trigger('click')
+      await wrapper.findAll('button').find((b) => b.text() === 'Agregar mob')!.trigger('click')
       const modal = wrapper.findComponent({ name: 'AddMobModal' })
       await modal.find('input').setValue('Nuevo')
       await modal.findAll('button').find((b) => b.text() === 'Agregar mob')!.trigger('click')

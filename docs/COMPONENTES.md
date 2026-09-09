@@ -137,6 +137,15 @@ Estado FMM + draft sin guardar, alcanzable desde `MobEditor.vue` (botón "Export
 - **"Guardar y exportar"** pide confirmación en dos pasos (mismo patrón que `HierarchyBoneNode.vue`/`ResultStep.vue`) antes de crear una revisión real -- las acciones de solo lectura (exportar sin guardar) son de un solo clic.
 - **`mobExportApi.ts`** (nuevo): `getExportStatus`/`downloadBbmodel` -- este último lee el nombre real de archivo del header `Content-Disposition` que arma el backend (nunca lo inventa en el cliente) y dispara la descarga real del navegador vía un `<a download>` temporal.
 
+## Pasada de fidelidad visual contra los mockups (ticket `036`)
+
+El PO no dio VoBo visual a Editor/Inicio/Detalle de proyecto -- se sentían como scaffold funcional, no como los mockups. Pasada EXCLUSIVA de presentación/layout/componentes (cero funcionalidad nueva, cero cambios de backend/contratos/UX) -- ver el `## Hecho` del ticket `036` para el detalle completo.
+
+- **Editor de modelo** (mockup `05_editor_modelo.png`): `MobEditor.vue` gana el layout real `Jerarquía | Viewport | Propiedades` -- el panel derecho (`InspectorPanel.vue`/`InspectorField.vue`, nuevos) prácticamente no existía antes. Muestra Posición/Tamaño/Rotación del cuboid seleccionado + Pivot de su bone, con valores reales y editables -- llaman a los mismos métodos de `draftModelStore` que ya usaba el gizmo 3D (`moveSelectedCuboid`/`resizeSelectedCuboid`/`rotateSelectedCuboid`/`setPivot`), sin ninguna lógica de dominio nueva. `EditorHeader.vue` (nuevo) agrega el breadcrumb + `GTabs` Modelo/Textura/Animación que faltaba. `EditorToolbar.vue`/`HierarchyBoneNode.vue` migrados a `IconButton`/íconos reales (10 nuevos en `design-system/icons/`) en vez de `<button>` HTML sin estilo.
+- **Inicio/Mis proyectos** (mockup `01_inicio_mis_proyectos.png`): `ProjectCard.vue` gana metadata real ("N mobs · Editado hoy", vía `formatRelativeDate` nuevo sobre `updatedAt`, ya existente en la API) -- antes solo mostraba el nombre.
+- **Detalle de proyecto** (mockup `12_detalle_proyecto.png`): buscador con ícono, botones "Agregar mob"/"Nuevo mob" migrados a `GButton`.
+- **Deliberadamente fuera de alcance** (ver `## Hecho` del ticket para el motivo completo de cada uno): el dropdown de orden "Última modificación" (funcionalidad nueva, no existe ningún ordenamiento hoy), los labels en inglés de `GStatusPill` (cambio de copy de un componente compartido, no una cuestión de layout), y el bug pre-existente de thumbnails con el gizmo "horneado" (lógica de `ThreeViewportService.captureThumbnail()`, no tocada por este ticket).
+
 ## Pantallas previstas (12, ver mockups/00_all_views.png del build pack)
 
 1. Inicio / Mis proyectos

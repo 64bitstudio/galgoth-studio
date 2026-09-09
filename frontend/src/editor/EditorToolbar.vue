@@ -25,6 +25,17 @@ import { useDraftModelStore } from './draftModelStore'
 import { useSelectionStore } from './selectionStore'
 import { saveRevision } from './draftPersistenceApi'
 import { uploadThumbnail } from './thumbnailApi'
+import IconButton from '../design-system/components/IconButton.vue'
+import GButton from '../design-system/components/GButton.vue'
+import IconMove from '../design-system/icons/IconMove.vue'
+import IconScale from '../design-system/icons/IconScale.vue'
+import IconRotate from '../design-system/icons/IconRotate.vue'
+import IconCuboid from '../design-system/icons/IconCuboid.vue'
+import IconBoneJoint from '../design-system/icons/IconBoneJoint.vue'
+import IconDuplicate from '../design-system/icons/IconDuplicate.vue'
+import IconTrash from '../design-system/icons/IconTrash.vue'
+import IconUndo from '../design-system/icons/IconUndo.vue'
+import IconRedo from '../design-system/icons/IconRedo.vue'
 
 type TransformMode = 'translate' | 'scale' | 'rotate'
 
@@ -129,27 +140,30 @@ async function handleSave(): Promise<void> {
 
 <template>
   <div class="editor-toolbar">
-    <button type="button" :class="{ 'editor-toolbar__button--active': mode === 'translate' }" @click="setMode('translate')">
-      Move
-    </button>
-    <button type="button" :class="{ 'editor-toolbar__button--active': mode === 'scale' }" @click="setMode('scale')">
-      Scale
-    </button>
-    <button type="button" :class="{ 'editor-toolbar__button--active': mode === 'rotate' }" @click="setMode('rotate')">
-      Rotate
-    </button>
+    <fieldset class="editor-toolbar__group" aria-label="Modo de transformación">
+      <IconButton label="Move" :active="mode === 'translate'" @click="setMode('translate')"><IconMove :size="18" /></IconButton>
+      <IconButton label="Scale" :active="mode === 'scale'" @click="setMode('scale')"><IconScale :size="18" /></IconButton>
+      <IconButton label="Rotate" :active="mode === 'rotate'" @click="setMode('rotate')"><IconRotate :size="18" /></IconButton>
+    </fieldset>
     <span class="editor-toolbar__separator" />
-    <button type="button" @click="addCuboid">Add cuboid</button>
-    <button type="button" @click="addBone">Add bone</button>
-    <button type="button" :disabled="!selection.selectedCuboidId" @click="duplicateSelected">Duplicate</button>
-    <button type="button" :disabled="!selection.selectedCuboidId" @click="deleteSelected">Delete</button>
+    <fieldset class="editor-toolbar__group" aria-label="Agregar elementos">
+      <IconButton label="Add cuboid" @click="addCuboid"><IconCuboid :size="18" /></IconButton>
+      <IconButton label="Add bone" @click="addBone"><IconBoneJoint :size="18" /></IconButton>
+    </fieldset>
     <span class="editor-toolbar__separator" />
-    <button type="button" :disabled="!draft.canUndo" @click="draft.undo()">Undo</button>
-    <button type="button" :disabled="!draft.canRedo" @click="draft.redo()">Redo</button>
+    <fieldset class="editor-toolbar__group" aria-label="Duplicar y eliminar">
+      <IconButton label="Duplicate" :disabled="!selection.selectedCuboidId" @click="duplicateSelected"><IconDuplicate :size="18" /></IconButton>
+      <IconButton label="Delete" :disabled="!selection.selectedCuboidId" @click="deleteSelected"><IconTrash :size="18" /></IconButton>
+    </fieldset>
     <span class="editor-toolbar__separator" />
-    <button type="button" :disabled="!draft.model || saving" @click="handleSave">{{ saving ? 'Guardando…' : 'Guardar' }}</button>
-    <span v-if="saveMessage" class="editor-toolbar__save-message">{{ saveMessage }}</span>
+    <fieldset class="editor-toolbar__group" aria-label="Undo y redo">
+      <IconButton label="Undo" :disabled="!draft.canUndo" @click="draft.undo()"><IconUndo :size="18" /></IconButton>
+      <IconButton label="Redo" :disabled="!draft.canRedo" @click="draft.redo()"><IconRedo :size="18" /></IconButton>
+    </fieldset>
+    <div class="editor-toolbar__spacer" />
     <span v-if="draft.lastError" class="editor-toolbar__error">{{ draft.lastError }}</span>
+    <span v-if="saveMessage" class="editor-toolbar__save-message">{{ saveMessage }}</span>
+    <GButton variant="primary" :disabled="!draft.model || saving" @click="handleSave">{{ saving ? 'Guardando…' : 'Guardar' }}</GButton>
   </div>
 </template>
 
@@ -157,30 +171,46 @@ async function handleSave(): Promise<void> {
 .editor-toolbar {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--panel);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
 }
 
-.editor-toolbar__button--active {
-  background: #ffb020;
-  color: #1a1a1a;
+.editor-toolbar__group {
+  /* <fieldset> real en vez de role="group" (hallazgo real de Sonar,
+     S6819 -- mismo criterio ya documentado en GMenu.vue) -- resetea el
+     borde/padding/min-width nativos que un <fieldset> trae por defecto. */
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
 }
 
 .editor-toolbar__separator {
-  width: 1px;
-  height: 1.25rem;
-  background: #444;
+  width: var(--border-width);
+  height: 24px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.editor-toolbar__spacer {
+  flex: 1;
 }
 
 .editor-toolbar__error {
-  font-family: monospace;
-  font-size: 0.8rem;
-  color: #ff6b6b;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--danger);
 }
 
 .editor-toolbar__save-message {
-  font-family: monospace;
-  font-size: 0.8rem;
-  color: #7ed6a5;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--accent);
 }
 </style>

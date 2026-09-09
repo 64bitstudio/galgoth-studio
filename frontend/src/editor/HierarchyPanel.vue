@@ -19,17 +19,37 @@ const tree = computed(() => (draft.model ? buildHierarchyTree(draft.model) : [])
 </script>
 
 <template>
-  <ul class="hierarchy-panel">
-    <HierarchyBoneNode v-for="node in tree" :key="node.bone.id" :node="node" />
-  </ul>
+  <div class="hierarchy-panel">
+    <h2 class="hierarchy-panel__title">Jerarquía</h2>
+    <ul class="hierarchy-panel__tree">
+      <HierarchyBoneNode v-for="node in tree" :key="node.bone.id" :node="node" />
+    </ul>
+  </div>
 </template>
 
 <style scoped>
 .hierarchy-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.hierarchy-panel__title {
   margin: 0;
-  padding: 0.5rem;
-  font-family: monospace;
-  font-size: 0.85rem;
+  padding: var(--space-4) var(--space-4) var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.hierarchy-panel__tree {
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-2);
   overflow-y: auto;
+  flex: 1;
 }
 </style>

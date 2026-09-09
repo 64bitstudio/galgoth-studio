@@ -13,7 +13,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GPanel from '../design-system/components/GPanel.vue'
+import GButton from '../design-system/components/GButton.vue'
 import GSidebar, { type GSidebarKey } from '../design-system/components/GSidebar.vue'
+import IconSearch from '../design-system/icons/IconSearch.vue'
+import IconPlus from '../design-system/icons/IconPlus.vue'
 import AddMobModal from './AddMobModal.vue'
 import MobCard from './MobCard.vue'
 import { ApiError, getProject, type ProjectDetail as ProjectDetailDto } from './projectsApi'
@@ -84,13 +87,16 @@ function handleSidebarSelect(key: GSidebarKey): void {
           </div>
           <div class="project-detail__header-actions">
             <router-link :to="`/projects/${projectId}/mobs/new-ai`" class="project-detail__ai-mob">Crear con IA</router-link>
-            <button type="button" class="project-detail__add-mob" @click="showAddMobModal = true">+ Agregar mob</button>
+            <GButton variant="primary" @click="showAddMobModal = true"><template #icon><IconPlus :size="16" /></template>Agregar mob</GButton>
           </div>
         </div>
 
         <p v-if="actionError" class="project-detail__error">{{ actionError }}</p>
 
-        <input v-model="searchQuery" type="search" class="project-detail__search" aria-label="Buscar mobs por nombre" placeholder="Buscar mobs..." />
+        <div class="project-detail__search-wrap">
+          <IconSearch :size="16" class="project-detail__search-icon" />
+          <input v-model="searchQuery" type="search" class="project-detail__search" aria-label="Buscar mobs por nombre" placeholder="Buscar mobs..." />
+        </div>
 
         <div class="project-detail__grid">
           <router-link
@@ -101,7 +107,10 @@ function handleSidebarSelect(key: GSidebarKey): void {
           >
             <MobCard :mob="mob" />
           </router-link>
-          <button type="button" class="project-detail__new-mob-cta" @click="showAddMobModal = true">+ Nuevo mob</button>
+          <button type="button" class="project-detail__new-mob-cta" @click="showAddMobModal = true">
+            <IconPlus :size="22" />
+            <span>Nuevo mob</span>
+          </button>
         </div>
         <p v-if="mobs.length > 0 && filteredMobs.length === 0" class="project-detail__empty">
           Ningún mob coincide con "{{ searchQuery }}".
@@ -150,18 +159,6 @@ function handleSidebarSelect(key: GSidebarKey): void {
   gap: var(--space-2);
 }
 
-.project-detail__add-mob {
-  min-height: var(--hit-target-min);
-  padding: 0 var(--space-4);
-  background: var(--accent);
-  color: var(--accent-ink);
-  border: none;
-  border-radius: var(--radius-md);
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
 .project-detail__ai-mob {
   display: inline-flex;
   align-items: center;
@@ -181,17 +178,39 @@ function handleSidebarSelect(key: GSidebarKey): void {
   color: var(--accent);
 }
 
-.project-detail__search {
+.project-detail__search-wrap {
+  position: relative;
   width: 100%;
   max-width: 320px;
-  min-height: var(--hit-target-min);
-  padding: 0 var(--space-3);
   margin-bottom: var(--space-4);
+}
+
+.project-detail__search-icon {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.project-detail__search {
+  width: 100%;
+  min-height: var(--hit-target-min);
+  padding: 0 var(--space-3) 0 38px;
   background: var(--surface);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-md);
   color: var(--text);
   font-size: var(--text-base);
+}
+
+.project-detail__search:hover {
+  border-color: var(--muted);
+}
+
+.project-detail__search:focus-visible {
+  border-color: var(--accent);
 }
 
 .project-detail__grid {
@@ -209,14 +228,17 @@ function handleSidebarSelect(key: GSidebarKey): void {
 .project-detail__new-mob-cta {
   aspect-ratio: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: var(--space-2);
   background: transparent;
   border: 2px dashed var(--border);
   border-radius: var(--radius-lg);
   color: var(--muted);
   cursor: pointer;
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 .project-detail__new-mob-cta:hover {

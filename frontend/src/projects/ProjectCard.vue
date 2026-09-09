@@ -15,8 +15,13 @@
  * el menú vive como hermano, superpuesto visualmente en la esquina.
  */
 import { thumbnailUrl } from '../api/apiConfig'
+import { formatRelativeDate } from '../domain/relativeDate'
 import GMenu, { type GMenuItem } from '../design-system/components/GMenu.vue'
 import type { ProjectSummary } from './projectsApi'
+
+function mobCountLabel(count: number): string {
+  return count === 1 ? '1 mob' : `${count} mobs`
+}
 
 defineProps<{ project: ProjectSummary }>()
 
@@ -48,6 +53,7 @@ function handleAction(projectId: string, actionKey: string): void {
         <span v-if="project.mobCount > 3" class="project-card__more">+{{ project.mobCount - 3 }}</span>
       </span>
       <span class="project-card__name">{{ project.name }}</span>
+      <span class="project-card__meta">{{ mobCountLabel(project.mobCount) }} · {{ formatRelativeDate(project.updatedAt) }}</span>
     </button>
     <span class="project-card__menu">
       <GMenu :items="MENU_ITEMS" :label="`Acciones de ${project.name}`" @select="(key) => handleAction(project.id, key)" />
@@ -128,6 +134,14 @@ function handleAction(projectId: string, actionKey: string): void {
   text-overflow: ellipsis;
   white-space: nowrap;
   padding-right: var(--space-8); /* deja espacio al menú superpuesto */
+}
+
+.project-card__meta {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-card__menu {

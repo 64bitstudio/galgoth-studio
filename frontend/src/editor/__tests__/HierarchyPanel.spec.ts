@@ -63,7 +63,7 @@ describe('HierarchyPanel.vue', () => {
     const wrapper = mount(HierarchyPanel)
     const selection = useSelectionStore()
 
-    await wrapper.find('.hierarchy-cuboid-node').trigger('click')
+    await wrapper.find('.hierarchy-node__row--cuboid').trigger('click')
 
     expect(selection.selectedCuboidId).toBe('a')
   })
@@ -77,6 +77,6 @@ describe('HierarchyPanel.vue', () => {
     selection.select('a')
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('.hierarchy-cuboid-node').classes()).toContain('hierarchy-cuboid-node--selected')
+    expect(wrapper.find('.hierarchy-node__row--cuboid').classes()).toContain('hierarchy-node__row--selected')
   })
 })
