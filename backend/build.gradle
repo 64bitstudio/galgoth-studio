@@ -27,6 +27,13 @@ repositories {
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	// Ticket 025: Spring Boot 4.x separó el soporte de cliente HTTP
+	// (RestClient/RestTemplate + su autoconfiguración, incluido el bean
+	// `RestClient.Builder` que `ClaudeMessagesClient` necesita) del starter
+	// de servidor MVC -- confirmado real: sin este starter, `RestClient.Builder`
+	// simplemente no existe como bean y CUALQUIER `@SpringBootTest` (no solo
+	// los de IA) falla al arrancar el contexto completo.
+	implementation 'org.springframework.boot:spring-boot-starter-restclient'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
 	implementation 'org.flywaydb:flyway-database-postgresql'
