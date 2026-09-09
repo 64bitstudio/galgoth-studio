@@ -93,7 +93,14 @@ function handleSidebarSelect(key: GSidebarKey): void {
         <input v-model="searchQuery" type="search" class="project-detail__search" aria-label="Buscar mobs por nombre" placeholder="Buscar mobs..." />
 
         <div class="project-detail__grid">
-          <MobCard v-for="mob in filteredMobs" :key="mob.id" :mob="mob" />
+          <router-link
+            v-for="mob in filteredMobs"
+            :key="mob.id"
+            :to="`/projects/${projectId}/mobs/${mob.id}/edit`"
+            class="project-detail__mob-link"
+          >
+            <MobCard :mob="mob" />
+          </router-link>
           <button type="button" class="project-detail__new-mob-cta" @click="showAddMobModal = true">+ Nuevo mob</button>
         </div>
         <p v-if="mobs.length > 0 && filteredMobs.length === 0" class="project-detail__empty">
@@ -191,6 +198,12 @@ function handleSidebarSelect(key: GSidebarKey): void {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: var(--space-4);
+}
+
+.project-detail__mob-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
 }
 
 .project-detail__new-mob-cta {

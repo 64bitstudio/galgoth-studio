@@ -8,6 +8,7 @@
  * momento, así que vive en su propio estado aislado.
  */
 import type { Bone, BaseType, Cuboid, MobProjectModel } from '../domain/MobProjectModel'
+import { emptyMobProjectModel } from '../domain/emptyMobProjectModel'
 
 export interface PreviewOperationsPayload {
   type: 'preview_operations'
@@ -31,24 +32,9 @@ export interface GenerationEvent {
   payload: GenerationEventPayload | null
 }
 
-const TEXTURE_SIZE = 128
-
-/** Mismo modelo vacío del que arranca `MobGenerationService.emptyModelFor` en el backend -- el primer `preview_operations` que llega se aplica sobre ESTE punto de partida, no sobre `null`. */
+/** Mismo modelo vacío del que arranca `MobGenerationService.emptyModelFor` en el backend (`emptyMobProjectModel`, compartido con el editor manual real, 034) -- el primer `preview_operations` que llega se aplica sobre ESTE punto de partida, no sobre `null`. */
 export function emptyPreviewModel(mobId: string, projectId: string, name: string, baseType: BaseType): MobProjectModel {
-  return {
-    mobId,
-    projectId,
-    name,
-    baseType,
-    units: 'minecraft_pixels',
-    bones: [],
-    cuboids: [],
-    texture: { width: TEXTURE_SIZE, height: TEXTURE_SIZE, storageKey: null },
-    uv: { textureWidth: TEXTURE_SIZE, textureHeight: TEXTURE_SIZE, regions: [] },
-    animations: [],
-    exportSettings: { preferredFormatVersion: 'v5' },
-    referenceImages: [],
-  }
+  return emptyMobProjectModel(mobId, projectId, name, baseType)
 }
 
 /** Fusiona un `preview_operations` sobre el modelo de preview actual -- agrega/reemplaza bones/cuboids por id, quita los `removedCuboidIds`. Nunca muta `model` (mismo criterio de inmutabilidad que `geometryOperations.ts`, ticket 018). */
