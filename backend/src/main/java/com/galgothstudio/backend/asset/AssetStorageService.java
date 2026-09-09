@@ -38,7 +38,7 @@ public class AssetStorageService {
 	void ensureBucketExists() {
 		try {
 			s3Client.headBucket(HeadBucketRequest.builder().bucket(bucket).build());
-		} catch (NoSuchBucketException e) {
+		} catch (NoSuchBucketException _) {
 			s3Client.createBucket(builder -> builder.bucket(bucket));
 		}
 	}
@@ -54,7 +54,7 @@ public class AssetStorageService {
 		try (ResponseInputStream<GetObjectResponse> response =
 				s3Client.getObject(GetObjectRequest.builder().bucket(bucket).key(key).build())) {
 			return Optional.of(response.readAllBytes());
-		} catch (NoSuchKeyException e) {
+		} catch (NoSuchKeyException _) {
 			return Optional.empty();
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
