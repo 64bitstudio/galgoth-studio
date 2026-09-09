@@ -6,13 +6,21 @@
  * (`POST /api/mobs/{mobId}/references`) ocurre recién al confirmar el
  * paso "Configuración", una vez que el mob existe de verdad (el nombre
  * se pide en el paso siguiente, no acá).
+ *
+ * Ticket 037 (corrección de UX/fidelidad visual): mismo comportamiento
+ * exacto (valida y emite `selected`, el wizard avanza) -- la única
+ * corrección es de presentación, con estados reales de dropzone
+ * (idle/dragover/inválido) en vez de un rectángulo punteado estático.
  */
 import { ref } from 'vue'
 import { MAX_REFERENCE_IMAGE_BYTES, SUPPORTED_REFERENCE_IMAGE_TYPES } from '../../api/referenceImagesApi'
+import IconImage from '../../design-system/icons/IconImage.vue'
+import IconWarning from '../../design-system/icons/IconWarning.vue'
 
 const emit = defineEmits<{ selected: [File] }>()
 
 const validationError = ref<string | null>(null)
+const isDragOver = ref(false)
 const filePickerEl = ref<HTMLInputElement>()
 
 function handleFiles(files: FileList | null): void {
@@ -32,8 +40,19 @@ function handleFiles(files: FileList | null): void {
   emit('selected', file)
 }
 
+function handleDragEnter(event: DragEvent): void {
+  event.preventDefault()
+  isDragOver.value = true
+}
+
+function handleDragLeave(event: DragEvent): void {
+  event.preventDefault()
+  isDragOver.value = false
+}
+
 function handleDrop(event: DragEvent): void {
   event.preventDefault()
+  isDragOver.value = false
   handleFiles(event.dataTransfer?.files ?? null)
 }
 
@@ -44,12 +63,28 @@ function openFilePicker(): void {
 
 <template>
   <div class="reference-step">
-    <h2 class="reference-step__title">Referencia</h2>
-    <p class="reference-step__hint">Sube una imagen de concept art como referencia para generar el modelo.</p>
+    <div class="reference-step__intro">
+      <h2 class="reference-step__title">Referencia</h2>
+      <p class="reference-step__hint">Sube una imagen de concept art como referencia -- la IA la analiza para proponer la silueta, el rig y los cuboides del modelo.</p>
+    </div>
 
-    <button type="button" class="reference-step__dropzone" @click="openFilePicker" @dragover.prevent @drop="handleDrop">
-      <span class="reference-step__dropzone-icon" aria-hidden="true">⬆</span>
-      <span>Arrastra una imagen o hace clic para elegir un archivo</span>
+    <button
+      type="button"
+      class="reference-step__dropzone"
+      :class="{ 'reference-step__dropzone--dragover': isDragOver, 'reference-step__dropzone--invalid': validationError }"
+      @click="openFilePicker"
+      @dragenter="handleDragEnter"
+      @dragover.prevent
+      @dragleave="handleDragLeave"
+      @drop="handleDrop"
+    >
+      <span class="reference-step__dropzone-icon" aria-hidden="true">
+        <IconWarning v-if="validationError" :size="32" />
+        <IconImage v-else :size="32" />
+      </span>
+      <span class="reference-step__dropzone-title">
+        {{ isDragOver ? 'Suelta la imagen aquí' : 'Arrastra una imagen o hace clic para elegir un archivo' }}
+      </span>
       <span class="reference-step__dropzone-formats">PNG o JPEG, máximo 10MB</span>
     </button>
     <label class="reference-step__file-label">
@@ -57,7 +92,7 @@ function openFilePicker(): void {
       <input ref="filePickerEl" type="file" accept="image/png,image/jpeg" aria-label="Elegir imagen de referencia" @change="handleFiles(($event.target as HTMLInputElement).files)" />
     </label>
 
-    <p v-if="validationError" class="reference-step__error">{{ validationError }}</p>
+    <p v-if="validationError" class="reference-step__error"><IconWarning :size="16" /> {{ validationError }}</p>
     <p class="reference-step__hint reference-step__hint--small">Elegir una imagen válida avanza automáticamente a "Configuración".</p>
   </div>
 </template>
@@ -66,8 +101,14 @@ function openFilePicker(): void {
 .reference-step {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  max-width: 480px;
+  gap: var(--space-4);
+  max-width: 560px;
+}
+
+.reference-step__intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .reference-step__title {
@@ -87,16 +128,21 @@ function openFilePicker(): void {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-2);
+  justify-content: center;
+  gap: var(--space-3);
   width: 100%;
-  padding: var(--space-6);
-  background: transparent;
+  min-height: 260px;
+  padding: var(--space-8);
+  background: var(--panel);
   border: 2px dashed var(--border);
   border-radius: var(--radius-lg);
   color: var(--muted);
   cursor: pointer;
   text-align: center;
   font: inherit;
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
 }
 
 .reference-step__dropzone:hover,
@@ -105,8 +151,31 @@ function openFilePicker(): void {
   color: var(--text);
 }
 
+.reference-step__dropzone--dragover {
+  border-color: var(--accent);
+  border-style: solid;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.reference-step__dropzone--invalid {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .reference-step__dropzone-icon {
-  font-size: var(--text-lg);
+  display: flex;
+  color: var(--accent);
+}
+
+.reference-step__dropzone--invalid .reference-step__dropzone-icon {
+  color: var(--danger);
+}
+
+.reference-step__dropzone-title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: inherit;
 }
 
 .reference-step__dropzone-formats {
@@ -123,7 +192,11 @@ function openFilePicker(): void {
 }
 
 .reference-step__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin: 0;
   color: var(--danger);
+  font-size: var(--text-sm);
 }
 </style>

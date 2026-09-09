@@ -55,7 +55,10 @@ function confirm(): void {
     </div>
 
     <div class="configuration-step__form">
-      <h2 class="configuration-step__title">Información del mob</h2>
+      <div class="configuration-step__intro">
+        <h2 class="configuration-step__title">Información del mob</h2>
+        <p class="configuration-step__subtitle">Confirma los datos antes de que la IA genere el modelo.</p>
+      </div>
 
       <label class="configuration-step__label">
         Nombre
@@ -105,13 +108,17 @@ function confirm(): void {
   display: flex;
   gap: var(--space-6);
   flex-wrap: wrap;
+  background: var(--panel);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
 }
 
 .configuration-step__preview {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  width: 220px;
+  width: 260px;
   flex-shrink: 0;
 }
 
@@ -121,6 +128,19 @@ function confirm(): void {
   object-fit: cover;
   border-radius: var(--radius-lg);
   border: var(--border-width) solid var(--border);
+  box-shadow: var(--shadow-md);
+}
+
+.configuration-step__intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.configuration-step__subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
 }
 
 .configuration-step__back {

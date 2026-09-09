@@ -17,6 +17,12 @@
  * `AiMobWizard.vue` es quien busca el resultado (`GET /api/jobs/{jobId}/result`)
  * y avanza al paso "Resultado"; este componente nunca hace esa llamada
  * ni navega por su cuenta.
+ *
+ * Ticket 037 (corrección de UX del flujo IA): `completed` también manda
+ * el `previewModel` final (el mismo que ya se construyó en memoria vía
+ * SSE, nunca un dato nuevo del backend) para que "Resultado" pueda
+ * mostrar el modelo real en vez de solo números -- puramente frontend,
+ * sin tocar ningún contrato/endpoint.
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { BaseType } from '../../projects/mobsApi'
@@ -25,10 +31,12 @@ import { cancelGeneration, eventsUrl, startGeneration } from '../../api/generati
 import { emptyPreviewModel, applyPreviewDelta, type GenerationEvent } from '../generationEvents'
 import { ApiError } from '../../api/ApiError'
 import GButton from '../../design-system/components/GButton.vue'
+import IconCheck from '../../design-system/icons/IconCheck.vue'
+import IconWarning from '../../design-system/icons/IconWarning.vue'
 import GenerationPreviewViewport from '../GenerationPreviewViewport.vue'
 
 const props = defineProps<{ mobId: string; projectId: string; mobName: string; baseType: BaseType }>()
-const emit = defineEmits<{ 'back-to-project': []; completed: [jobId: string] }>()
+const emit = defineEmits<{ 'back-to-project': []; completed: [jobId: string, finalModel: MobProjectModel] }>()
 
 const STAGE_ORDER = [
   { key: 'analizando_referencia', label: 'Analizando referencia…' },
@@ -54,6 +62,7 @@ let eventSource: EventSource | null = null
 const seenSeqs = new Set<number>()
 
 const currentStageIndex = computed(() => STAGE_ORDER.findIndex((s) => s.key === currentPipelineStage.value))
+const hasGeometry = computed(() => previewModel.value.cuboids.length > 0)
 
 function stageStatus(index: number): 'done' | 'current' | 'pending' {
   if (outcome.value !== 'running') {
@@ -99,7 +108,7 @@ function handleProgressEvent(raw: MessageEvent): void {
     }
     closeStream()
     if (terminalOutcome === 'completed' && jobId.value) {
-      emit('completed', jobId.value)
+      emit('completed', jobId.value, previewModel.value)
     }
     return
   }
@@ -158,52 +167,78 @@ onBeforeUnmount(closeStream)
 
 <template>
   <div class="generation-step">
-    <h2 class="generation-step__title">Generación</h2>
+    <div class="generation-step__header">
+      <h2 class="generation-step__title">Generando {{ mobName }}</h2>
+      <p class="generation-step__subtitle">La IA está construyendo tu modelo paso a paso.</p>
+    </div>
 
-    <p v-if="startError" class="generation-step__error">{{ startError }}</p>
+    <div v-if="startError" class="generation-step__start-error">
+      <p class="generation-step__error"><IconWarning :size="16" /> {{ startError }}</p>
+      <GButton variant="secondary" @click="$emit('back-to-project')">Ir al proyecto</GButton>
+    </div>
 
-    <template v-else>
-      <ul class="generation-step__stages">
-        <li
-          v-for="(item, index) in STAGE_ORDER"
-          :key="item.key"
-          class="generation-step__stage"
-          :class="`generation-step__stage--${stageStatus(index)}`"
+    <div v-else class="generation-step__body">
+      <div class="generation-step__panel generation-step__panel--stages">
+        <ul class="generation-step__stages">
+          <li
+            v-for="(item, index) in STAGE_ORDER"
+            :key="item.key"
+            class="generation-step__stage"
+            :class="`generation-step__stage--${stageStatus(index)}`"
+          >
+            <span class="generation-step__stage-marker" aria-hidden="true">
+              <IconCheck v-if="stageStatus(index) === 'done'" :size="14" />
+              <span v-else-if="stageStatus(index) === 'current'" class="generation-step__spinner" />
+            </span>
+            {{ item.label }}
+          </li>
+        </ul>
+
+        <div class="generation-step__progress-block">
+          <div class="generation-step__progress-row">
+            <span>Progreso</span>
+            <span class="generation-step__progress-pct">{{ progressPct }}%</span>
+          </div>
+          <progress class="generation-step__progress" :value="progressPct" max="100">{{ progressPct }}%</progress>
+          <p v-if="currentMessage" class="generation-step__message">{{ currentMessage }}</p>
+        </div>
+
+        <p v-if="outcome === 'completed'" class="generation-step__notice generation-step__notice--ok">
+          <IconCheck :size="16" /> Generación completada.
+        </p>
+        <p v-else-if="outcome === 'failed'" class="generation-step__notice generation-step__notice--error">
+          <IconWarning :size="16" /> La generación falló: {{ failureMessage }}
+        </p>
+        <p v-else-if="outcome === 'cancelled'" class="generation-step__notice">Generación cancelada -- no se guardó ningún resultado.</p>
+
+        <div v-if="outcome === 'running' && !cancelRequested" class="generation-step__actions">
+          <GButton variant="danger" @click="requestCancel">Cancelar</GButton>
+        </div>
+        <div v-else-if="cancelRequested" class="generation-step__cancel-confirm">
+          <p>¿Cancelar la generación en curso? El progreso hecho hasta ahora se descarta.</p>
+          <div class="generation-step__cancel-confirm-actions">
+            <GButton variant="danger" :disabled="cancelling" @click="confirmCancel">Sí, cancelar</GButton>
+            <GButton variant="ghost" :disabled="cancelling" @click="abortCancel">Seguir esperando</GButton>
+          </div>
+        </div>
+
+        <GButton
+          v-if="outcome === 'failed' || outcome === 'cancelled'"
+          variant="secondary"
+          @click="$emit('back-to-project')"
         >
-          <span class="generation-step__stage-marker" aria-hidden="true">{{ stageStatus(index) === 'done' ? '●' : '○' }}</span>
-          {{ item.label }}
-        </li>
-      </ul>
-
-      <p v-if="currentMessage" class="generation-step__message">{{ currentMessage }}</p>
-      <progress class="generation-step__progress" :value="progressPct" max="100">{{ progressPct }}%</progress>
-
-      <GenerationPreviewViewport :model="previewModel" />
-
-      <p v-if="outcome === 'completed'" class="generation-step__notice generation-step__notice--ok">Generación completada.</p>
-      <p v-else-if="outcome === 'failed'" class="generation-step__notice generation-step__notice--error">
-        La generación falló: {{ failureMessage }}
-      </p>
-      <p v-else-if="outcome === 'cancelled'" class="generation-step__notice">Generación cancelada -- no se guardó ningún resultado.</p>
-
-      <div v-if="outcome === 'running' && !cancelRequested" class="generation-step__actions">
-        <GButton variant="danger" @click="requestCancel">Cancelar</GButton>
+          Ir al proyecto
+        </GButton>
       </div>
-      <div v-else-if="cancelRequested" class="generation-step__cancel-confirm">
-        <p>¿Cancelar la generación en curso? El progreso hecho hasta ahora se descarta.</p>
-        <GButton variant="danger" :disabled="cancelling" @click="confirmCancel">Sí, cancelar</GButton>
-        <GButton variant="ghost" :disabled="cancelling" @click="abortCancel">Seguir esperando</GButton>
-      </div>
-    </template>
 
-    <button
-      v-if="outcome === 'failed' || outcome === 'cancelled' || startError"
-      type="button"
-      class="generation-step__back"
-      @click="$emit('back-to-project')"
-    >
-      Ir al proyecto
-    </button>
+      <div class="generation-step__panel generation-step__panel--preview">
+        <GenerationPreviewViewport :model="previewModel" class="generation-step__viewport" />
+        <div v-if="!hasGeometry && outcome === 'running'" class="generation-step__preview-overlay">
+          <span class="generation-step__spinner generation-step__spinner--lg" />
+          <p>Esperando la primera geometría…</p>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -211,16 +246,91 @@ onBeforeUnmount(closeStream)
 .generation-step {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  max-width: 480px;
+  gap: var(--space-5);
+  flex: 1;
+  min-height: 0;
+}
+
+.generation-step__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .generation-step__title {
   margin: 0;
 }
 
+.generation-step__subtitle {
+  margin: 0;
+  color: var(--muted);
+}
+
+.generation-step__start-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
 .generation-step__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
   color: var(--danger);
+}
+
+.generation-step__body {
+  display: flex;
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.generation-step__panel {
+  background: var(--panel);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+.generation-step__panel--stages {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.generation-step__panel--preview {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.generation-step__viewport {
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  border: none;
+  border-radius: 0;
+}
+
+.generation-step__preview-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  pointer-events: none;
 }
 
 .generation-step__stages {
@@ -229,14 +339,16 @@ onBeforeUnmount(closeStream)
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
 .generation-step__stage {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  min-height: 32px;
   color: var(--muted);
+  font-size: var(--text-sm);
 }
 
 .generation-step__stage--current {
@@ -249,13 +361,67 @@ onBeforeUnmount(closeStream)
 }
 
 .generation-step__stage-marker {
-  font-size: var(--text-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: var(--border-width) solid var(--border);
 }
 
-.generation-step__message {
-  margin: 0;
-  color: var(--muted);
+.generation-step__stage--done .generation-step__stage-marker {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.generation-step__stage--current .generation-step__stage-marker {
+  border-color: var(--accent);
+}
+
+/* Spinner puramente CSS -- un anillo con un segmento hueco que gira, sin
+   ninguna librería. `prefers-reduced-motion` ya lo neutraliza vía la
+   regla global de reset.css (duración de animación forzada a 0.01ms). */
+.generation-step__spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  animation: generation-step-spin 0.8s linear infinite;
+}
+
+.generation-step__spinner--lg {
+  width: 28px;
+  height: 28px;
+  border-width: 3px;
+}
+
+@keyframes generation-step-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.generation-step__progress-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.generation-step__progress-row {
+  display: flex;
+  justify-content: space-between;
   font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.generation-step__progress-pct {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* `<progress>` nativo (Sonar S6819 -- accesible en todos los dispositivos sin reimplementar la semántica a mano con role="progressbar"). Estilos por pseudo-elemento porque el navegador no expone su barra de relleno como CSS normal. */
@@ -285,7 +451,16 @@ onBeforeUnmount(closeStream)
   transition: width 0.2s ease;
 }
 
+.generation-step__message {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
 .generation-step__notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin: 0;
   color: var(--muted);
   font-size: var(--text-sm);
@@ -297,10 +472,14 @@ onBeforeUnmount(closeStream)
 
 .generation-step__notice--ok {
   color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
 }
 
 .generation-step__notice--error {
   color: var(--danger);
+  background: var(--danger-soft);
+  border-color: transparent;
 }
 
 .generation-step__actions,
@@ -309,17 +488,18 @@ onBeforeUnmount(closeStream)
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-3);
 }
 
-.generation-step__back {
-  align-self: flex-start;
-  min-height: var(--hit-target-min);
-  padding: 0 var(--space-4);
-  background: var(--accent);
-  color: var(--accent-ink);
-  border: none;
-  border-radius: var(--radius-md);
-  font-weight: 600;
-  cursor: pointer;
+.generation-step__cancel-confirm p {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.generation-step__cancel-confirm-actions {
+  display: flex;
+  gap: var(--space-2);
 }
 </style>

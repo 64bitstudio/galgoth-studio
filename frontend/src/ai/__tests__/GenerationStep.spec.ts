@@ -120,10 +120,15 @@ describe('GenerationStep.vue', () => {
 
     expect(wrapper.text()).toContain('Generación completada')
     expect(FakeEventSource.instances[0]!.close).toHaveBeenCalled()
-    expect(wrapper.emitted('completed')).toEqual([['job-1']])
+    // Ticket 037: `completed` también manda el `previewModel` final (el
+    // mismo ya construido en memoria vía SSE) para que "Resultado" pueda
+    // mostrarlo -- acá empieza vacío porque este test no emitió ningún
+    // `preview_operations` antes del evento terminal.
+    expect(wrapper.emitted('completed')?.[0]?.[0]).toBe('job-1')
+    expect((wrapper.emitted('completed')?.[0]?.[1] as { cuboids: unknown[] }).cuboids).toEqual([])
     // El botón "Ir al proyecto" es solo el escape hatch de fallido/cancelado
     // -- al completar, es AiMobWizard.vue (030) quien avanza a "Resultado".
-    expect(wrapper.find('.generation-step__back').exists()).toBe(false)
+    expect(wrapper.findAll('button').find((b) => b.text() === 'Ir al proyecto')).toBeUndefined()
   })
 
   it('el evento terminal "fallido" muestra el mensaje real del error', async () => {
@@ -168,6 +173,6 @@ describe('GenerationStep.vue', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('No se pudo iniciar la generación.')
-    expect(wrapper.find('.generation-step__back').exists()).toBe(true)
+    expect(wrapper.findAll('button').find((b) => b.text() === 'Ir al proyecto')).toBeDefined()
   })
 })

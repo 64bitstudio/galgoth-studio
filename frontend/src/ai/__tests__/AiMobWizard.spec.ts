@@ -232,8 +232,8 @@ describe('AiMobWizard.vue', () => {
     FakeEventSource.instances[0]!.emit('progress', { seq: 1, stage: 'completado', message: null, progressPct: 100, payload: null })
     await flushPromises()
 
-    await wrapper.findAll('.result-step__action').find((a) => a.text() === 'Descartar')!.trigger('click')
-    await wrapper.findAll('.result-step__action').find((a) => a.text() === 'Confirmar')!.trigger('click')
+    await wrapper.findAll('button').find((a) => a.text() === 'Descartar')!.trigger('click')
+    await wrapper.findAll('button').find((a) => a.text() === 'Confirmar')!.trigger('click')
     await flushPromises()
 
     expect(pushSpy).toHaveBeenCalledWith('/projects/p1')
@@ -280,8 +280,8 @@ describe('AiMobWizard.vue', () => {
     FakeEventSource.instances[0]!.emit('progress', { seq: 1, stage: 'completado', message: null, progressPct: 100, payload: null })
     await flushPromises()
 
-    await wrapper.findAll('.result-step__action').find((a) => a.text() === 'Usar este modelo')!.trigger('click')
-    await wrapper.findAll('.result-step__action').find((a) => a.text() === 'Confirmar')!.trigger('click')
+    await wrapper.findAll('button').find((a) => a.text() === 'Usar este modelo')!.trigger('click')
+    await wrapper.findAll('button').find((a) => a.text() === 'Confirmar')!.trigger('click')
     await flushPromises()
 
     expect(calls.some((c) => c.url.endsWith('/jobs/job-1/apply') && c.method === 'POST')).toBe(true)

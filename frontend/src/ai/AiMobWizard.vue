@@ -32,6 +32,7 @@ import { createMob, type BaseType, type MobSummary } from '../projects/mobsApi'
 import { uploadReferenceImage } from '../api/referenceImagesApi'
 import { applyGeneration, getGenerationResult, type GenerationResult } from '../api/generationResultApi'
 import { ApiError } from '../api/ApiError'
+import type { MobProjectModel } from '../domain/MobProjectModel'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,6 +46,7 @@ const submitError = ref<string | null>(null)
 const createdMob = ref<MobSummary | null>(null)
 
 const activeJobId = ref<string | null>(null)
+const finalPreviewModel = ref<MobProjectModel | null>(null)
 const generationResult = ref<GenerationResult | null>(null)
 const resultLoading = ref(false)
 const resultFetchError = ref<string | null>(null)
@@ -99,8 +101,9 @@ async function fetchResult(jobId: string): Promise<void> {
   }
 }
 
-async function handleGenerationCompleted(jobId: string): Promise<void> {
+async function handleGenerationCompleted(jobId: string, finalModel: MobProjectModel): Promise<void> {
   activeJobId.value = jobId
+  finalPreviewModel.value = finalModel
   step.value = 'result'
   await fetchResult(jobId)
 }
@@ -122,6 +125,7 @@ function handleRegenerate(): void {
   generationResult.value = null
   resultFetchError.value = null
   activeJobId.value = null
+  finalPreviewModel.value = null
   // GenerationStep se desmonta (Resultado estaba activo) y se vuelve a
   // montar al volver a 'generation' -- su propio onMounted dispara un
   // POST /generate nuevo, reutilizando la misma imagen de referencia ya
@@ -193,6 +197,7 @@ onBeforeUnmount(() => {
       <ResultStep
         v-else-if="step === 'result' && generationResult"
         :job-id="generationResult.jobId"
+        :preview-model="finalPreviewModel"
         :mob-name="generationResult.mobName"
         :cuboid-count="generationResult.cuboidCount"
         :bone-count="generationResult.boneCount"
