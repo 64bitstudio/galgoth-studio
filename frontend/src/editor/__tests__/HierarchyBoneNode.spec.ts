@@ -5,6 +5,7 @@ import type { Bone, Cuboid, MobProjectModel } from '../../domain/MobProjectModel
 import HierarchyBoneNode from '../HierarchyBoneNode.vue'
 import { buildHierarchyTree } from '../hierarchyTree'
 import { useDraftModelStore } from '../draftModelStore'
+import { useSelectionStore } from '../selectionStore'
 
 const EMPTY_FACES = {
   north: { uv: [0, 0, 0, 0] as [number, number, number, number], texture: null },
@@ -54,55 +55,49 @@ describe('HierarchyBoneNode.vue', () => {
     setActivePinia(createPinia())
   })
 
-  it('el editor de pivote está oculto por defecto y aparece al hacer click en "pivot"', async () => {
-    const { wrapper } = mountRootNode([bone('root', null, [1, 2, 3])], [])
+  // Ticket 036 (pasada de fidelidad visual): la edición de pivote se movió
+  // de este componente a InspectorPanel.vue -- las pruebas de esa
+  // funcionalidad (misma lógica, `draft.setPivot`) viven ahora en
+  // InspectorField.spec.ts / InspectorPanel.spec.ts, no acá.
 
-    expect(wrapper.find('.hierarchy-bone-node__pivot-editor').exists()).toBe(false)
-
-    await wrapper.find('.hierarchy-bone-node__icon-button').trigger('click')
-
-    const editor = wrapper.find('.hierarchy-bone-node__pivot-editor')
-    expect(editor.exists()).toBe(true)
-    const inputs = editor.findAll('input')
-    expect(inputs.map((i) => (i.element as HTMLInputElement).value)).toEqual(['1', '2', '3'])
+  it('expandido por defecto -- muestra sus cuboids hijos sin necesidad de click', () => {
+    const { wrapper } = mountRootNode([bone('root', null)], [cuboid('c1', 'root')])
+    expect(wrapper.find('.hierarchy-node__row--cuboid').exists()).toBe(true)
   })
 
-  it('commitPivot actualiza solo el eje editado y conserva los otros dos', async () => {
-    const { draft, wrapper } = mountRootNode([bone('root', null, [1, 2, 3])], [])
-    await wrapper.find('.hierarchy-bone-node__icon-button').trigger('click')
+  it('un click en el chevron colapsa el nodo (oculta sus cuboids hijos)', async () => {
+    const { wrapper } = mountRootNode([bone('root', null)], [cuboid('c1', 'root')])
 
-    const yInput = wrapper.find('[aria-label="pivot y"]')
-    await yInput.setValue('40')
-    await yInput.trigger('change')
+    await wrapper.find('[aria-label="Contraer"]').trigger('click')
 
-    expect(draft.model!.bones[0]!.pivot).toEqual([1, 40, 3])
+    expect(wrapper.find('.hierarchy-node__row--cuboid').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="Expandir"]').exists()).toBe(true)
   })
 
-  it('commitPivot ignora un valor no numérico (no llama al store, no lanza)', async () => {
-    // <input type="number"> sanitiza texto no numérico a '' antes de que
-    // el handler lo vea (Number('') = 0, no dispara el guard) -- se
-    // fuerza un valor no numérico saltándose esa sanitización del DOM
-    // para poder ejercitar el guard `Number.isNaN` del propio componente.
-    const { draft, wrapper } = mountRootNode([bone('root', null, [1, 2, 3])], [])
-    await wrapper.find('.hierarchy-bone-node__icon-button').trigger('click')
-
-    const xInput = wrapper.find('[aria-label="pivot x"]')
-    const element = xInput.element as HTMLInputElement
-    Object.defineProperty(element, 'value', { value: 'no-es-un-numero', configurable: true })
-    await xInput.trigger('change')
-
-    expect(draft.model!.bones[0]!.pivot).toEqual([1, 2, 3]) // sin cambios
+  it('un bone sin hijos no muestra chevron (nada para expandir/contraer)', () => {
+    const { wrapper } = mountRootNode([bone('root', null)], [])
+    expect(wrapper.find('[aria-label="Contraer"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="Expandir"]').exists()).toBe(false)
   })
 
-  it('el botón ✕ muestra la advertencia de cascada con los conteos reales antes de borrar', async () => {
+  it('un click en un cuboid lo selecciona en el store compartido', async () => {
+    const { wrapper } = mountRootNode([bone('root', null)], [cuboid('c1', 'root')])
+    const selection = useSelectionStore()
+
+    await wrapper.find('.hierarchy-node__row--cuboid').trigger('click')
+
+    expect(selection.selectedCuboidId).toBe('c1')
+  })
+
+  it('el botón de eliminar muestra la advertencia de cascada con los conteos reales antes de borrar', async () => {
     const child = bone('child', 'root')
     const { wrapper } = mountRootNode([bone('root', null), child], [cuboid('c1', 'child'), cuboid('c2', 'child')])
 
-    expect(wrapper.find('.hierarchy-bone-node__delete-warning').exists()).toBe(false)
+    expect(wrapper.find('.hierarchy-node__delete-warning').exists()).toBe(false)
 
-    await wrapper.findAll('.hierarchy-bone-node__icon-button')[1]!.trigger('click')
+    await wrapper.find('[aria-label="Eliminar bone"]').trigger('click')
 
-    const warning = wrapper.find('.hierarchy-bone-node__delete-warning')
+    const warning = wrapper.find('.hierarchy-node__delete-warning')
     expect(warning.exists()).toBe(true)
     expect(warning.text()).toContain('1 bone(s)')
     expect(warning.text()).toContain('2 cuboid(s)')
@@ -111,21 +106,21 @@ describe('HierarchyBoneNode.vue', () => {
   it('Cancelar cierra la advertencia sin borrar nada', async () => {
     const { draft, wrapper } = mountRootNode([bone('root', null)], [cuboid('c1', 'root')])
 
-    await wrapper.findAll('.hierarchy-bone-node__icon-button')[1]!.trigger('click')
+    await wrapper.find('[aria-label="Eliminar bone"]').trigger('click')
     await wrapper.findAll('button').find((b) => b.text() === 'Cancelar')!.trigger('click')
 
-    expect(wrapper.find('.hierarchy-bone-node__delete-warning').exists()).toBe(false)
+    expect(wrapper.find('.hierarchy-node__delete-warning').exists()).toBe(false)
     expect(draft.model!.bones).toHaveLength(1) // sin cambios
   })
 
   it('Confirmar borra el bone (y su cascada) vía el draft store', async () => {
     const { draft, wrapper } = mountRootNode([bone('root', null)], [cuboid('c1', 'root')])
 
-    await wrapper.findAll('.hierarchy-bone-node__icon-button')[1]!.trigger('click')
+    await wrapper.find('[aria-label="Eliminar bone"]').trigger('click')
     await wrapper.findAll('button').find((b) => b.text() === 'Confirmar')!.trigger('click')
 
     expect(draft.model!.bones).toHaveLength(0)
     expect(draft.model!.cuboids).toHaveLength(0)
-    expect(wrapper.find('.hierarchy-bone-node__delete-warning').exists()).toBe(false)
+    expect(wrapper.find('.hierarchy-node__delete-warning').exists()).toBe(false)
   })
 })

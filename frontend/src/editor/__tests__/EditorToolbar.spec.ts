@@ -60,10 +60,15 @@ function modelWith(bones: Bone[], cuboids: Cuboid[]): MobProjectModel {
   }
 }
 
+// Ticket 036 (pasada de fidelidad visual): Move/Scale/Rotate/Add cuboid/
+// Add bone/Duplicate/Delete/Undo/Redo son ahora IconButton -- sin texto
+// visible, el nombre accesible vive en `aria-label` (mismo texto que
+// antes, ver EditorToolbar.vue). "Guardar" sigue siendo un GButton con
+// texto real -- se busca por texto igual que antes.
 function findButton(wrapper: ReturnType<typeof mount>, label: string) {
-  const button = wrapper.findAll('button').find((b) => b.text() === label)
+  const button = wrapper.findAll('button').find((b) => b.attributes('aria-label') === label || b.text() === label)
   if (!button) {
-    throw new Error(`No se encontró un botón con texto '${label}'`)
+    throw new Error(`No se encontró un botón con aria-label o texto '${label}'`)
   }
   return button
 }
@@ -84,12 +89,12 @@ describe('EditorToolbar.vue', () => {
 
     await findButton(wrapper, 'Scale').trigger('click')
     expect(setModeSpy).toHaveBeenCalledWith('scale')
-    expect(findButton(wrapper, 'Scale').classes()).toContain('editor-toolbar__button--active')
+    expect(findButton(wrapper, 'Scale').classes()).toContain('icon-button--active')
 
     await findButton(wrapper, 'Rotate').trigger('click')
     expect(setModeSpy).toHaveBeenCalledWith('rotate')
-    expect(findButton(wrapper, 'Rotate').classes()).toContain('editor-toolbar__button--active')
-    expect(findButton(wrapper, 'Scale').classes()).not.toContain('editor-toolbar__button--active')
+    expect(findButton(wrapper, 'Rotate').classes()).toContain('icon-button--active')
+    expect(findButton(wrapper, 'Scale').classes()).not.toContain('icon-button--active')
   })
 
   it('Add cuboid usa el bone del cuboid seleccionado como destino y selecciona el nuevo cuboid', async () => {

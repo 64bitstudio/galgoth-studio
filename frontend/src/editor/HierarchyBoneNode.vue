@@ -4,32 +4,35 @@
  * un SFC se auto-referencie por su nombre de archivo para recursión, sin
  * import explícito.
  *
- * Ticket 018: agrega edición del pivote del bone (AC #5 -- inputs
- * numéricos, no un gizmo 3D, ya que los bones no son seleccionables en
- * el viewport, ver ticket 017) y borrado con advertencia explícita de
- * impacto en cascada ANTES de confirmar (AC #3).
+ * Ticket 036 (pasada de fidelidad visual, mockup 05): el editor inline
+ * de pivote (inputs numéricos sueltos dentro del árbol) se MUEVE al
+ * panel de Propiedades (`InspectorPanel.vue`) -- mismo método de store
+ * (`draft.setPivot`), sin duplicar la lógica; el árbol ahora solo
+ * selecciona/expande. `expanded` es estado puramente visual local (no
+ * existía ningún concepto de colapsar antes de este ticket -- el árbol
+ * siempre se mostraba completamente abierto), default `true` para no
+ * cambiar el comportamiento por defecto ya conocido.
  */
 import { ref } from 'vue'
 import type { BoneNode } from './hierarchyTree'
 import { useDraftModelStore } from './draftModelStore'
 import { useSelectionStore } from './selectionStore'
+import IconChevron from '../design-system/icons/IconChevron.vue'
+import IconBoneJoint from '../design-system/icons/IconBoneJoint.vue'
+import IconCuboid from '../design-system/icons/IconCuboid.vue'
+import IconTrash from '../design-system/icons/IconTrash.vue'
+import GButton from '../design-system/components/GButton.vue'
 
 const props = defineProps<{ node: BoneNode }>()
 
 const selection = useSelectionStore()
 const draft = useDraftModelStore()
 
-const isEditingPivot = ref(false)
+const expanded = ref(true)
 const pendingDelete = ref(false)
 
-function commitPivot(axis: 0 | 1 | 2, event: Event): void {
-  const value = Number((event.target as HTMLInputElement).value)
-  if (Number.isNaN(value)) {
-    return
-  }
-  const pivot: [number, number, number] = [...props.node.bone.pivot]
-  pivot[axis] = value
-  draft.setPivot(props.node.bone.id, pivot)
+function hasChildren(): boolean {
+  return props.node.cuboids.length > 0 || props.node.children.length > 0
 }
 
 function requestDelete(): void {
@@ -49,40 +52,38 @@ const impact = draft.boneRemovalImpact(props.node.bone.id)
 </script>
 
 <template>
-  <li class="hierarchy-bone-node">
-    <div class="hierarchy-bone-node__header">
-      <span class="hierarchy-bone-node__name">{{ node.bone.name }}</span>
-      <button type="button" class="hierarchy-bone-node__icon-button" @click="isEditingPivot = !isEditingPivot">
-        pivot
-      </button>
-      <button type="button" class="hierarchy-bone-node__icon-button" @click="requestDelete">✕</button>
+  <li class="hierarchy-node">
+    <div class="hierarchy-node__row hierarchy-node__row--bone">
+      <button v-if="hasChildren() && expanded" type="button" class="hierarchy-node__toggle" aria-label="Contraer" @click="expanded = false"><IconChevron :size="14" :expanded="true" /></button>
+      <button v-else-if="hasChildren()" type="button" class="hierarchy-node__toggle" aria-label="Expandir" @click="expanded = true"><IconChevron :size="14" :expanded="false" /></button>
+      <span v-else class="hierarchy-node__toggle-spacer" aria-hidden="true"></span>
+      <IconBoneJoint :size="15" class="hierarchy-node__icon hierarchy-node__icon--bone" />
+      <span class="hierarchy-node__name">{{ node.bone.name }}</span>
+      <button type="button" class="hierarchy-node__delete" aria-label="Eliminar bone" title="Eliminar bone" @click="requestDelete"><IconTrash :size="14" /></button>
     </div>
 
-    <div v-if="isEditingPivot" class="hierarchy-bone-node__pivot-editor">
-      <label>X <input type="number" :value="node.bone.pivot[0]" aria-label="pivot x" @change="commitPivot(0, $event)" /></label>
-      <label>Y <input type="number" :value="node.bone.pivot[1]" aria-label="pivot y" @change="commitPivot(1, $event)" /></label>
-      <label>Z <input type="number" :value="node.bone.pivot[2]" aria-label="pivot z" @change="commitPivot(2, $event)" /></label>
-    </div>
-
-    <div v-if="pendingDelete" class="hierarchy-bone-node__delete-warning">
+    <div v-if="pendingDelete" class="hierarchy-node__delete-warning">
       <p>
-        Eliminar '{{ node.bone.name }}' también elimina {{ (impact?.affectedBoneIds.length ?? 1) - 1 }} bone(s)
-        hijo(s) y {{ impact?.affectedCuboidIds.length ?? 0 }} cuboid(s) en cascada. Esta acción no se puede deshacer
-        todavía (Command stack de undo/redo llega en el ticket 019).
+        Eliminar "{{ node.bone.name }}" también elimina {{ (impact?.affectedBoneIds.length ?? 1) - 1 }} bone(s) hijo(s) y
+        {{ impact?.affectedCuboidIds.length ?? 0 }} cuboid(s) en cascada.
       </p>
-      <button type="button" @click="confirmDelete">Confirmar</button>
-      <button type="button" @click="cancelDelete">Cancelar</button>
+      <div class="hierarchy-node__delete-actions">
+        <GButton variant="ghost" @click="cancelDelete">Cancelar</GButton>
+        <GButton variant="danger" @click="confirmDelete">Confirmar</GButton>
+      </div>
     </div>
 
-    <ul class="hierarchy-bone-node__children">
+    <ul v-if="expanded" class="hierarchy-node__children">
       <li
         v-for="cuboid in node.cuboids"
         :key="cuboid.id"
-        class="hierarchy-cuboid-node"
-        :class="{ 'hierarchy-cuboid-node--selected': cuboid.id === selection.selectedCuboidId }"
+        class="hierarchy-node__row hierarchy-node__row--cuboid"
+        :class="{ 'hierarchy-node__row--selected': cuboid.id === selection.selectedCuboidId }"
         @click="selection.select(cuboid.id)"
       >
-        {{ cuboid.name }}
+        <span class="hierarchy-node__toggle-spacer" aria-hidden="true"></span>
+        <IconCuboid :size="14" class="hierarchy-node__icon hierarchy-node__icon--cuboid" />
+        <span class="hierarchy-node__name">{{ cuboid.name }}</span>
       </li>
       <HierarchyBoneNode v-for="child in node.children" :key="child.bone.id" :node="child" />
     </ul>
@@ -90,62 +91,119 @@ const impact = draft.boneRemovalImpact(props.node.bone.id)
 </template>
 
 <style scoped>
-.hierarchy-bone-node {
+.hierarchy-node {
   list-style: none;
 }
 
-.hierarchy-bone-node__header {
+.hierarchy-node__row {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-2);
+  min-height: 30px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
 }
 
-.hierarchy-bone-node__name {
+.hierarchy-node__row--bone {
+  cursor: default;
   font-weight: 600;
 }
 
-.hierarchy-bone-node__icon-button {
-  font-size: 0.7rem;
-  padding: 0 0.25rem;
+.hierarchy-node__row:hover {
+  background: var(--surface-2);
 }
 
-.hierarchy-bone-node__pivot-editor {
+.hierarchy-node__row--selected {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.hierarchy-node__toggle,
+.hierarchy-node__toggle-spacer {
   display: flex;
-  gap: 0.5rem;
-  padding: 0.25rem 0 0.25rem 1rem;
-  font-size: 0.75rem;
-}
-
-.hierarchy-bone-node__pivot-editor input {
-  width: 3.5rem;
-}
-
-.hierarchy-bone-node__delete-warning {
-  background: rgba(255, 107, 107, 0.15);
-  border: 1px solid #ff6b6b;
-  border-radius: 4px;
-  padding: 0.5rem;
-  margin: 0.25rem 0;
-  font-size: 0.8rem;
-}
-
-.hierarchy-bone-node__children {
-  margin: 0;
-  padding-left: 1rem;
-}
-
-.hierarchy-cuboid-node {
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--muted);
   cursor: pointer;
-  padding: 0.125rem 0.25rem;
-  border-radius: 4px;
 }
 
-.hierarchy-cuboid-node:hover {
-  background: rgba(255, 255, 255, 0.08);
+.hierarchy-node__icon {
+  flex-shrink: 0;
 }
 
-.hierarchy-cuboid-node--selected {
-  background: #ffb020;
-  color: #1a1a1a;
+.hierarchy-node__icon--bone {
+  color: var(--muted);
+}
+
+.hierarchy-node__icon--cuboid {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.hierarchy-node__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+}
+
+.hierarchy-node__delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.hierarchy-node__delete:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.hierarchy-node__row--bone:hover .hierarchy-node__delete {
+  opacity: 1;
+}
+
+.hierarchy-node__delete-warning {
+  margin: var(--space-1) 0 var(--space-1) 22px;
+  padding: var(--space-3);
+  background: var(--danger-soft);
+  border: var(--border-width) solid var(--danger);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+}
+
+.hierarchy-node__delete-warning p {
+  margin: 0 0 var(--space-2);
+  color: var(--text);
+}
+
+.hierarchy-node__delete-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.hierarchy-node__children {
+  margin: 0;
+  padding-left: 18px;
 }
 </style>

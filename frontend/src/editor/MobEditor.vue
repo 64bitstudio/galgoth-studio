@@ -20,6 +20,8 @@ import { useRoute, useRouter } from 'vue-router'
 import ThreeViewport from '../viewport/ThreeViewport.vue'
 import { threeViewportService } from '../viewport/ThreeViewportService'
 import HierarchyPanel from './HierarchyPanel.vue'
+import InspectorPanel from './InspectorPanel.vue'
+import EditorHeader from './EditorHeader.vue'
 import EditorToolbar from './EditorToolbar.vue'
 import AiEditPanel from './AiEditPanel.vue'
 import GenerationPreviewViewport from '../ai/GenerationPreviewViewport.vue'
@@ -29,6 +31,9 @@ import { getMob } from '../projects/mobsApi'
 import { emptyMobProjectModel } from '../domain/emptyMobProjectModel'
 import { ApiError } from '../api/ApiError'
 import GSidebar, { type GSidebarKey } from '../design-system/components/GSidebar.vue'
+import GButton from '../design-system/components/GButton.vue'
+import IconCamera from '../design-system/icons/IconCamera.vue'
+import IconSparkle from '../design-system/icons/IconSparkle.vue'
 import type { MobProjectModel } from '../domain/MobProjectModel'
 
 const route = useRoute()
@@ -39,6 +44,7 @@ const mobId = route.params.mobId as string
 const draft = useDraftModelStore()
 const loadError = ref<string | null>(null)
 const notFound = ref(false)
+const mobName = ref('')
 
 // Ticket 031: mientras `AiEditPanel` tiene un plan activo, el canvas
 // principal muestra ese modelo de solo lectura (`aiPreviewModel`) en vez
@@ -60,6 +66,7 @@ function handleAiEditApplied(model: MobProjectModel): void {
 onMounted(async () => {
   try {
     const mob = await getMob(mobId)
+    mobName.value = mob.name
     try {
       const draftView = await getDraft(mobId)
       draft.load(draftView.model)
@@ -100,27 +107,32 @@ function backToProject(): void {
       </p>
       <p v-else-if="loadError" class="mob-editor__error">{{ loadError }}</p>
       <template v-else-if="draft.model">
+        <div class="mob-editor__top">
+          <EditorHeader :mob-name="mobName" />
+          <div class="mob-editor__top-actions">
+            <GButton variant="ghost" @click="threeViewportService.resetCamera()"><template #icon><IconCamera :size="16" /></template>Reset cámara</GButton>
+            <GButton :variant="showAiPanel ? 'primary' : 'secondary'" @click="showAiPanel = !showAiPanel">
+              <template #icon><IconSparkle :size="16" /></template>{{ showAiPanel ? 'Editor manual' : 'Asistente IA' }}
+            </GButton>
+            <GButton variant="secondary" @click="router.push(`/projects/${projectId}/mobs/${mobId}/export`)">Exportar</GButton>
+          </div>
+        </div>
         <EditorToolbar />
         <div class="mob-editor__body">
-          <AiEditPanel
-            v-if="showAiPanel"
-            :mob-id="mobId"
-            class="mob-editor__hierarchy"
-            @preview-model-changed="handleAiPreviewModelChanged"
-            @applied="handleAiEditApplied"
-          />
-          <HierarchyPanel v-else class="mob-editor__hierarchy" />
+          <div class="mob-editor__panel mob-editor__panel--left">
+            <AiEditPanel
+              v-if="showAiPanel"
+              :mob-id="mobId"
+              @preview-model-changed="handleAiPreviewModelChanged"
+              @applied="handleAiEditApplied"
+            />
+            <HierarchyPanel v-else />
+          </div>
           <GenerationPreviewViewport v-if="aiPreviewModel" :model="aiPreviewModel" class="mob-editor__canvas" />
           <ThreeViewport v-else class="mob-editor__canvas" />
-        </div>
-        <div class="mob-editor__actions">
-          <button type="button" class="mob-editor__reset-camera" @click="threeViewportService.resetCamera()">Reset cámara</button>
-          <button type="button" class="mob-editor__ai-toggle" @click="showAiPanel = !showAiPanel">
-            {{ showAiPanel ? 'Editor manual' : 'Asistente IA' }}
-          </button>
-          <button type="button" class="mob-editor__export-link" @click="router.push(`/projects/${projectId}/mobs/${mobId}/export`)">
-            Exportar
-          </button>
+          <div class="mob-editor__panel mob-editor__panel--right">
+            <InspectorPanel />
+          </div>
         </div>
       </template>
       <p v-else class="mob-editor__loading">Cargando…</p>
@@ -136,54 +148,50 @@ function backToProject(): void {
 
 .mob-editor {
   flex: 1;
-  padding: var(--space-4);
+  padding: var(--space-3) var(--space-4) var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   min-width: 0;
+  min-height: 0;
+}
+
+.mob-editor__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.mob-editor__top-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
 }
 
 .mob-editor__body {
   flex: 1;
   min-height: 0;
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
-.mob-editor__hierarchy {
-  width: 240px;
+.mob-editor__panel {
+  width: 260px;
   flex-shrink: 0;
+  background: var(--panel);
   border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: auto;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 .mob-editor__canvas {
   flex: 1;
   min-width: 0;
-}
-
-.mob-editor__actions {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.mob-editor__reset-camera,
-.mob-editor__ai-toggle,
-.mob-editor__export-link {
-  min-height: var(--hit-target-min);
-  padding: 0 var(--space-3);
-  background: var(--surface-2);
-  color: var(--text);
+  background: var(--surface);
   border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-}
-
-.mob-editor__ai-toggle,
-.mob-editor__export-link {
-  border-color: var(--accent);
-  font-weight: 600;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 .mob-editor__loading,

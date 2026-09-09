@@ -167,7 +167,17 @@ describe('MobEditor.vue', () => {
           throw new Error(`fetch inesperado: ${u}`)
         }),
       )
-      const wrapper = shallowMount(MobEditor, { global: { plugins: [await routerAt('p1', 'mob-1')] } })
+      // Ticket 036 (pasada de fidelidad visual): "Reset cámara"/"Asistente
+      // IA"/"Exportar" ahora son GButton (antes <button> HTML plano) --
+      // bajo shallowMount, un componente hijo se stubea SIN su slot
+      // (texto invisible, ver vue-test-utils `renderStubDefaultSlot`,
+      // default `false`) -- `stubs: { GButton: false }` lo excluye del
+      // shallow-stub para que su texto real siga siendo buscable,
+      // dejando el resto (HierarchyPanel/ThreeViewport/AiEditPanel/etc.)
+      // stubeado igual que antes.
+      const wrapper = shallowMount(MobEditor, {
+        global: { plugins: [await routerAt('p1', 'mob-1')], stubs: { GButton: false } },
+      })
       await flushPromises()
       return wrapper
     }

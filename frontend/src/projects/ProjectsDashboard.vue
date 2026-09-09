@@ -19,6 +19,7 @@ import GButton from '../design-system/components/GButton.vue'
 import GPanel from '../design-system/components/GPanel.vue'
 import GSidebar, { type GSidebarKey } from '../design-system/components/GSidebar.vue'
 import IconNewProject from '../design-system/icons/IconNewProject.vue'
+import IconImage from '../design-system/icons/IconImage.vue'
 import ProjectCard from './ProjectCard.vue'
 import ProjectNameModal from './ProjectNameModal.vue'
 import {
@@ -148,6 +149,7 @@ function handleSidebarSelect(key: GSidebarKey): void {
           <span class="projects-dashboard__cta-subtitle">Empieza desde cero</span>
         </button>
         <button type="button" class="projects-dashboard__cta" disabled>
+          <IconImage :size="28" class="projects-dashboard__cta-icon" />
           <span class="projects-dashboard__cta-title">Crear un mob con IA</span>
           <span class="projects-dashboard__cta-subtitle">Convierte una imagen en un modelo de Minecraft</span>
           <span class="projects-dashboard__cta-hint">Disponible en una fase futura</span>
@@ -237,6 +239,15 @@ function handleSidebarSelect(key: GSidebarKey): void {
 .projects-dashboard__cta:disabled {
   cursor: not-allowed;
   color: var(--muted);
+}
+
+.projects-dashboard__cta-icon {
+  color: var(--muted);
+  margin-bottom: var(--space-1);
+}
+
+.projects-dashboard__cta--primary .projects-dashboard__cta-icon {
+  color: var(--accent);
 }
 
 .projects-dashboard__cta-title {
