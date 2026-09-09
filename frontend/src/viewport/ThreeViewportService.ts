@@ -12,7 +12,18 @@
  * para que cualquier pantalla que reutilice el singleton herede el mismo
  * comportamiento de cámara sin reconfigurarlo.
  */
-import { AmbientLight, DirectionalLight, GridHelper, Group, PerspectiveCamera, Scene, Vector3, WebGLRenderer } from 'three'
+import {
+  AmbientLight,
+  DirectionalLight,
+  GridHelper,
+  Group,
+  PerspectiveCamera,
+  Raycaster,
+  Scene,
+  Vector2,
+  Vector3,
+  WebGLRenderer,
+} from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { buildMobGroup } from './buildMobScene'
 import type { MobProjectModel } from '../domain/MobProjectModel'
@@ -30,6 +41,7 @@ export class ThreeViewportService {
 
   private currentMobGroup: Group | null = null
   private animationHandle: number | null = null
+  private readonly raycaster = new Raycaster()
 
   constructor() {
     this.renderer = new WebGLRenderer({ antialias: true })
@@ -89,6 +101,32 @@ export class ThreeViewportService {
     }
     this.currentMobGroup = buildMobGroup(model, selectedCuboidId)
     this.scene.add(this.currentMobGroup)
+  }
+
+  /**
+   * Ticket 017: raycasting desde coordenadas de pantalla (`event.clientX/Y`)
+   * contra los cuboids actualmente en escena. Devuelve el `cuboid.id` del
+   * más cercano bajo el cursor, o `null` si no hay ninguno (click en vacío
+   * -- el caller lo interpreta como "deseleccionar"). Solo mira hijos
+   * DIRECTOS del grupo del mob (no recursivo): así nunca compite con el
+   * outline de selección (hijo del mesh, un nivel más profundo) ni con
+   * nada que no sea un cuboid real -- los marcadores de pivote de bone no
+   * tienen `userData.cuboidId`, se descartan aunque el rayo los toque.
+   */
+  pickCuboidIdAt(clientX: number, clientY: number): string | null {
+    if (!this.currentMobGroup) {
+      return null
+    }
+    const rect = this.canvas.getBoundingClientRect()
+    const ndc = new Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    )
+    this.raycaster.setFromCamera(ndc, this.camera)
+    const hit = this.raycaster
+      .intersectObjects(this.currentMobGroup.children, false)
+      .find((intersection) => typeof intersection.object.userData.cuboidId === 'string')
+    return hit ? (hit.object.userData.cuboidId as string) : null
   }
 
   startRenderLoop(): void {

@@ -68,6 +68,9 @@ function buildCuboidMesh(cuboid: Cuboid, chain: Bone[], isSelected: boolean): Me
   const geometry = new BoxGeometry(size[0], size[1], size[2])
   const mesh = new Mesh(geometry, new MeshStandardMaterial({ color: CUBOID_COLOR }))
   mesh.name = cuboid.name
+  // El nombre puede repetirse entre cuboids -- el picking (ticket 017) usa
+  // este id real, nunca el nombre, para identificar qué se clickeó.
+  mesh.userData.cuboidId = cuboid.id
 
   if (isSelected) {
     // Hijo del mesh -- hereda su transform automáticamente, sin duplicar

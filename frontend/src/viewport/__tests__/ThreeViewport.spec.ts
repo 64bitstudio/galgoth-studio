@@ -1,6 +1,8 @@
 import { mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MobProjectModel } from '../../domain/MobProjectModel'
+import { useSelectionStore } from '../../editor/selectionStore'
 
 // Ver nota en ThreeViewportService.spec.ts -- jsdom no tiene WebGL real.
 vi.mock('three', async (importOriginal) => {
@@ -34,6 +36,12 @@ function emptyModel(name: string): MobProjectModel {
 }
 
 describe('ThreeViewport.vue', () => {
+  beforeEach(() => {
+    // ThreeViewport.vue usa useSelectionStore() (ticket 017) -- necesita
+    // una Pinia activa incluso montado fuera de una app real.
+    setActivePinia(createPinia())
+  })
+
   afterEach(() => {
     threeViewportService.stopRenderLoop()
     vi.restoreAllMocks()
@@ -65,5 +73,47 @@ describe('ThreeViewport.vue', () => {
     )
     expect(mobGroups).toHaveLength(1)
     expect(mobGroups[0]!.name).toBe('mob-dos')
+  })
+
+  // VTU's trigger() no puede asignar clientX/clientY a un MouseEvent
+  // sintético (son getters de solo lectura en jsdom) -- se despacha el
+  // evento nativo directo sobre el elemento para controlar la posición.
+  function dispatch(element: Element, type: string, clientX: number, clientY: number): void {
+    element.dispatchEvent(new MouseEvent(type, { clientX, clientY, bubbles: true }))
+  }
+
+  it('ticket 017 AC #3: un click (sin arrastre) en el canvas selecciona el cuboid bajo el cursor en el store compartido', () => {
+    const wrapper = mount(ThreeViewport, { props: { model: emptyModel('mob-uno') } })
+    const selection = useSelectionStore()
+    vi.spyOn(threeViewportService, 'pickCuboidIdAt').mockReturnValue('cube-1')
+
+    dispatch(wrapper.element, 'pointerdown', 100, 100)
+    dispatch(wrapper.element, 'click', 100, 100)
+
+    expect(selection.selectedCuboidId).toBe('cube-1')
+  })
+
+  it('un click en vacío (pickCuboidIdAt devuelve null) deselecciona', () => {
+    const wrapper = mount(ThreeViewport, { props: { model: emptyModel('mob-uno') } })
+    const selection = useSelectionStore()
+    selection.select('cube-previo')
+    vi.spyOn(threeViewportService, 'pickCuboidIdAt').mockReturnValue(null)
+
+    dispatch(wrapper.element, 'pointerdown', 100, 100)
+    dispatch(wrapper.element, 'click', 100, 100)
+
+    expect(selection.selectedCuboidId).toBeNull()
+  })
+
+  it('un arrastre de órbita (pointerdown lejos del click) NO dispara selección', () => {
+    const wrapper = mount(ThreeViewport, { props: { model: emptyModel('mob-uno') } })
+    const selection = useSelectionStore()
+    const pickSpy = vi.spyOn(threeViewportService, 'pickCuboidIdAt').mockReturnValue('cube-1')
+
+    dispatch(wrapper.element, 'pointerdown', 0, 0)
+    dispatch(wrapper.element, 'click', 200, 200) // se movió >5px -> fue un drag de órbita
+
+    expect(pickSpy).not.toHaveBeenCalled()
+    expect(selection.selectedCuboidId).toBeNull()
   })
 })
