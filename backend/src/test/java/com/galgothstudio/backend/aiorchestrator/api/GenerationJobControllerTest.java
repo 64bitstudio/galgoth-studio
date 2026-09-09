@@ -29,6 +29,8 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,11 +46,13 @@ import org.springframework.test.web.servlet.MvcResult;
 
 /**
  * Integración HTTP (Testcontainers + MockMvc) de `GenerationJobController`
- * (ticket 029) -- contrato real de `POST /api/mobs/{mobId}/generate`,
+ * (tickets 029/030) -- contrato real de `POST /api/mobs/{mobId}/generate`,
  * `GET /api/jobs/{jobId}/events` (SSE, incluyendo reanudación vía
- * `Last-Event-ID`, AC #3) y `POST /api/jobs/{jobId}/cancel`. Sin
- * `@Transactional`, misma razón que `MobGenerationServiceTest` -- el
- * pipeline corre en otro hilo con su propia transacción.
+ * `Last-Event-ID`, AC #3 de 029), `POST /api/jobs/{jobId}/cancel`,
+ * `GET /api/jobs/{jobId}/result` y `POST /api/jobs/{jobId}/apply`
+ * ("Usar este modelo", ticket 030). Sin `@Transactional`, misma razón
+ * que `MobGenerationServiceTest` -- el pipeline corre en otro hilo con
+ * su propia transacción.
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -199,6 +203,104 @@ class GenerationJobControllerTest {
 		mockMvc.perform(post("/api/jobs/{jobId}/cancel", jobId))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.error").value("INVALID_JOB_STATE"));
+	}
+
+	@Test
+	void obtener_el_resultado_de_un_job_completado_muestra_conteos_reales_y_compatibilidad_FMM_real_030_AC1() throws Exception {
+		UUID mobId = aProjectAndMobWithReference();
+		UUID jobId = startGenerationAndExtractJobId(mobId);
+		awaitTerminalStatus(jobId);
+
+		mockMvc.perform(get("/api/jobs/{jobId}/result", jobId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.jobId").value(jobId.toString()))
+				.andExpect(jsonPath("$.mobId").value(mobId.toString()))
+				.andExpect(jsonPath("$.mobName").value("Carcomido"))
+				.andExpect(jsonPath("$.cuboidCount").value(1))
+				.andExpect(jsonPath("$.boneCount").value(1))
+				.andExpect(jsonPath("$.fmmCompatible").value(true));
+	}
+
+	@Test
+	void obtener_el_resultado_de_un_job_que_todavia_no_completo_responde_409_030() throws Exception {
+		UUID mobId = aProjectAndMobWithReference();
+		CountDownLatch visionCalled = new CountDownLatch(1);
+		CountDownLatch testReadyToProceed = new CountDownLatch(1);
+		((MockVisionProvider) visionModelProvider).setOnCall(() -> {
+			visionCalled.countDown();
+			awaitLatch(testReadyToProceed);
+		});
+
+		UUID jobId = startGenerationAndExtractJobId(mobId);
+		assertThat(visionCalled.await(2, TimeUnit.SECONDS)).isTrue();
+		try {
+			mockMvc.perform(get("/api/jobs/{jobId}/result", jobId))
+					.andExpect(status().isConflict())
+					.andExpect(jsonPath("$.error").value("JOB_NOT_COMPLETED"));
+		} finally {
+			testReadyToProceed.countDown();
+			awaitTerminalStatus(jobId); // deja terminar el pipeline real antes de que el test siguiente arranque
+		}
+	}
+
+	@Test
+	void obtener_el_resultado_de_un_job_inexistente_responde_404_030() throws Exception {
+		mockMvc.perform(get("/api/jobs/{jobId}/result", UUID.randomUUID())).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void usar_este_modelo_crea_revision_y_draft_en_la_misma_transaccion_030_AC4() throws Exception {
+		UUID mobId = aProjectAndMobWithReference();
+		UUID jobId = startGenerationAndExtractJobId(mobId);
+		awaitTerminalStatus(jobId);
+
+		mockMvc.perform(post("/api/jobs/{jobId}/apply", jobId))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.revisionNumber").value(1))
+				.andExpect(jsonPath("$.draftVersion").value(1));
+
+		Long revisionCount = jdbc.queryForObject(
+				"select count(*) from mob_revisions where mob_id = ? and revision_number = 1 and created_by = 'ai'", Long.class, mobId);
+		assertThat(revisionCount).isEqualTo(1L);
+		Long draftCount = jdbc.queryForObject("select count(*) from mob_drafts where mob_id = ? and draft_version = 1", Long.class, mobId);
+		assertThat(draftCount).isEqualTo(1L);
+		Integer currentRevisionNumber = jdbc.queryForObject("select current_revision_number from mobs where id = ?", Integer.class, mobId);
+		assertThat(currentRevisionNumber).isEqualTo(1);
+	}
+
+	@Test
+	void usar_este_modelo_sobre_un_job_que_todavia_no_completo_responde_409_030() throws Exception {
+		UUID mobId = aProjectAndMobWithReference();
+		CountDownLatch visionCalled = new CountDownLatch(1);
+		CountDownLatch testReadyToProceed = new CountDownLatch(1);
+		((MockVisionProvider) visionModelProvider).setOnCall(() -> {
+			visionCalled.countDown();
+			awaitLatch(testReadyToProceed);
+		});
+
+		UUID jobId = startGenerationAndExtractJobId(mobId);
+		assertThat(visionCalled.await(2, TimeUnit.SECONDS)).isTrue();
+		try {
+			mockMvc.perform(post("/api/jobs/{jobId}/apply", jobId))
+					.andExpect(status().isConflict())
+					.andExpect(jsonPath("$.error").value("JOB_NOT_COMPLETED"));
+		} finally {
+			testReadyToProceed.countDown();
+			awaitTerminalStatus(jobId);
+		}
+	}
+
+	@Test
+	void usar_este_modelo_sobre_un_job_inexistente_responde_404_030() throws Exception {
+		mockMvc.perform(post("/api/jobs/{jobId}/apply", UUID.randomUUID())).andExpect(status().isNotFound());
+	}
+
+	private static void awaitLatch(CountDownLatch latch) {
+		try {
+			latch.await(5, TimeUnit.SECONDS);
+		} catch (InterruptedException _) {
+			Thread.currentThread().interrupt();
+		}
 	}
 
 }

@@ -118,6 +118,45 @@ public class DraftPersistenceService {
 		return new SaveRevisionResponse(true, newRevisionNumber, null);
 	}
 
+	/**
+	 * "Usar este modelo" (ticket 030, HU-12) -- a diferencia de {@link #saveRevision},
+	 * crea la revisión Y el draft en la MISMA transacción (AC del ticket:
+	 * `mob_revisions.revision_number`/`mob_drafts.draft_version` ambos
+	 * avanzan de un solo commit). `createdBy="ai"` (valor ya contemplado
+	 * por el `CHECK` de `mob_revisions`, ticket 003) distingue esta
+	 * revisión de una creada por "Guardar" (`"user"`). Nunca se llama
+	 * desde el pipeline de generación (028/029) -- solo desde acá, cuando
+	 * el usuario confirma explícitamente aceptar la propuesta.
+	 */
+	@Transactional
+	public ApplyGenerationResponse applyGenerationProposal(UUID mobId, MobProjectModel model) {
+		MobEntity mob = requireMob(mobId);
+
+		List<String> errors = validator.validate(model);
+		if (!errors.isEmpty()) {
+			throw new InvalidDraftException(errors);
+		}
+
+		int newRevisionNumber = mob.getCurrentRevisionNumber() + 1;
+		MobRevisionEntity revision =
+				new MobRevisionEntity(UUID.randomUUID(), mobId, newRevisionNumber, serialize(model), "ai", Instant.now());
+		revisionRepository.save(revision);
+
+		Optional<MobDraftEntity> existingDraft = draftRepository.findById(mobId);
+		int newDraftVersion = existingDraft.map(d -> d.getDraftVersion() + 1).orElse(1);
+		MobDraftEntity draft = existingDraft.orElseGet(() -> new MobDraftEntity(mobId, serialize(model), newDraftVersion, Instant.now()));
+		draft.setModelJson(serialize(model));
+		draft.setDraftVersion(newDraftVersion);
+		draft.setUpdatedAt(Instant.now());
+		draftRepository.save(draft);
+
+		mob.setCurrentRevisionNumber(newRevisionNumber);
+		mob.setUpdatedAt(Instant.now());
+		mobRepository.save(mob);
+
+		return new ApplyGenerationResponse(newRevisionNumber, newDraftVersion);
+	}
+
 	private MobEntity requireMob(UUID mobId) {
 		return mobRepository.findById(mobId).orElseThrow(() -> new MobNotFoundException(mobId));
 	}

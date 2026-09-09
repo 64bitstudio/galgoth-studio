@@ -156,7 +156,7 @@ describe('AiMobWizard.vue', () => {
     expect(wrapper.findComponent({ name: 'ConfigurationStep' }).exists()).toBe(true)
   })
 
-  it('"Ir al proyecto" desde Generación navega de vuelta a /projects/:id', async () => {
+  it('al completar la generación, busca el resultado real y muestra Resultado (030)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn<typeof fetch>(async (url, init) => {
@@ -165,6 +165,59 @@ describe('AiMobWizard.vue', () => {
         }
         if (String(url).endsWith('/generate') && init?.method === 'POST') {
           return jsonResponse({ jobId: 'job-1' }, 202)
+        }
+        if (String(url).endsWith('/jobs/job-1/result')) {
+          return jsonResponse({
+            jobId: 'job-1',
+            mobId: 'new-mob-id',
+            mobName: 'Carcomido',
+            cuboidCount: 11,
+            boneCount: 6,
+            textureWidth: 128,
+            textureHeight: 128,
+            fmmCompatible: true,
+            fmmIssues: [],
+          })
+        }
+        return jsonResponse({ id: 'ref-1', url: '/x', width: 1, height: 1, contentType: 'image/png', createdAt: '' }, 201)
+      }),
+    )
+    const wrapper = mount(AiMobWizard, { global: { plugins: [await routerAt('p1')] } })
+    await selectReferenceImage(wrapper)
+    await wrapper.find('input[aria-label="Nombre del mob"]').setValue('Carcomido')
+    await wrapper.find('button.g-button--primary').trigger('click')
+    await flushPromises()
+
+    FakeEventSource.instances[0]!.emit('progress', { seq: 1, stage: 'completado', message: null, progressPct: 100, payload: null })
+    await flushPromises()
+
+    expect(wrapper.findComponent({ name: 'ResultStep' }).exists()).toBe(true)
+    expect(wrapper.text()).toContain('11')
+    expect(wrapper.text()).toContain('6')
+  })
+
+  it('"Descartar" en Resultado navega de vuelta a /projects/:id, sin llamar al backend', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (url, init) => {
+        if (String(url).endsWith('/mobs') && init?.method === 'POST') {
+          return jsonResponse({ id: 'new-mob-id', name: 'Carcomido', baseType: 'humanoid', status: 'draft', thumbnailKey: null, updatedAt: '' }, 201)
+        }
+        if (String(url).endsWith('/generate') && init?.method === 'POST') {
+          return jsonResponse({ jobId: 'job-1' }, 202)
+        }
+        if (String(url).endsWith('/jobs/job-1/result')) {
+          return jsonResponse({
+            jobId: 'job-1',
+            mobId: 'new-mob-id',
+            mobName: 'Carcomido',
+            cuboidCount: 11,
+            boneCount: 6,
+            textureWidth: 128,
+            textureHeight: 128,
+            fmmCompatible: true,
+            fmmIssues: [],
+          })
         }
         return jsonResponse({ id: 'ref-1', url: '/x', width: 1, height: 1, contentType: 'image/png', createdAt: '' }, 201)
       }),
@@ -176,16 +229,62 @@ describe('AiMobWizard.vue', () => {
     await wrapper.find('input[aria-label="Nombre del mob"]').setValue('Carcomido')
     await wrapper.find('button.g-button--primary').trigger('click')
     await flushPromises()
-
-    // El botón "Ir al proyecto" solo aparece en un estado terminal (running
-    // mientras la generación está en curso, ver GenerationStep.vue) -- se
-    // simula el evento SSE de completado para llegar ahí sin depender de
-    // temporización real.
     FakeEventSource.instances[0]!.emit('progress', { seq: 1, stage: 'completado', message: null, progressPct: 100, payload: null })
     await flushPromises()
 
-    await wrapper.find('.generation-step__back').trigger('click')
+    await wrapper.findAll('.result-step__action').find((a) => a.text() === 'Descartar')!.trigger('click')
+    await wrapper.findAll('.result-step__action').find((a) => a.text() === 'Confirmar')!.trigger('click')
+    await flushPromises()
 
+    expect(pushSpy).toHaveBeenCalledWith('/projects/p1')
+  })
+
+  it('"Usar este modelo" en Resultado llama a POST /apply y navega a /projects/:id, ticket 030 AC4', async () => {
+    const calls: Array<{ url: string; method: string | undefined }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (url, init) => {
+        calls.push({ url: String(url), method: init?.method })
+        if (String(url).endsWith('/mobs') && init?.method === 'POST') {
+          return jsonResponse({ id: 'new-mob-id', name: 'Carcomido', baseType: 'humanoid', status: 'draft', thumbnailKey: null, updatedAt: '' }, 201)
+        }
+        if (String(url).endsWith('/generate') && init?.method === 'POST') {
+          return jsonResponse({ jobId: 'job-1' }, 202)
+        }
+        if (String(url).endsWith('/jobs/job-1/result')) {
+          return jsonResponse({
+            jobId: 'job-1',
+            mobId: 'new-mob-id',
+            mobName: 'Carcomido',
+            cuboidCount: 11,
+            boneCount: 6,
+            textureWidth: 128,
+            textureHeight: 128,
+            fmmCompatible: true,
+            fmmIssues: [],
+          })
+        }
+        if (String(url).endsWith('/jobs/job-1/apply') && init?.method === 'POST') {
+          return jsonResponse({ revisionNumber: 1, draftVersion: 1 }, 201)
+        }
+        return jsonResponse({ id: 'ref-1', url: '/x', width: 1, height: 1, contentType: 'image/png', createdAt: '' }, 201)
+      }),
+    )
+    const router = await routerAt('p1')
+    const pushSpy = vi.spyOn(router, 'push')
+    const wrapper = mount(AiMobWizard, { global: { plugins: [router] } })
+    await selectReferenceImage(wrapper)
+    await wrapper.find('input[aria-label="Nombre del mob"]').setValue('Carcomido')
+    await wrapper.find('button.g-button--primary').trigger('click')
+    await flushPromises()
+    FakeEventSource.instances[0]!.emit('progress', { seq: 1, stage: 'completado', message: null, progressPct: 100, payload: null })
+    await flushPromises()
+
+    await wrapper.findAll('.result-step__action').find((a) => a.text() === 'Usar este modelo')!.trigger('click')
+    await wrapper.findAll('.result-step__action').find((a) => a.text() === 'Confirmar')!.trigger('click')
+    await flushPromises()
+
+    expect(calls.some((c) => c.url.endsWith('/jobs/job-1/apply') && c.method === 'POST')).toBe(true)
     expect(pushSpy).toHaveBeenCalledWith('/projects/p1')
   })
 })
