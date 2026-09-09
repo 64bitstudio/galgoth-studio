@@ -12,14 +12,30 @@
 // buildAndTest por Jenkinsfile.
 //
 // Frontend: lint + tests (Vitest, cobertura lcov) + build + Sonar.
-// `VITE_API_BASE_URL` vacío (withEnv) SOLO para el build que termina
-// empaquetado en la imagen -- en despliegue real, frontend y backend
-// comparten origen (mismo contenedor, mismo puerto, ver
-// backend/Dockerfile/SpaFallbackController), así que las llamadas a la
-// API deben ser rutas relativas ("/api/..."), no
-// "http://localhost:8080" (el default de desarrollo local, ver
-// frontend/src/api/apiConfig.ts). No afecta a Sonar (analiza fuente +
-// cobertura, no el contenido del bundle).
+// `VITE_API_BASE_URL` vacío SOLO para el build que termina empaquetado
+// en la imagen -- en despliegue real, frontend y backend comparten
+// origen (mismo contenedor, mismo puerto, ver
+// backend/Dockerfile/SpaResourceConfig), así que las llamadas a la API
+// deben ser rutas relativas ("/api/..."), no "http://localhost:8080"
+// (el default de desarrollo local, ver frontend/src/api/apiConfig.ts).
+// No afecta a Sonar (analiza fuente + cobertura, no el contenido del
+// bundle).
+//
+// Hallazgo real (primer deploy a DEV, verificado en vivo -- el bundle
+// desplegado SÍ traía "http://localhost:8080" baked-in, DevTools
+// mostraba `ERR_CONNECTION_REFUSED` contra localhost:8080 desde
+// studio-dev.galgoth.64bitstudio.com): `withEnv(['VITE_API_BASE_URL='])`
+// (Groovy, un solo elemento con valor vacío) NO propagó la variable al
+// proceso `sh` -- confirmado real, no teórico (probado localmente con
+// `VITE_API_BASE_URL= npm run build` y SÍ funcionaba ahí). Sea por cómo
+// `EnvActionImpl`/`EnvVars` de Jenkins tratan un par "KEY=" con valor
+// vacío, o por cómo el step `sh` hereda ese entorno, el resultado real
+// fue que Vite viera `import.meta.env.VITE_API_BASE_URL` como
+// `undefined` (no como string vacío) y el `?? 'http://localhost:8080'`
+// del código SÍ se resolviera al literal, quedando embebido en el
+// bundle. Fix: asignación inline de shell (`VAR= comando`), sin
+// indirección de `withEnv` -- el mismo mecanismo que sí funcionó en la
+// verificación manual.
 //
 // Tras el build del frontend, dos copias ANTES de que corePipeline
 // invoque `docker build ./backend` (contexto de build fijo, nunca ve
@@ -88,9 +104,7 @@ corePipeline(
                 sh 'npm ci'
                 sh 'npm run lint'
                 sh 'npm run test:coverage'
-                withEnv(['VITE_API_BASE_URL=']) {
-                    sh 'npm run build'
-                }
+                sh 'VITE_API_BASE_URL= npm run build'
                 withSonarQubeEnv('sonarqube-vm') {
                     sh 'sonar-scanner'
                 }
