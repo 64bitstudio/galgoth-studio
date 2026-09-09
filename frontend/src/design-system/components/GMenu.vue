@@ -6,6 +6,12 @@
  * nunca solo un tooltip -- mismo criterio de accesibilidad ya establecido
  * en GTabs (ticket 002: "el motivo de 'próximamente' es texto visible,
  * no solo un tooltip").
+ *
+ * Sin `<ul>`/`<li>` a propósito (hallazgo real de Sonar, S6819): el
+ * patrón ARIA `role="menu"` con hijos envueltos en `<li role="presentation">`
+ * dispara la misma regla que prohíbe emular roles nativos con ARIA --
+ * los botones de cada ítem son hijos DIRECTOS del contenedor `role="menu"`,
+ * sin ningún wrapper que necesite neutralizar su semántica.
  */
 import { ref } from 'vue'
 
@@ -44,21 +50,21 @@ function select(item: GMenuItem): void {
     <button type="button" class="g-menu__trigger" :aria-label="label" aria-haspopup="true" :aria-expanded="isOpen" @click="toggle">
       ⋮
     </button>
-    <ul v-if="isOpen" class="g-menu__list" role="menu">
-      <li v-for="item in items" :key="item.key" role="presentation">
-        <button
-          type="button"
-          role="menuitem"
-          class="g-menu__item"
-          :class="{ 'g-menu__item--danger': item.danger, 'g-menu__item--disabled': item.disabled }"
-          :disabled="item.disabled"
-          @click="select(item)"
-        >
-          <span>{{ item.label }}</span>
-          <span v-if="item.disabled && item.disabledReason" class="g-menu__hint">{{ item.disabledReason }}</span>
-        </button>
-      </li>
-    </ul>
+    <div v-if="isOpen" class="g-menu__list" role="menu">
+      <button
+        v-for="item in items"
+        :key="item.key"
+        type="button"
+        role="menuitem"
+        class="g-menu__item"
+        :class="{ 'g-menu__item--danger': item.danger, 'g-menu__item--disabled': item.disabled }"
+        :disabled="item.disabled"
+        @click="select(item)"
+      >
+        <span>{{ item.label }}</span>
+        <span v-if="item.disabled && item.disabledReason" class="g-menu__hint">{{ item.disabledReason }}</span>
+      </button>
+    </div>
   </div>
 </template>
 
@@ -89,9 +95,10 @@ function select(item: GMenuItem): void {
   right: 0;
   top: calc(100% + var(--space-1));
   z-index: 10;
+  display: flex;
+  flex-direction: column;
   margin: 0;
   padding: var(--space-1);
-  list-style: none;
   background: var(--surface);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-md);
