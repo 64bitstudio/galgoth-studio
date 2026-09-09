@@ -1,6 +1,23 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import ProjectNameModal from '../ProjectNameModal.vue'
+
+// jsdom (a la fecha, v30) no implementa HTMLDialogElement.showModal()/close()
+// -- son parte del layout real que jsdom no simula. Se parchea el mínimo
+// necesario (togglear el atributo `open`) para poder montar el componente
+// en tests; el navegador real siempre tiene estos métodos.
+beforeAll(() => {
+  if (!HTMLDialogElement.prototype.showModal) {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '')
+    }
+  }
+  if (!HTMLDialogElement.prototype.close) {
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      this.removeAttribute('open')
+    }
+  }
+})
 
 describe('ProjectNameModal.vue', () => {
   it('modo create: título "Nuevo proyecto" y campo vacío por defecto', () => {
@@ -52,11 +69,19 @@ describe('ProjectNameModal.vue', () => {
     expect(wrapper.emitted('confirm')).toEqual([['Tejedora']])
   })
 
-  it('clic en el backdrop emite cancel', async () => {
+  it('clic en el propio <dialog> (el ::backdrop nativo aterriza ahí) emite cancel', async () => {
     const wrapper = mount(ProjectNameModal, { props: { mode: 'create' } })
 
-    await wrapper.find('.project-name-modal__backdrop').trigger('click')
+    await wrapper.find('.project-name-modal').trigger('click')
 
     expect(wrapper.emitted('cancel')).toHaveLength(1)
+  })
+
+  it('clic dentro del contenido del modal (ej. el título) NO emite cancel', async () => {
+    const wrapper = mount(ProjectNameModal, { props: { mode: 'create' } })
+
+    await wrapper.find('.project-name-modal__title').trigger('click')
+
+    expect(wrapper.emitted('cancel')).toBeUndefined()
   })
 })

@@ -62,7 +62,7 @@ describe('ProjectCard.vue', () => {
   it('clic en la tarjeta emite open con el id del proyecto', async () => {
     const wrapper = mount(ProjectCard, { props: { project: project({ id: 'p42' }) } })
 
-    await wrapper.find('.project-card').trigger('click')
+    await wrapper.find('.project-card__open').trigger('click')
 
     expect(wrapper.emitted('open')).toEqual([['p42']])
   })

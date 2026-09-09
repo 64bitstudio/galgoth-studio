@@ -31,7 +31,7 @@ Frontend (`frontend/src/projects/`, primera pantalla productiva real -- reemplaz
 - **`ProjectNameModal.vue`**: un solo componente para Nuevo proyecto/Rename.
 - **`ProjectDetailPlaceholder.vue`** (ruta `/projects/:id`): mínimo a propósito -- solo nombre + conteo de mobs, para que la redirección de AC #1 tenga un recurso real; HU-04/ticket 022 lo reemplaza con el grid completo.
 - **`projectsApi.ts`**: primer cliente HTTP real del frontend (`fetch` directo, sin proxy de Vite -- CORS es la estrategia elegida).
-- **Tests**: 44 nuevos (`projectsApi`, `GMenu`, `ProjectNameModal`, `ProjectCard`, `ProjectsDashboard`, `ProjectDetailPlaceholder`) -- 178 tests totales en frontend, todos en verde. `vue-tsc -b`, `npm run lint`, `npm run build` en verde. Cobertura del proyecto: 95.31%.
+- **Tests**: 45 nuevos (`projectsApi`, `GMenu`, `ProjectNameModal`, `ProjectCard`, `ProjectsDashboard`, `ProjectDetailPlaceholder`) -- 179 tests totales en frontend, todos en verde. `vue-tsc -b`, `npm run lint`, `npm run build` en verde. Cobertura del proyecto: 95.31%.
 
 ### Verificación en vivo (Claude in Chrome, backend real vía `./gradlew bootRun` + Postgres real vía `docker compose`, no solo tests)
 
@@ -41,6 +41,14 @@ Crear proyecto → redirección real a `/projects/{uuid}` (AC #1) confirmada; Re
 
 - **Fechas serializando como epoch numérico, no ISO-8601**: el `ObjectMapper` de `JacksonConfig` (construido a mano desde el ticket 020, para sortear el cambio de Spring Boot 4 a Jackson 3 como default) tenía `WRITE_DATES_AS_TIMESTAMPS` habilitado -- el default "puro" de Jackson, que la autoconfiguración de Spring Boot normalmente desactiva, perdida al construir el `ObjectMapper` a mano. Un `Instant` serializaba como `1788924939.428339` en vez de `"2026-09-09T03:35:39.428339Z"`. **Esto también afectaba, retroactivamente, a los endpoints ya mergeados del ticket 020** (`AutosaveResponse.updatedAt`, `DraftView.updatedAt`) -- nunca detectado porque esos tests solo verificaban las fechas vía SQL crudo (`updated_at::text`), nunca inspeccionando el tipo real del JSON de respuesta. Corregido con `.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)` + un test de regresión explícito (`createdAt_y_updatedAt_serializan_como_texto_ISO8601...`).
 - **El `@select` del `GSidebar` no navegaba pese a que el comentario de cabecera ya lo afirmaba**: tanto `ProjectsDashboard.vue` como `ProjectDetailPlaceholder.vue` originalmente pasaban `@select="() => {}"` (no-op) a `GSidebar`, aunque el comentario de `ProjectsDashboard.vue` decía explícitamente "tanto Inicio como Mis proyectos en el sidebar apuntan aquí". Clic en "Mis proyectos" desde el detalle de un proyecto no hacía nada -- detectado al navegar de verdad en el navegador, no por ningún test (los tests montaban los componentes sin ejercitar el sidebar). Corregido cableando ambas claves (`home`/`projects`) a `router.push('/projects')`, con tests nuevos que lo cubren.
+
+### Hallazgos reales de Sonar (verificados manualmente contra `sonarqube-db`, gap conocido desde el ticket 008 -- Jenkins reportó verde en el primer intento pese a que AMBOS gates estaban en `ERROR`)
+
+- **Backend, `S107`**: el constructor de `MobEntity` tenía 9 parámetros (máximo 7). Corregido migrando la entidad al estilo JavaBean (constructor solo con `id` + setters para el resto) -- más idiomático para una entidad JPA de todos modos, y deja la entidad lista para que el ticket 022 la use al crear mobs reales.
+- **Frontend, `S6821`**: `role="none"` en `GMenu.vue` -- "none" no es un rol ARIA válido (el token correcto es `"presentation"`). Corregido.
+- **Frontend, `S6819`** (x2): `role="dialog"` sobre un `<div>` en `ProjectNameModal.vue` y `role="button"` sobre un `<div>` en `ProjectCard.vue` -- Sonar exige el elemento nativo en vez de emular el rol con ARIA. Ambos se reescribieron de verdad (no se suprimió la regla):
+  - `ProjectNameModal.vue` ahora usa `<dialog>` nativo (`showModal()`/`::backdrop`) -- gana gratis manejo de foco y cierre con Escape, que la versión con `<div>` no tenía (verificado en vivo: el input recibe foco automático al abrir, Escape cierra). **Hallazgo de entorno**: jsdom (v30, la más reciente a la fecha) todavía no implementa `HTMLDialogElement.showModal()/close()` -- se agregó un polyfill mínimo en los tests afectados (togglear el atributo `open`), documentado como limitación de jsdom, no de producción.
+  - `ProjectCard.vue` se reestructuró: el `<button>` que abre el detalle ya no envuelve el menú de `GMenu` (contenido interactivo dentro de un `<button>` es HTML inválido) -- el menú ahora es un hermano superpuesto visualmente en la esquina, sin necesitar `@click.stop`.
 
 ### Alcance no cubierto, documentado explícitamente (no un descuido)
 

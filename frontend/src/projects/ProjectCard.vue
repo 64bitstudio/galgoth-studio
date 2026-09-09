@@ -7,6 +7,12 @@
  * deshabilitado con su razón visible -- todavía no existe ningún
  * endpoint de exportación expuesto (decisión del Product Owner, ticket
  * 021).
+ *
+ * Estructura (hallazgo real de Sonar, S6819: usar `<button>` real en vez
+ * de `role="button"` sobre un `<div>`): el `<button>` que abre el
+ * detalle NO puede envolver también el botón del menú de `GMenu`
+ * (contenido interactivo dentro de un `<button>` es HTML inválido) --
+ * el menú vive como hermano, superpuesto visualmente en la esquina.
  */
 import GMenu, { type GMenuItem } from '../design-system/components/GMenu.vue'
 import type { ProjectSummary } from './projectsApi'
@@ -28,40 +34,52 @@ function handleAction(projectId: string, actionKey: string): void {
 </script>
 
 <template>
-  <div class="project-card" role="button" tabindex="0" @click="emit('open', project.id)" @keyup.enter="emit('open', project.id)">
-    <div class="project-card__thumbnails">
-      <div v-for="thumb in project.mobThumbnails" :key="thumb.mobId" class="project-card__thumbnail">
-        <img v-if="thumb.thumbnailKey" :src="thumb.thumbnailKey" alt="" />
-        <span v-else class="project-card__placeholder" aria-hidden="true" />
-      </div>
-      <div v-if="project.mobThumbnails.length === 0" class="project-card__thumbnail">
-        <span class="project-card__placeholder" aria-hidden="true" />
-      </div>
-      <span v-if="project.mobCount > 3" class="project-card__more">+{{ project.mobCount - 3 }}</span>
-    </div>
-    <div class="project-card__footer">
-      <span class="project-card__name">{{ project.name }}</span>
-      <span class="project-card__menu" @click.stop @keyup.stop>
-        <GMenu :items="MENU_ITEMS" :label="`Acciones de ${project.name}`" @select="(key) => handleAction(project.id, key)" />
+  <div class="project-card">
+    <button type="button" class="project-card__open" @click="emit('open', project.id)">
+      <span class="project-card__thumbnails">
+        <span v-for="thumb in project.mobThumbnails" :key="thumb.mobId" class="project-card__thumbnail">
+          <img v-if="thumb.thumbnailKey" :src="thumb.thumbnailKey" alt="" />
+          <span v-else class="project-card__placeholder" aria-hidden="true" />
+        </span>
+        <span v-if="project.mobThumbnails.length === 0" class="project-card__thumbnail">
+          <span class="project-card__placeholder" aria-hidden="true" />
+        </span>
+        <span v-if="project.mobCount > 3" class="project-card__more">+{{ project.mobCount - 3 }}</span>
       </span>
-    </div>
+      <span class="project-card__name">{{ project.name }}</span>
+    </button>
+    <span class="project-card__menu">
+      <GMenu :items="MENU_ITEMS" :label="`Acciones de ${project.name}`" @select="(key) => handleAction(project.id, key)" />
+    </span>
   </div>
 </template>
 
 <style scoped>
 .project-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
+  position: relative;
   background: var(--panel);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-lg);
-  cursor: pointer;
 }
 
 .project-card:hover {
   border-color: var(--accent);
+}
+
+.project-card__open {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3);
+  background: transparent;
+  border: none;
+  border-radius: inherit;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
 }
 
 .project-card__thumbnails {
@@ -73,6 +91,7 @@ function handleAction(projectId: string, actionKey: string): void {
 .project-card__thumbnail {
   flex: 1;
   aspect-ratio: 1;
+  display: block;
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--surface);
@@ -102,17 +121,17 @@ function handleAction(projectId: string, actionKey: string): void {
   border-radius: var(--radius-sm);
 }
 
-.project-card__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
 .project-card__name {
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding-right: var(--space-8); /* deja espacio al menú superpuesto */
+}
+
+.project-card__menu {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
 }
 </style>

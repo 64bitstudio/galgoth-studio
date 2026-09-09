@@ -45,29 +45,18 @@ public class MobEntity {
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
 
+	/**
+	 * Sin constructor de todos los campos a propósito (Sonar S107: más de
+	 * 7 parámetros) -- estilo JavaBean (constructor vacío + setters), más
+	 * idiomático para una entidad JPA de todos modos. `id` no tiene
+	 * setter porque nunca cambia tras crearse la fila.
+	 */
 	protected MobEntity() {
 		// JPA
 	}
 
-	public MobEntity(
-			UUID id,
-			UUID projectId,
-			String name,
-			String baseType,
-			String status,
-			int currentRevisionNumber,
-			String thumbnailKey,
-			Instant createdAt,
-			Instant updatedAt) {
+	public MobEntity(UUID id) {
 		this.id = id;
-		this.projectId = projectId;
-		this.name = name;
-		this.baseType = baseType;
-		this.status = status;
-		this.currentRevisionNumber = currentRevisionNumber;
-		this.thumbnailKey = thumbnailKey;
-		this.createdAt = createdAt;
-		this.updatedAt = updatedAt;
 	}
 
 	public UUID getId() {
@@ -78,16 +67,32 @@ public class MobEntity {
 		return projectId;
 	}
 
+	public void setProjectId(UUID projectId) {
+		this.projectId = projectId;
+	}
+
 	public String getName() {
 		return name;
+	}
+
+	public void setName(String name) {
+		this.name = name;
 	}
 
 	public String getBaseType() {
 		return baseType;
 	}
 
+	public void setBaseType(String baseType) {
+		this.baseType = baseType;
+	}
+
 	public String getStatus() {
 		return status;
+	}
+
+	public void setStatus(String status) {
+		this.status = status;
 	}
 
 	public int getCurrentRevisionNumber() {
@@ -102,8 +107,16 @@ public class MobEntity {
 		return thumbnailKey;
 	}
 
+	public void setThumbnailKey(String thumbnailKey) {
+		this.thumbnailKey = thumbnailKey;
+	}
+
 	public Instant getCreatedAt() {
 		return createdAt;
+	}
+
+	public void setCreatedAt(Instant createdAt) {
+		this.createdAt = createdAt;
 	}
 
 	public Instant getUpdatedAt() {

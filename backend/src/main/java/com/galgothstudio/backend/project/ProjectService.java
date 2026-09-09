@@ -104,16 +104,15 @@ public class ProjectService {
 
 	private void duplicateMob(MobEntity original, UUID newProjectId, Instant now) {
 		UUID newMobId = UUID.randomUUID();
-		MobEntity copy = new MobEntity(
-				newMobId,
-				newProjectId,
-				original.getName(),
-				original.getBaseType(),
-				original.getStatus(),
-				original.getCurrentRevisionNumber(),
-				original.getThumbnailKey(),
-				now,
-				now);
+		MobEntity copy = new MobEntity(newMobId);
+		copy.setProjectId(newProjectId);
+		copy.setName(original.getName());
+		copy.setBaseType(original.getBaseType());
+		copy.setStatus(original.getStatus());
+		copy.setCurrentRevisionNumber(original.getCurrentRevisionNumber());
+		copy.setThumbnailKey(original.getThumbnailKey());
+		copy.setCreatedAt(now);
+		copy.setUpdatedAt(now);
 		mobRepository.save(copy);
 
 		for (MobRevisionEntity revision : revisionRepository.findByMobIdOrderByRevisionNumberAsc(original.getId())) {

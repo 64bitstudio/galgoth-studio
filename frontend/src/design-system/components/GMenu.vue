@@ -45,7 +45,7 @@ function select(item: GMenuItem): void {
       ⋮
     </button>
     <ul v-if="isOpen" class="g-menu__list" role="menu">
-      <li v-for="item in items" :key="item.key" role="none">
+      <li v-for="item in items" :key="item.key" role="presentation">
         <button
           type="button"
           role="menuitem"

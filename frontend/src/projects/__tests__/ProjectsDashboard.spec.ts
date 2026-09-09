@@ -1,8 +1,23 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import ProjectsDashboard from '../ProjectsDashboard.vue'
 import type { ProjectSummary } from '../projectsApi'
+
+// jsdom no implementa HTMLDialogElement.showModal()/close() -- ver la
+// misma nota en ProjectNameModal.spec.ts, este dashboard monta ese modal.
+beforeAll(() => {
+  if (!HTMLDialogElement.prototype.showModal) {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '')
+    }
+  }
+  if (!HTMLDialogElement.prototype.close) {
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      this.removeAttribute('open')
+    }
+  }
+})
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -198,7 +213,7 @@ describe('ProjectsDashboard.vue', () => {
     const wrapper = mount(ProjectsDashboard, { global: { plugins: [router] } })
     await flushPromises()
 
-    await wrapper.find('.project-card').trigger('click')
+    await wrapper.find('.project-card__open').trigger('click')
 
     expect(pushSpy).toHaveBeenCalledWith('/projects/p9')
   })
