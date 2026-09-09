@@ -157,6 +157,85 @@ describe('ThreeViewportService', () => {
     expect(cubeMesh.children.some((c) => c.name === 'selection-outline')).toBe(true)
   })
 
+  it('ticket 018: setModel con selectedCuboidId reatachea transformControls al mesh nuevo de ese cuboid', () => {
+    const model = emptyModel('mob-uno')
+    const cuboid: Cuboid = {
+      id: 'cube-1',
+      name: 'cube-1',
+      boneId: 'bone-1',
+      from: [-1, -1, -1],
+      to: [1, 1, 1],
+      origin: [0, 0, 0],
+      rotation: [0, 0, 0],
+      faces: {
+        north: { uv: [0, 0, 0, 0], texture: null },
+        south: { uv: [0, 0, 0, 0], texture: null },
+        east: { uv: [0, 0, 0, 0], texture: null },
+        west: { uv: [0, 0, 0, 0], texture: null },
+        up: { uv: [0, 0, 0, 0], texture: null },
+        down: { uv: [0, 0, 0, 0], texture: null },
+      },
+    }
+    const modelWithCuboid = { ...model, cuboids: [cuboid] }
+
+    service.setModel(modelWithCuboid, 'cube-1')
+
+    const mobGroup = service.scene.children.find((c) => c.name === 'mob-uno')!
+    const cubeMesh = mobGroup.children.find((c) => c.name === 'cube-1')!
+    expect(service.transformControls.object).toBe(cubeMesh)
+  })
+
+  it('ticket 018: setModel sin selección desatachea transformControls', () => {
+    const model = emptyModel('mob-uno')
+    service.setModel(model, null)
+    expect(service.transformControls.object).toBeUndefined()
+  })
+
+  it('ticket 018: reatachea correctamente tras una segunda mutación (el mesh viejo queda huérfano)', () => {
+    const model = emptyModel('mob-uno')
+    const cuboid: Cuboid = {
+      id: 'cube-1',
+      name: 'cube-1',
+      boneId: 'bone-1',
+      from: [-1, -1, -1],
+      to: [1, 1, 1],
+      origin: [0, 0, 0],
+      rotation: [0, 0, 0],
+      faces: {
+        north: { uv: [0, 0, 0, 0], texture: null },
+        south: { uv: [0, 0, 0, 0], texture: null },
+        east: { uv: [0, 0, 0, 0], texture: null },
+        west: { uv: [0, 0, 0, 0], texture: null },
+        up: { uv: [0, 0, 0, 0], texture: null },
+        down: { uv: [0, 0, 0, 0], texture: null },
+      },
+    }
+    const modelWithCuboid = { ...model, cuboids: [cuboid] }
+
+    service.setModel(modelWithCuboid, 'cube-1')
+    const firstMesh = service.transformControls.object
+    service.setModel(modelWithCuboid, 'cube-1') // simula la mutación posterior a un drag -- rebuild completo
+
+    const secondMesh = service.transformControls.object
+    expect(secondMesh).not.toBe(firstMesh) // buildMobGroup siempre crea meshes nuevos
+    expect(secondMesh).toBeDefined()
+  })
+
+  it('ticket 018: setTransformMode delega en transformControls.setMode', () => {
+    service.setTransformMode('rotate')
+    expect(service.transformControls.mode).toBe('rotate')
+  })
+
+  it('ticket 018: mientras se arrastra un gizmo (dragging-changed), OrbitControls se deshabilita', () => {
+    expect(service.controls.enabled).toBe(true)
+
+    service.transformControls.dispatchEvent({ type: 'dragging-changed', value: true })
+    expect(service.controls.enabled).toBe(false)
+
+    service.transformControls.dispatchEvent({ type: 'dragging-changed', value: false })
+    expect(service.controls.enabled).toBe(true)
+  })
+
   it('resizeToContainer ajusta el tamaño del renderer y el aspect ratio de la cámara', () => {
     const container = document.createElement('div')
     Object.defineProperty(container, 'clientWidth', { value: 800, configurable: true })

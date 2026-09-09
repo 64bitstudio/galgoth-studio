@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { Bone, Cuboid, MobProjectModel } from '../../domain/MobProjectModel'
+import { useDraftModelStore } from '../draftModelStore'
 import HierarchyPanel from '../HierarchyPanel.vue'
 import { useSelectionStore } from '../selectionStore'
 
@@ -47,9 +48,8 @@ describe('HierarchyPanel.vue', () => {
   it('AC #1: renderiza bones y sus cuboids hijos, con jerarquía visible (indentación anidada)', () => {
     const root = bone('root', null)
     const child = bone('child', 'root')
-    const wrapper = mount(HierarchyPanel, {
-      props: { model: modelWith([root, child], [cuboid('a', 'root'), cuboid('b', 'child')]) },
-    })
+    useDraftModelStore().load(modelWith([root, child], [cuboid('a', 'root'), cuboid('b', 'child')]))
+    const wrapper = mount(HierarchyPanel)
 
     expect(wrapper.text()).toContain('root')
     expect(wrapper.text()).toContain('child')
@@ -59,7 +59,8 @@ describe('HierarchyPanel.vue', () => {
 
   it('AC #2: clic en un nodo cuboid del árbol actualiza la selección compartida', async () => {
     const root = bone('root', null)
-    const wrapper = mount(HierarchyPanel, { props: { model: modelWith([root], [cuboid('a', 'root')]) } })
+    useDraftModelStore().load(modelWith([root], [cuboid('a', 'root')]))
+    const wrapper = mount(HierarchyPanel)
     const selection = useSelectionStore()
 
     await wrapper.find('.hierarchy-cuboid-node').trigger('click')
@@ -69,7 +70,8 @@ describe('HierarchyPanel.vue', () => {
 
   it('el nodo del cuboid seleccionado se marca visualmente (clase de selección)', async () => {
     const root = bone('root', null)
-    const wrapper = mount(HierarchyPanel, { props: { model: modelWith([root], [cuboid('a', 'root')]) } })
+    useDraftModelStore().load(modelWith([root], [cuboid('a', 'root')]))
+    const wrapper = mount(HierarchyPanel)
     const selection = useSelectionStore()
 
     selection.select('a')
