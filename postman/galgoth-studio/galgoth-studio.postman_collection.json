@@ -87,6 +87,38 @@
       ]
     },
     {
+      "name": "Mobs (ticket 022)",
+      "item": [
+        {
+          "name": "Agregar mob",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Carcomido\",\n  \"baseType\": \"humanoid\"\n}" },
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{projectId}}/mobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "projects", "{{projectId}}", "mobs"]
+            },
+            "description": "201 con el MobSummary -- status siempre 'draft', current_revision_number=0, sin fila en mob_drafts. baseType: humanoid|arachnid|quadruped|flying|custom. 400 (INVALID_MOB_REQUEST) si el nombre está vacío o baseType es inválido."
+          }
+        },
+        {
+          "name": "Listar mobs de un proyecto (grid de detalle)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{projectId}}/mobs",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "projects", "{{projectId}}", "mobs"]
+            },
+            "description": "MobSummary[] -- el filtro por nombre del buscador es client-side, sin parámetro de búsqueda aquí."
+          }
+        }
+      ]
+    },
+    {
       "name": "Draft / Guardar (ticket 020)",
       "item": [
         {

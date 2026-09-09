@@ -4,6 +4,19 @@ Este archivo se completa conforme cada ticket de `pending/`/`in-process/` aterri
 
 ## Endpoints implementados
 
+### CRUD de mobs (ticket `022`, HU-03/HU-04)
+
+Implementados en `backend/.../project/api/MobController.java` + `MobService` (paquete `project.mob`).
+
+```text
+POST   /api/projects/{projectId}/mobs   -- Agregar mob (HU-03)
+GET    /api/projects/{projectId}/mobs   -- grid de mobs del detalle de proyecto (HU-04)
+```
+
+- **`POST /api/projects/{projectId}/mobs`** — body `{name, baseType}` (`baseType` es uno de `humanoid`/`arachnid`/`quadruped`/`flying`/`custom`, el `CHECK` de `mobs.base_type` del ticket 003). `201 Created` con el `MobSummary` -- el mob siempre arranca en `status="draft"`, `current_revision_number=0` (default de la columna) y **sin fila en `mob_drafts`** (AC #2, no existe hasta el primer autosave/Guardar, ticket 020). `400 Bad Request` (`error: "INVALID_MOB_REQUEST"`) si el nombre está vacío o `baseType` no es uno de los 5 valores válidos. `404 Not Found` (`PROJECT_NOT_FOUND`) si el proyecto no existe.
+- **`GET /api/projects/{projectId}/mobs`** — `MobSummary[]` (id, name, baseType, status, thumbnailKey, updatedAt) de TODOS los mobs del proyecto, ordenados por `updatedAt` descendente. El filtro por nombre del buscador (AC #3) es **client-side** sobre esta lista -- sin parámetro de búsqueda en el backend, mismo criterio de simplicidad que el dashboard de proyectos (021). `404 Not Found` (`PROJECT_NOT_FOUND`) si el proyecto no existe.
+- Rename/Delete/Duplicate a nivel de mob individual **no están en el alcance de este ticket** (a diferencia de proyectos en el 021) -- el AC de 022 solo pide crear y listar.
+
 ### CRUD de proyectos (ticket `021`, HU-01/HU-02)
 
 Implementados en `backend/.../project/api/ProjectController.java` + `ProjectService`.

@@ -5,8 +5,8 @@ import { createRouter, createWebHistory } from 'vue-router'
  * apuntan al mismo dashboard "Mis proyectos" (simplificación consciente,
  * ver el comentario de cabecera de `ProjectsDashboard.vue`: el mockup
  * separa "Inicio" de "Mis proyectos", el AC de este ticket solo describe
- * el listado completo). "/projects/:id" es un detalle MÍNIMO -- el grid
- * completo de mobs llega en el ticket 022, que reemplaza ese componente.
+ * el listado completo). "/projects/:id" apunta a `ProjectDetail.vue`
+ * (ticket 022, HU-04) -- reemplaza el placeholder mínimo del 021.
  */
 const router = createRouter({
   history: createWebHistory(),
@@ -24,7 +24,7 @@ const router = createRouter({
     {
       path: '/projects/:id',
       name: 'project-detail',
-      component: () => import('../projects/ProjectDetailPlaceholder.vue'),
+      component: () => import('../projects/ProjectDetail.vue'),
     },
     {
       path: '/dev/design-system',
