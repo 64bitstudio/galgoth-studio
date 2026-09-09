@@ -4,7 +4,7 @@ import { Mesh } from 'three'
 import { describe, expect, it } from 'vitest'
 import { applyPivotRotation } from '../../domain/coordinateSystem'
 import type { Bone, Cuboid, MobProjectModel, Vec3 } from '../../domain/MobProjectModel'
-import { buildMobGroup } from '../buildMobScene'
+import { buildMobGroup, SELECTION_OUTLINE_NAME } from '../buildMobScene'
 
 // Ver nota en schema.spec.ts: process.cwd() en vez de import.meta.url.
 const REPO_ROOT = resolve(process.cwd(), '..')
@@ -101,6 +101,29 @@ describe('buildMobGroup', () => {
     const pivotNames = group.children.map((c) => c.name)
     expect(pivotNames).toContain('bone-pivot:root')
     expect(pivotNames).toContain('bone-pivot:child')
+  })
+
+  it('ticket 016: el cuboid seleccionado recibe un outline hijo; los demás no', () => {
+    const root = bone('root', null, [0, 0, 0], [0, 0, 0])
+    const a = cuboid('a', 'root', [-1, -1, -1], [1, 1, 1], [0, 0, 0], [0, 0, 0])
+    const b = cuboid('b', 'root', [-1, -1, -1], [1, 1, 1], [0, 0, 0], [0, 0, 0])
+
+    const group = buildMobGroup(modelWith([root], [a, b]), 'a')
+
+    const meshA = meshNamed(group, 'a')
+    const meshB = meshNamed(group, 'b')
+    expect(meshA.children.some((c) => c.name === SELECTION_OUTLINE_NAME)).toBe(true)
+    expect(meshB.children.some((c) => c.name === SELECTION_OUTLINE_NAME)).toBe(false)
+  })
+
+  it('ticket 016: sin selección (undefined/null), ningún cuboid recibe outline', () => {
+    const root = bone('root', null, [0, 0, 0], [0, 0, 0])
+    const a = cuboid('a', 'root', [-1, -1, -1], [1, 1, 1], [0, 0, 0], [0, 0, 0])
+
+    const group = buildMobGroup(modelWith([root], [a]))
+
+    const meshA = meshNamed(group, 'a')
+    expect(meshA.children.some((c) => c.name === SELECTION_OUTLINE_NAME)).toBe(false)
   })
 
   it('la fixture real Carcomido produce un mesh por cuboid y un marcador por bone (end-to-end)', () => {
