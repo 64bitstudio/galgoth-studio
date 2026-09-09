@@ -34,7 +34,17 @@ public class ClaudeMessagesClient {
 
 	private static final Logger log = LoggerFactory.getLogger(ClaudeMessagesClient.class);
 	private static final String ANTHROPIC_VERSION = "2023-06-01";
-	private static final int MAX_TOKENS = 4096;
+	/**
+	 * Hallazgo real de verificación en vivo (ticket 028): `claude-sonnet-5`
+	 * devuelve un bloque `"type":"thinking"` (razonamiento extendido) ANTES
+	 * del bloque `"type":"text"` real -- con `max_tokens` en 4096, el
+	 * modelo gastó el presupuesto COMPLETO pensando (`stop_reason:
+	 * "max_tokens"`) y nunca llegó a emitir ningún texto, sin que el
+	 * request lo haya pedido explícitamente. 16000 deja margen real para
+	 * el razonamiento MÁS la salida (un batch de geometría completo para
+	 * un rig humanoide puede ser largo).
+	 */
+	private static final int MAX_TOKENS = 16000;
 
 	private final RestClient restClient;
 	private final ObjectMapper objectMapper;
@@ -132,9 +142,47 @@ public class ClaudeMessagesClient {
 			}
 		}
 		if (text.isEmpty()) {
+			String stopReason = response.path("stop_reason").asText("");
+			if ("max_tokens".equals(stopReason)) {
+				// Hallazgo real (ticket 028): el modelo consumió el presupuesto
+				// completo de max_tokens en un bloque "thinking" antes de llegar
+				// a emitir texto -- un error específico ahorra tener que releer
+				// la respuesta cruda completa (miles de caracteres de "thinking"
+				// en base64) la próxima vez que esto pase.
+				throw new AiProviderException(
+						"Respuesta de Anthropic truncada por max_tokens antes de emitir ningún bloque de texto "
+								+ "(probable razonamiento extendido consumiendo todo el presupuesto) -- subir MAX_TOKENS.");
+			}
 			throw new AiProviderException("Respuesta de Anthropic sin ningún bloque de texto: " + response);
 		}
-		return text.toString();
+		return stripMarkdownCodeFence(text.toString());
+	}
+
+	/**
+	 * Claude envuelve la respuesta en un bloque de código Markdown
+	 * (```json ... ``` o ``` ... ```) con cierta frecuencia incluso
+	 * cuando el prompt pide explícitamente "sin texto antes ni después"
+	 * -- confirmado real en verificación en vivo contra la API real
+	 * (ticket 028): el planner de geometría lo hizo, la respuesta de
+	 * visión no. Nunca confiar en que el modelo respete la instrucción al
+	 * 100% -- se despoja el fence acá, en el único punto por el que pasa
+	 * CUALQUIER llamada (visión o razonamiento), en vez de duplicar esta
+	 * lógica en cada caller.
+	 */
+	private String stripMarkdownCodeFence(String text) {
+		String trimmed = text.strip();
+		if (!trimmed.startsWith("```")) {
+			return trimmed;
+		}
+		int firstNewline = trimmed.indexOf('\n');
+		if (firstNewline == -1) {
+			return trimmed;
+		}
+		int closingFence = trimmed.lastIndexOf("```");
+		if (closingFence <= firstNewline) {
+			return trimmed;
+		}
+		return trimmed.substring(firstNewline + 1, closingFence).strip();
 	}
 
 	private void requireApiKeyConfigured() {

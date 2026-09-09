@@ -1,0 +1,12 @@
+{
+  "silhouette": "hunched humanoid",
+  "proportions": {
+    "headScale": 1.08,
+    "armLength": 1.18,
+    "handScale": 1.30,
+    "shoulderWidth": 1.10
+  },
+  "asymmetry": 0.72,
+  "features": ["oversized hands", "ragged shoulder cloth", "damaged lower garment"],
+  "materials": ["desaturated grey-green skin", "dark brown torn cloth", "violet emissive cracks"]
+}
