@@ -41,6 +41,13 @@ const router = createRouter({
       component: () => import('../editor/MobEditor.vue'),
     },
     {
+      // Ticket 032, HU-19, mockup 11: pantalla de exportación (estado FMM
+      // + draft sin guardar), alcanzable desde MobEditor.vue.
+      path: '/projects/:projectId/mobs/:mobId/export',
+      name: 'export-screen',
+      component: () => import('../editor/ExportScreen.vue'),
+    },
+    {
       path: '/dev/design-system',
       name: 'design-system-showcase',
       component: () => import('../design-system/Showcase.vue'),

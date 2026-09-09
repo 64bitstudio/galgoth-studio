@@ -365,6 +365,37 @@
           }
         }
       ]
+    },
+    {
+      "name": "Exportación (ticket 032)",
+      "item": [
+        {
+          "name": "Estado de la pantalla de exportación",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/export/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mobs", "{{mobId}}", "export", "status"]
+            },
+            "description": "200 con {mobId, mobName, hasSavedRevision, hasUnsavedChanges, fmmCompatible, fmmIssues}. fmmCompatible/fmmIssues se calculan SIEMPRE contra la última revisión GUARDADA (nunca el draft en curso) -- son null/[] cuando hasSavedRevision=false. hasUnsavedChanges=true cuando el draft difiere de la última revisión, o cuando hay draft pero ninguna revisión todavía. 404 (MOB_NOT_FOUND) si el mob no existe."
+          }
+        },
+        {
+          "name": "Exportar .bbmodel (última revisión guardada)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/export/bbmodel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mobs", "{{mobId}}", "export", "bbmodel"]
+            },
+            "description": "200 -- el .bbmodel (JSON) de la última revisión guardada, como descarga (application/octet-stream, Content-Disposition: attachment; filename=\"<nombre-sanitizado>.bbmodel\"). NUNCA lee mob_drafts. 'Guardar y exportar' NO es este endpoint solo -- primero llamar 'Guardar (crea una revisión)' (carpeta Draft/Guardar) con el draft actual, y RECIÉN DESPUÉS esta request. 404 (MOB_NOT_FOUND). 404 (NO_SAVED_REVISION) si el mob nunca tuvo ninguna revisión guardada -- nada que exportar todavía."
+          }
+        }
+      ]
     }
   ]
 }

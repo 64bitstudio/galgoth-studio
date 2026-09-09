@@ -12,6 +12,7 @@ import com.galgothstudio.backend.project.ProjectNotFoundException;
 import com.galgothstudio.backend.project.draft.DraftNotFoundException;
 import com.galgothstudio.backend.project.draft.InvalidDraftException;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
+import com.galgothstudio.backend.project.export.NoSavedRevisionException;
 import com.galgothstudio.backend.project.mob.InvalidMobRequestException;
 import com.galgothstudio.backend.project.reference.InvalidReferenceImageException;
 import org.springframework.http.HttpStatus;
@@ -93,6 +94,11 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(InvalidGeometryProposalException.class)
 	public ResponseEntity<ApiErrorResponse> handleInvalidGeometryProposal(InvalidGeometryProposalException ex) {
 		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("INVALID_EDIT_PROPOSAL", ex.getMessage(), null));
+	}
+
+	@ExceptionHandler(NoSavedRevisionException.class)
+	public ResponseEntity<ApiErrorResponse> handleNoSavedRevision(NoSavedRevisionException ex) {
+		return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiErrorResponse("NO_SAVED_REVISION", ex.getMessage(), null));
 	}
 
 }

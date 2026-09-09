@@ -118,6 +118,9 @@ function backToProject(): void {
           <button type="button" class="mob-editor__ai-toggle" @click="showAiPanel = !showAiPanel">
             {{ showAiPanel ? 'Editor manual' : 'Asistente IA' }}
           </button>
+          <button type="button" class="mob-editor__export-link" @click="router.push(`/projects/${projectId}/mobs/${mobId}/export`)">
+            Exportar
+          </button>
         </div>
       </template>
       <p v-else class="mob-editor__loading">Cargando…</p>
@@ -166,7 +169,8 @@ function backToProject(): void {
 }
 
 .mob-editor__reset-camera,
-.mob-editor__ai-toggle {
+.mob-editor__ai-toggle,
+.mob-editor__export-link {
   min-height: var(--hit-target-min);
   padding: 0 var(--space-3);
   background: var(--surface-2);
@@ -176,7 +180,8 @@ function backToProject(): void {
   cursor: pointer;
 }
 
-.mob-editor__ai-toggle {
+.mob-editor__ai-toggle,
+.mob-editor__export-link {
   border-color: var(--accent);
   font-weight: 600;
 }

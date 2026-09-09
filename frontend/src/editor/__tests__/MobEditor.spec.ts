@@ -26,7 +26,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 async function routerAt(projectId: string, mobId: string): Promise<Router> {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/projects/:projectId/mobs/:mobId/edit', component: MobEditor }],
+    routes: [
+      { path: '/projects/:projectId/mobs/:mobId/edit', component: MobEditor },
+      { path: '/projects/:projectId/mobs/:mobId/export', component: { template: '<div>export</div>' } },
+    ],
   })
   await router.push(`/projects/${projectId}/mobs/${mobId}/edit`)
   return router
@@ -182,6 +185,16 @@ describe('MobEditor.vue', () => {
       expect(wrapper.findComponent({ name: 'AiEditPanel' }).exists()).toBe(true)
       expect(wrapper.findComponent({ name: 'HierarchyPanel' }).exists()).toBe(false)
       expect(wrapper.findAll('button').find((b) => b.text() === 'Editor manual')).toBeDefined()
+    })
+
+    it('el botón "Exportar" navega a la pantalla de exportación del mob (ticket 032)', async () => {
+      const wrapper = await mountLoaded()
+      const router = wrapper.vm.$router
+
+      await wrapper.findAll('button').find((b) => b.text() === 'Exportar')!.trigger('click')
+      await flushPromises()
+
+      expect(router.currentRoute.value.path).toBe('/projects/p1/mobs/mob-1/export')
     })
 
     it('preview-model-changed de AiEditPanel muestra GenerationPreviewViewport en vez de ThreeViewport (mismo singleton de canvas)', async () => {
