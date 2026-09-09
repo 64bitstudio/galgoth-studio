@@ -18,7 +18,7 @@ import WizardStepper, { type WizardStepKey } from './WizardStepper.vue'
 import ReferenceStep from './steps/ReferenceStep.vue'
 import ConfigurationStep from './steps/ConfigurationStep.vue'
 import GenerationStep from './steps/GenerationStep.vue'
-import { createMob, type BaseType } from '../projects/mobsApi'
+import { createMob, type BaseType, type MobSummary } from '../projects/mobsApi'
 import { uploadReferenceImage } from '../api/referenceImagesApi'
 import { ApiError } from '../api/ApiError'
 
@@ -31,6 +31,7 @@ const referenceFile = ref<File | null>(null)
 const referencePreviewUrl = ref<string | null>(null)
 const submitting = ref(false)
 const submitError = ref<string | null>(null)
+const createdMob = ref<MobSummary | null>(null)
 
 function handleReferenceSelected(file: File): void {
   if (referencePreviewUrl.value) {
@@ -55,6 +56,7 @@ async function handleConfigurationConfirm(data: { name: string; baseType: BaseTy
   try {
     const mob = await createMob(projectId, data.name, data.baseType)
     await uploadReferenceImage(mob.id, file)
+    createdMob.value = mob
     step.value = 'generation'
   } catch (error) {
     submitError.value = error instanceof ApiError ? error.message : 'No se pudo crear el mob con esta referencia.'
@@ -97,7 +99,14 @@ onBeforeUnmount(() => {
         @confirm="handleConfigurationConfirm"
         @back="backToReference"
       />
-      <GenerationStep v-else-if="step === 'generation'" @back-to-project="backToProject" />
+      <GenerationStep
+        v-else-if="step === 'generation' && createdMob"
+        :mob-id="createdMob.id"
+        :project-id="projectId"
+        :mob-name="createdMob.name"
+        :base-type="createdMob.baseType"
+        @back-to-project="backToProject"
+      />
     </main>
   </div>
 </template>

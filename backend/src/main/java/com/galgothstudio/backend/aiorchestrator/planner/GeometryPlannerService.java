@@ -77,6 +77,19 @@ public class GeometryPlannerService {
 	}
 
 	public GeometryPlanResult plan(ModelIntent modelIntent, MobProjectModel startingModel) {
+		RawOperationsResult raw = requestOperations(modelIntent);
+		MobProjectModel result = applyOperations(raw.operations(), raw.providerResponse(), startingModel);
+		return new GeometryPlanResult(result, raw.operations(), raw.providerResponse());
+	}
+
+	/**
+	 * Llama al proveedor y deserializa/whitelistea su respuesta -- SIN
+	 * aplicar todavía al `GeometryEngine` (ticket 029, AC #1: el
+	 * pipeline asíncrono necesita esta lista cruda para reproducirla de
+	 * forma incremental como preview, antes de la aplicación final con
+	 * UV en {@link #applyOperations}).
+	 */
+	public RawOperationsResult requestOperations(ModelIntent modelIntent) {
 		String userPrompt;
 		try {
 			userPrompt = "ModelIntent:\n" + objectMapper.writeValueAsString(modelIntent) + "\n\nDevolvé el array de operaciones.";
@@ -95,15 +108,17 @@ public class GeometryPlannerService {
 					"El StructuredReasoningProvider devolvió operaciones inválidas: " + e.getMessage(), response, e);
 		}
 
-		MobProjectModel result;
+		return new RawOperationsResult(operations, response);
+	}
+
+	/** Aplicación final CON UV (ticket 006) de un batch ya obtenido de {@link #requestOperations} -- nunca vuelve a llamar al proveedor. */
+	public MobProjectModel applyOperations(List<GeometryOperation> operations, AiProviderResponse providerResponse, MobProjectModel startingModel) {
 		try {
-			result = GeometryEngine.apply(startingModel, operations, uvLayoutStrategy);
+			return GeometryEngine.apply(startingModel, operations, uvLayoutStrategy);
 		} catch (GeometryValidationException e) {
 			throw new InvalidGeometryProposalException(
-					"La geometría propuesta no pasó la validación del Geometry Engine: " + e.getMessage(), response, e);
+					"La geometría propuesta no pasó la validación del Geometry Engine: " + e.getMessage(), providerResponse, e);
 		}
-
-		return new GeometryPlanResult(result, response);
 	}
 
 }

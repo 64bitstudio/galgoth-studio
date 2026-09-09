@@ -1,5 +1,8 @@
 package com.galgothstudio.backend.project.api;
 
+import com.galgothstudio.backend.aiorchestrator.InvalidJobStateException;
+import com.galgothstudio.backend.aiorchestrator.JobNotFoundException;
+import com.galgothstudio.backend.aiorchestrator.NoReferenceImageException;
 import com.galgothstudio.backend.project.InvalidProjectNameException;
 import com.galgothstudio.backend.project.ProjectNotFoundException;
 import com.galgothstudio.backend.project.draft.DraftNotFoundException;
@@ -50,6 +53,21 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(InvalidReferenceImageException.class)
 	public ResponseEntity<ApiErrorResponse> handleInvalidReferenceImage(InvalidReferenceImageException ex) {
 		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("INVALID_REFERENCE_IMAGE", ex.getMessage(), null));
+	}
+
+	@ExceptionHandler(NoReferenceImageException.class)
+	public ResponseEntity<ApiErrorResponse> handleNoReferenceImage(NoReferenceImageException ex) {
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("NO_REFERENCE_IMAGE", ex.getMessage(), null));
+	}
+
+	@ExceptionHandler(JobNotFoundException.class)
+	public ResponseEntity<ApiErrorResponse> handleJobNotFound(JobNotFoundException ex) {
+		return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiErrorResponse("JOB_NOT_FOUND", ex.getMessage(), null));
+	}
+
+	@ExceptionHandler(InvalidJobStateException.class)
+	public ResponseEntity<ApiErrorResponse> handleInvalidJobState(InvalidJobStateException ex) {
+		return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiErrorResponse("INVALID_JOB_STATE", ex.getMessage(), null));
 	}
 
 }
