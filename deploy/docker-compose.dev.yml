@@ -1,0 +1,106 @@
+# Ticket 035: stack DEV en la VM -- mismo patrón que
+# auth-core-mc/mail-core-mc/texture-studio-mc, adaptado a este backend
+# (Spring Boot + Postgres + MinIO, sin Redis/Vault -- este proyecto no
+# usa ninguno de los dos).
+#
+# "Bajo demanda" -- igual que el resto de los cores (VM de capa gratuita,
+# compartida). deploy/env-ctl.sh de auth-core-mc es el mismo mecanismo
+# reusable si se necesita acá -- no incluido en este ticket por no
+# aportar nada nuevo, se copia igual si hace falta.
+#
+# Puertos de host reservados por galgoth-studio (coordinado con
+# auth-core-mc 8080-8082, mail-core-mc 8083-8085, texture-studio-mc
+# 8086-8088 -- ver auth-core-mc/docs/ARQUITECTURA.md, "Convenciones de la
+# VM"): PROD 8089 / DEV 8090 (este archivo) / QA 8091.
+#
+# GALGOTH_STORAGE_MINIO_ACCESS_KEY/SECRET_KEY reusan directamente
+# MINIO_ROOT_USER/MINIO_ROOT_PASSWORD (mismo criterio que
+# docker/docker-compose.yml de desarrollo local) -- un solo par de
+# credenciales que administrar por ambiente, no dos.
+name: galgoth-studio-dev
+
+services:
+  app:
+    image: galgoth-studio-dev:${IMAGE_TAG:?falta IMAGE_TAG (sha del commit a desplegar)}
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: deploy
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: galgoth_studio
+      DB_USER: galgoth_studio
+      DB_PASSWORD: ${DB_PASSWORD:?falta DB_PASSWORD en deploy/.env.dev}
+      GALGOTH_STORAGE_MINIO_ENDPOINT: http://minio:9000
+      GALGOTH_STORAGE_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?falta MINIO_ROOT_USER en deploy/.env.dev}
+      GALGOTH_STORAGE_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?falta MINIO_ROOT_PASSWORD en deploy/.env.dev}
+      GALGOTH_STORAGE_MINIO_BUCKET: galgoth-studio-assets
+      # Decisión explícita del PO (ticket 035): Claude real en los 3
+      # ambientes, no el provider mock -- implica gasto real de la cuenta
+      # de Anthropic en cualquier generación/edición que se dispare
+      # contra este DEV.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?falta ANTHROPIC_API_KEY en deploy/.env.dev}
+    ports:
+      - "8090:8080"
+    networks:
+      - default
+      - edge
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    # Ingress compartido de la VM (Traefik) -- enruta
+    # studio-dev.galgoth.64bitstudio.com hacia este contenedor. El puerto
+    # de host (8090) sigue publicado además, sin Traefik de por medio,
+    # porque el propio pipeline (healthcheck del job deploy-dev) le pega
+    # directo al contenedor por nombre (ver corePipeline.groovy).
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=edge"
+      - "traefik.http.routers.galgoth-studio-dev.rule=Host(`studio-dev.galgoth.64bitstudio.com`)"
+      - "traefik.http.routers.galgoth-studio-dev.entrypoints=web"
+      - "traefik.http.services.galgoth-studio-dev.loadbalancer.server.port=8080"
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: galgoth_studio
+      POSTGRES_USER: galgoth_studio
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?falta DB_PASSWORD en deploy/.env.dev}
+    volumes:
+      - galgoth_studio_dev_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U galgoth_studio -d galgoth_studio"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?falta MINIO_ROOT_USER en deploy/.env.dev}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?falta MINIO_ROOT_PASSWORD en deploy/.env.dev}
+    volumes:
+      - galgoth_studio_dev_miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+networks:
+  edge:
+    external: true
+
+volumes:
+  galgoth_studio_dev_pgdata:
+  galgoth_studio_dev_miniodata:
