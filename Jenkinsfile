@@ -40,11 +40,18 @@
 // bloquear) / `e2e-down.sh` (los apaga) para que el paso que SÍ toca
 // Chromium corra en un contenedor Docker con Playwright + sus
 // dependencias YA resueltas (`mcr.microsoft.com/playwright`, imagen
-// oficial) -- `--network host` para que ese contenedor vea el backend/
-// frontend ya levantados en el agente como si fueran locales (`localhost`
-// compartido). El resto (Compose/backend/frontend/gradle/npm) sigue
-// corriendo en el agente normal -- la imagen de Playwright no tiene
-// JDK/Gradle. `finally` garantiza `e2e-down.sh` incluso si Playwright
+// oficial) -- Chromium sí lanzó ahí. El resto (Compose/backend/frontend/
+// gradle/npm) sigue en el agente normal -- esa imagen no tiene JDK.
+//
+// **Cuarto hallazgo, de red -- por qué NO alcanza `--network host`**: el
+// propio agente de Jenkins corre DENTRO de un contenedor (Docker-outside-
+// of-Docker: `docker.image().inside()` levanta un contenedor HERMANO, no
+// un proceso dentro del agente) -- `--network host` conecta ese hermano
+// a la red de la VM real, NUNCA al namespace de red del contenedor del
+// agente, que es donde `localhost:5173`/`:8080` realmente escuchan. Fix:
+// `--network container:<id del contenedor del agente>` (mismo namespace
+// exacto) -- el id se obtiene con `hostname` (Docker lo fija ahí por
+// default). `finally` garantiza `e2e-down.sh` incluso si Playwright
 // falla dentro del contenedor.
 @Library('platform') _
 
@@ -70,7 +77,8 @@ corePipeline(
         }
         sh './scripts/e2e-up.sh'
         try {
-            docker.image('mcr.microsoft.com/playwright:v1.63.0-noble').inside('--network host') {
+            def agentContainerId = sh(script: 'hostname', returnStdout: true).trim()
+            docker.image('mcr.microsoft.com/playwright:v1.63.0-noble').inside("--network container:${agentContainerId}") {
                 dir('frontend') {
                     sh 'npx playwright test'
                 }
