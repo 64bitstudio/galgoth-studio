@@ -35,13 +35,30 @@ public class MockVisionProvider implements VisionModelProvider {
 			""";
 
 	private String nextResponse = DEFAULT_RESPONSE;
+	private Runnable onCall = () -> {
+	};
 
 	public void setNextResponse(String rawJson) {
 		this.nextResponse = rawJson;
 	}
 
+	/**
+	 * Hook de test (ticket 029) -- ejecutado sincrónicamente ANTES de
+	 * devolver la respuesta configurada. Único uso real: el test de
+	 * cancelación de {@code MobGenerationServiceTest} lo usa para
+	 * bloquear este método (vía un `CountDownLatch`) hasta que el hilo
+	 * del test dispare {@code requestCancellation} sobre el job que ya
+	 * está corriendo en OTRO hilo -- sin este hook no habría forma
+	 * determinista (sin sleeps a ciegas) de "atrapar" el pipeline en
+	 * pleno vuelo. Default no-op -- ningún otro test se ve afectado.
+	 */
+	public void setOnCall(Runnable onCall) {
+		this.onCall = onCall;
+	}
+
 	@Override
 	public AiProviderResponse analyzeReferenceImage(VisionAnalysisRequest request) {
+		onCall.run();
 		return new AiProviderResponse(nextResponse, PROVIDER_NAME, DEFAULT_MODEL, request.promptVersion(), request.schemaVersion());
 	}
 

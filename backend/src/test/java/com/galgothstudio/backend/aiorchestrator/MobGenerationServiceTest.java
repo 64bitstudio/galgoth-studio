@@ -3,25 +3,28 @@ package com.galgothstudio.backend.aiorchestrator;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.galgothstudio.backend.TestcontainersConfiguration;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEntity;
+import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEventEntity;
+import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEventRepository;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobRepository;
-import com.galgothstudio.backend.aiorchestrator.planner.InvalidGeometryProposalException;
 import com.galgothstudio.backend.aiorchestrator.provider.MockReasoningProvider;
 import com.galgothstudio.backend.aiorchestrator.provider.MockVisionProvider;
 import com.galgothstudio.backend.aiorchestrator.provider.StructuredReasoningProvider;
 import com.galgothstudio.backend.aiorchestrator.provider.VisionModelProvider;
-import com.galgothstudio.backend.aiorchestrator.vision.InvalidModelIntentException;
 import com.galgothstudio.backend.asset.AssetStorageService;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
-import jakarta.persistence.EntityManager;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
+import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,20 +32,28 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Integración de punta a punta (Testcontainers -- Postgres Y MinIO
- * reales -- ) de `MobGenerationService`, ticket 028. `ai.vision-provider`/
+ * reales -- ) de `MobGenerationService`, ticket 028/029. `ai.vision-provider`/
  * `ai.reasoning-provider=mock` (AC #2 del ticket 025: la suite
- * automatizada nunca llama a la API real de Anthropic) -- `AiProviderConfig`
- * expone las mismas instancias `MockVisionProvider`/`MockReasoningProvider`
- * que este test autowirea y configura antes de ejercitar el servicio.
+ * automatizada nunca llama a la API real de Anthropic).
+ *
+ * <p><b>Deliberadamente SIN `@Transactional`</b> -- a diferencia del
+ * resto de los tests `@SpringBootTest` de este proyecto (ticket 029):
+ * el pipeline real corre en OTRO hilo (`generationExecutor`), con su
+ * propia conexión/transacción de BD -- si el setup de cada test
+ * (`aProjectAndMobWithReference`) quedara dentro de una transacción de
+ * test que nunca hace commit real (el patrón `@Transactional` estándar,
+ * que hace rollback al final), ese hilo nunca vería los datos. Cada
+ * escritura de setup (`jdbc.update`) y del propio pipeline ya comitea
+ * por su cuenta -- las filas quedan reales en la BD entre tests (mismo
+ * costo aceptado que cualquier test no-transaccional de este tipo), sin
+ * necesidad de limpieza explícita porque cada test usa UUIDs propios.
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
 @TestPropertySource(properties = {"ai.vision-provider=mock", "ai.reasoning-provider=mock"})
-@Transactional
 class MobGenerationServiceTest {
 
 	private static final String VALID_OPERATIONS_JSON =
@@ -73,33 +84,22 @@ class MobGenerationServiceTest {
 	private AiJobRepository aiJobRepository;
 
 	@Autowired
+	private AiJobEventRepository aiJobEventRepository;
+
+	@Autowired
 	private JdbcTemplate jdbc;
 
 	@Autowired
 	private ObjectMapper objectMapper;
 
-	@Autowired
-	private EntityManager entityManager;
-
-	/**
-	 * `MockVisionProvider`/`MockReasoningProvider` son beans Spring
-	 * SINGLETON en este `@SpringBootTest` -- su `nextResponse` mutable
-	 * sobrevive entre métodos `@Test` de esta clase (confirmado real: un
-	 * test que configura una respuesta inválida hacía fallar el
-	 * siguiente test, que nunca la reconfiguró). Se resetea a valores
-	 * válidos conocidos antes de CADA test, para que cada uno controle
-	 * explícitamente solo lo que le importa.
-	 */
+	/** Ver la nota de `MobGenerationServiceTest` (ticket 028) sobre por qué esto hace falta -- ahora además resetea el hook de {@code onCall} (ticket 029) para que el test de cancelación no afecte a los demás. */
 	@BeforeEach
 	void resetMockProviders() throws Exception {
-		((MockVisionProvider) visionModelProvider)
-				.setNextResponse(Files.readString(new File("../contracts/fixtures/model-intent-example.json").toPath()));
+		MockVisionProvider mockVision = (MockVisionProvider) visionModelProvider;
+		mockVision.setNextResponse(Files.readString(new File("../contracts/fixtures/model-intent-example.json").toPath()));
+		mockVision.setOnCall(() -> {
+		});
 		((MockReasoningProvider) reasoningProvider).setNextResponse(VALID_OPERATIONS_JSON);
-	}
-
-	/** Ver la nota en {@link com.galgothstudio.backend.project.api.MobDraftControllerTest} (ticket 020) sobre por qué esto hace falta antes de leer vía JDBC crudo dentro de la misma transacción de test. */
-	private void flush() {
-		entityManager.flush();
 	}
 
 	private UUID aProjectAndMobWithReference() {
@@ -117,17 +117,22 @@ class MobGenerationServiceTest {
 		return mobId;
 	}
 
+	/** El pipeline real corre en `generationExecutor` (ticket 029) -- se sondea `ai_jobs` (cada `findById` es su propia lectura ya commiteada) con Awaitility en vez de un `Thread.sleep()` crudo o un ejecutor síncrono especial de test. */
+	private AiJobEntity awaitTerminalStatus(UUID jobId) {
+		Awaitility.await()
+				.atMost(Duration.ofSeconds(5))
+				.pollInterval(Duration.ofMillis(25))
+				.until(() -> !"running".equals(aiJobRepository.findById(jobId).orElseThrow().getStatus()));
+		return aiJobRepository.findById(jobId).orElseThrow();
+	}
+
 	@Test
-	void una_generacion_exitosa_aplica_la_geometria_y_persiste_un_ai_job_completed_AC4() throws Exception {
-		((MockReasoningProvider) reasoningProvider).setNextResponse(VALID_OPERATIONS_JSON);
+	void una_generacion_exitosa_aplica_la_geometria_y_persiste_un_ai_job_completed_con_sus_eventos_AC1_AC4() throws Exception {
 		UUID mobId = aProjectAndMobWithReference();
 
-		GenerationResult result = mobGenerationService.generate(mobId);
+		UUID jobId = mobGenerationService.startGeneration(mobId);
+		AiJobEntity job = awaitTerminalStatus(jobId);
 
-		assertThat(result.model().bones()).hasSize(1);
-		assertThat(result.model().cuboids()).hasSize(1);
-
-		AiJobEntity job = aiJobRepository.findById(result.jobId()).orElseThrow();
 		assertThat(job.getStatus()).isEqualTo("completed");
 		assertThat(job.getJobType()).isEqualTo("generate");
 		assertThat(job.getProvider()).isEqualTo("mock");
@@ -142,6 +147,20 @@ class MobGenerationServiceTest {
 		// El proposal_jsonb persistido debe ser el MISMO modelo devuelto (030 lo consume tal cual).
 		MobProjectModel persistedProposal = objectMapper.readValue(job.getProposalJson(), MobProjectModel.class);
 		assertThat(persistedProposal.cuboids()).hasSize(1);
+
+		List<AiJobEventEntity> events = aiJobEventRepository.findByJobIdAndSeqGreaterThanOrderBySeqAsc(jobId, 0);
+		assertThat(events).isNotEmpty();
+		assertThat(events.getFirst().getStage()).isEqualTo("analizando_referencia");
+		assertThat(events.getLast().getStage()).isEqualTo("completado");
+		assertThat(events.getLast().getProgressPct()).isEqualTo(100);
+		for (int i = 0; i < events.size(); i++) {
+			assertThat(events.get(i).getSeq()).isEqualTo(i + 1); // seq estrictamente secuencial desde 1, sin huecos
+		}
+		// `JsonNode.toString()` (payload_jsonb tal como se persiste) espacia
+		// distinto que `ObjectMapper.writeValueAsString`, ej. `"type": "x"`
+		// no `"type":"x"` -- se busca solo el valor, no el layout exacto.
+		assertThat(events).anySatisfy(e -> assertThat(e.getPayloadJson()).contains("preview_operations"));
+		assertThat(events.getLast().getPayloadJson()).contains("preview_snapshot");
 	}
 
 	@Test
@@ -149,13 +168,14 @@ class MobGenerationServiceTest {
 		((MockVisionProvider) visionModelProvider).setNextResponse("{\"silhouette\": \"incompleto\"}");
 		UUID mobId = aProjectAndMobWithReference();
 
-		assertThatThrownBy(() -> mobGenerationService.generate(mobId)).isInstanceOf(InvalidModelIntentException.class);
+		UUID jobId = mobGenerationService.startGeneration(mobId);
+		AiJobEntity job = awaitTerminalStatus(jobId);
 
-		flush();
-		JsonNode row = objectMapper.valueToTree(
-				jdbc.queryForMap("select status, error from ai_jobs where mob_id = ?", mobId));
-		assertThat(row.get("status").asText()).isEqualTo("failed");
-		assertThat(row.get("error").asText()).isNotBlank();
+		assertThat(job.getStatus()).isEqualTo("failed");
+		assertThat(job.getError()).isNotBlank();
+
+		List<AiJobEventEntity> events = aiJobEventRepository.findByJobIdAndSeqGreaterThanOrderBySeqAsc(jobId, 0);
+		assertThat(events.getLast().getStage()).isEqualTo("fallido");
 	}
 
 	@Test
@@ -163,15 +183,16 @@ class MobGenerationServiceTest {
 		((MockReasoningProvider) reasoningProvider).setNextResponse("[{\"op\":\"opQueNoExiste\"}]");
 		UUID mobId = aProjectAndMobWithReference();
 
-		assertThatThrownBy(() -> mobGenerationService.generate(mobId)).isInstanceOf(InvalidGeometryProposalException.class);
+		UUID jobId = mobGenerationService.startGeneration(mobId);
+		AiJobEntity job = awaitTerminalStatus(jobId);
 
-		flush();
-		Long failedCount = jdbc.queryForObject("select count(*) from ai_jobs where mob_id = ? and status = 'failed'", Long.class, mobId);
-		assertThat(failedCount).isEqualTo(1L);
+		assertThat(job.getStatus()).isEqualTo("failed");
+		List<AiJobEventEntity> events = aiJobEventRepository.findByJobIdAndSeqGreaterThanOrderBySeqAsc(jobId, 0);
+		assertThat(events.getLast().getStage()).isEqualTo("fallido");
 	}
 
 	@Test
-	void un_mob_sin_ninguna_imagen_de_referencia_falla_explicito_sin_intentar_ninguna_llamada() {
+	void un_mob_sin_ninguna_imagen_de_referencia_falla_explicito_sin_crear_ningun_job_ni_intentar_llamadas() {
 		UUID projectId = UUID.randomUUID();
 		jdbc.update("insert into projects (id, name) values (?, ?)", projectId, "Galgoth");
 		UUID mobId = UUID.randomUUID();
@@ -179,7 +200,7 @@ class MobGenerationServiceTest {
 				"insert into mobs (id, project_id, name, base_type, status) values (?, ?, ?, ?, ?)",
 				mobId, projectId, "SinReferencia", "humanoid", "draft");
 
-		assertThatThrownBy(() -> mobGenerationService.generate(mobId)).isInstanceOf(NoReferenceImageException.class);
+		assertThatThrownBy(() -> mobGenerationService.startGeneration(mobId)).isInstanceOf(NoReferenceImageException.class);
 
 		Long jobCount = jdbc.queryForObject("select count(*) from ai_jobs where mob_id = ?", Long.class, mobId);
 		assertThat(jobCount).isZero();
@@ -189,7 +210,62 @@ class MobGenerationServiceTest {
 	void un_mob_inexistente_responde_MobNotFoundException() {
 		UUID mobId = UUID.randomUUID();
 
-		assertThatThrownBy(() -> mobGenerationService.generate(mobId)).isInstanceOf(MobNotFoundException.class);
+		assertThatThrownBy(() -> mobGenerationService.startGeneration(mobId)).isInstanceOf(MobNotFoundException.class);
+	}
+
+	/**
+	 * Ticket 029, AC #4: cancela un job en pleno vuelo -- usa el hook de
+	 * `MockVisionProvider.setOnCall` para bloquear el pipeline (que corre
+	 * en OTRO hilo, `generationExecutor`) exactamente en el punto de
+	 * control posterior a la llamada de visión, mientras el hilo del
+	 * test dispara `requestCancellation` sobre el mismo job -- sin este
+	 * hook no habría forma determinista (sin adivinar tiempos) de
+	 * "atrapar" el pipeline a mitad de camino.
+	 */
+	@Test
+	void cancelar_un_job_en_curso_lo_marca_cancelled_y_descarta_el_preview_AC4() throws InterruptedException {
+		CountDownLatch visionCalled = new CountDownLatch(1);
+		CountDownLatch testReadyToProceed = new CountDownLatch(1);
+		((MockVisionProvider) visionModelProvider).setOnCall(() -> {
+			visionCalled.countDown();
+			try {
+				testReadyToProceed.await(5, TimeUnit.SECONDS);
+			} catch (InterruptedException _) {
+				Thread.currentThread().interrupt();
+			}
+		});
+
+		UUID mobId = aProjectAndMobWithReference();
+		UUID jobId = mobGenerationService.startGeneration(mobId);
+
+		assertThat(visionCalled.await(2, TimeUnit.SECONDS)).as("el pipeline debe haber llegado a la llamada de visión").isTrue();
+		mobGenerationService.requestCancellation(jobId);
+		testReadyToProceed.countDown();
+
+		AiJobEntity job = awaitTerminalStatus(jobId);
+
+		assertThat(job.getStatus()).isEqualTo("cancelled");
+		assertThat(job.getFinishedAt()).isNotNull();
+		assertThat(job.getProposalJson()).isNull(); // ningún draft/revisión, ningún preview persistido más allá del log de eventos descartable
+
+		List<AiJobEventEntity> events = aiJobEventRepository.findByJobIdAndSeqGreaterThanOrderBySeqAsc(jobId, 0);
+		assertThat(events.getLast().getStage()).isEqualTo("cancelado");
+	}
+
+	@Test
+	void cancelar_un_job_que_ya_terminó_falla_explícito_AC4() {
+		UUID mobId = aProjectAndMobWithReference();
+		UUID jobId = mobGenerationService.startGeneration(mobId);
+		awaitTerminalStatus(jobId);
+
+		assertThatThrownBy(() -> mobGenerationService.requestCancellation(jobId)).isInstanceOf(InvalidJobStateException.class);
+	}
+
+	@Test
+	void cancelar_un_job_inexistente_responde_JobNotFoundException() {
+		UUID jobId = UUID.randomUUID();
+
+		assertThatThrownBy(() -> mobGenerationService.requestCancellation(jobId)).isInstanceOf(JobNotFoundException.class);
 	}
 
 }

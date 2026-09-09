@@ -84,6 +84,9 @@ dependencies {
 	// distingue IntNode de DoubleNode, lo que rompería la comparación sin
 	// aportar nada real (el JSON en sí no distingue "0" de "0.0").
 	testImplementation 'org.skyscreamer:jsonassert:1.5.3'
+	// Sondeo acotado sin Thread.sleep() crudo (Sonar S2925) -- ticket 029,
+	// tests que esperan la finalización real de un pipeline asíncrono.
+	testImplementation 'org.awaitility:awaitility:4.2.2'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

@@ -105,6 +105,32 @@ GET    /api/mobs/{mobId}/thumbnail    -- servir el PNG actual del mob
 
 El thumbnail es un asset **derivado y best-effort**: el frontend lo genera/sube DESPUÉS de un Guardar exitoso (`EditorToolbar.vue`, botón "Guardar" real añadido en este mismo ticket — el ticket 020 solo implementó el backend de "Guardar"), en un paso separado cuyo fallo nunca revierte ni bloquea la revisión ya guardada (solo `console.warn` en el frontend).
 
+### Pipeline de generación IA + progreso SSE (tickets `028`/`029`, HU-13/HU-14/HU-15/HU-11)
+
+Implementados en `backend/.../aiorchestrator/api/GenerationJobController.java`. Orquestador: `MobGenerationService` (`aiorchestrator`), que corre el pipeline Vision→`ModelIntent`→Geometry planner→`MobProjectModel` de forma **asíncrona** (`generationExecutor`, ver `GenerationExecutorConfig`) — el nombre real difiere de `/ai/generate-geometry` previsto originalmente en la sección "Rutas previstas" de más abajo, unificado en un solo endpoint de arranque en vez de separar vision/geometría en dos llamadas HTTP distintas.
+
+```text
+POST   /api/mobs/{mobId}/generate      -- arranca un job de generación (202, no bloqueante)
+GET    /api/jobs/{jobId}/events        -- progreso en vivo (SSE), reanudable con Last-Event-ID
+POST   /api/jobs/{jobId}/cancel        -- cancela un job en curso (efectivo en el próximo punto de control, no instantáneo)
+```
+
+**`POST /api/mobs/{mobId}/generate`**
+- `202 Accepted` — `{"jobId": "<uuid>"}`. Crea la fila `ai_jobs` (`status='running'`) de inmediato y devuelve el `jobId` sin esperar a ninguna llamada de IA — el pipeline real corre en otro hilo.
+- `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe.
+- `400 Bad Request` (`NO_REFERENCE_IMAGE`) si el mob no tiene ninguna imagen de referencia subida (024) todavía.
+
+**`GET /api/jobs/{jobId}/events`** (`Content-Type: text/event-stream`)
+- Un evento nombrado `progress` por cada avance real, `data` = `{"seq","stage","message","progressPct","payload"}`. `stage` es una de `analizando_referencia`/`detectando_silueta`/`creando_rig`/`generando_cuboides`/`completado`/`fallido`/`cancelado`. `payload` es `null`, o `{"type":"preview_operations", addedOrUpdatedBones, addedOrUpdatedCuboids, removedCuboidIds}` (el mecanismo preferido, un delta resuelto -- nunca las `GeometryOperation` crudas con `tempId`s del proveedor) o `{"type":"preview_snapshot", model}` (solo resincronización -- se emite una única vez, en el evento `completado`).
+- El **preview nunca modifica `mob_drafts` ni crea `mob_revisions`** (AC #2) -- es enteramente descartable, vive solo en el log de eventos y en memoria del cliente.
+- Reconexión: el navegador reenvía `Last-Event-ID` automáticamente (`EventSource` nativo) -- el servidor reproduce el backlog persistido desde ese `seq` antes de continuar en vivo.
+- `404 Not Found` si el `jobId` no existe.
+
+**`POST /api/jobs/{jobId}/cancel`**
+- `202 Accepted` — señala la cancelación; el job se detiene en el próximo punto de control (nunca interrumpe una llamada HTTP a un proveedor de IA ya en vuelo).
+- `404 Not Found` (`JOB_NOT_FOUND`) si el `jobId` no existe.
+- `409 Conflict` (`INVALID_JOB_STATE`) si el job ya alcanzó un estado terminal.
+
 ## Rutas previstas (según `docs/definiciones/galgoth-studio-mvp.md`, sección 19 del master prompt)
 
 ```text
@@ -119,13 +145,10 @@ GET    /api/mobs/{mobId}
 PATCH  /api/mobs/{mobId}
 
 POST   /api/mobs/{mobId}/references
-POST   /api/mobs/{mobId}/ai/analyse
-POST   /api/mobs/{mobId}/ai/generate-geometry
 POST   /api/mobs/{mobId}/ai/edit-geometry
 
 POST   /api/mobs/{mobId}/validate
 POST   /api/mobs/{mobId}/export/bbmodel
-GET    /api/jobs/{jobId}/events   (SSE)
 ```
 
 Endpoints de "Apply"/"Usar este modelo" (mismo mecanismo de commit que Guardar, ver `docs/ARQUITECTURA.md`) se documentan aquí conforme aterricen los tickets `030`/`031`.

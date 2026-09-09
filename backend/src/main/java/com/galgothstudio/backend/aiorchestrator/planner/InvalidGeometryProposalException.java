@@ -1,5 +1,6 @@
 package com.galgothstudio.backend.aiorchestrator.planner;
 
+import com.galgothstudio.backend.aiorchestrator.GenerationValidationException;
 import com.galgothstudio.backend.aiorchestrator.provider.AiProviderResponse;
 
 /**
@@ -10,7 +11,7 @@ import com.galgothstudio.backend.aiorchestrator.provider.AiProviderResponse;
  * Carga la {@link AiProviderResponse} completa por el mismo motivo que
  * {@link com.galgothstudio.backend.aiorchestrator.vision.InvalidModelIntentException}.
  */
-public class InvalidGeometryProposalException extends RuntimeException {
+public class InvalidGeometryProposalException extends GenerationValidationException {
 
 	private final transient AiProviderResponse providerResponse;
 
@@ -19,6 +20,7 @@ public class InvalidGeometryProposalException extends RuntimeException {
 		this.providerResponse = providerResponse;
 	}
 
+	@Override
 	public AiProviderResponse providerResponse() {
 		return providerResponse;
 	}

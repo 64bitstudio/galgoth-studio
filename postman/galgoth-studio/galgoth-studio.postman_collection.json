@@ -247,6 +247,50 @@
           }
         }
       ]
+    },
+    {
+      "name": "Generación IA (ticket 029)",
+      "item": [
+        {
+          "name": "Iniciar generación",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mobs", "{{mobId}}", "generate"]
+            },
+            "description": "202 con {\"jobId\": \"<uuid>\"} -- crea la fila ai_jobs (status='running') de inmediato y devuelve el jobId sin esperar a ninguna llamada de IA (el pipeline real corre en otro hilo). Copiar el jobId de la respuesta a la variable de entorno `jobId` para usarlo en las otras dos requests de esta carpeta. 404 (MOB_NOT_FOUND) si el mob no existe. 400 (NO_REFERENCE_IMAGE) si el mob no tiene ninguna imagen de referencia subida (024) todavía."
+          }
+        },
+        {
+          "name": "Eventos de progreso (SSE)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "text/event-stream" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{jobId}}/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "jobs", "{{jobId}}", "events"]
+            },
+            "description": "Stream SSE (text/event-stream) -- un evento 'progress' por cada avance real, data = {seq, stage, message, progressPct, payload}. stage: analizando_referencia/detectando_silueta/creando_rig/generando_cuboides/completado/fallido/cancelado. payload es null, o {type:'preview_operations', addedOrUpdatedBones, addedOrUpdatedCuboids, removedCuboidIds} (preferido) o {type:'preview_snapshot', model} (solo el evento 'completado', resincronización). Postman no reproduce el stream en vivo como un navegador real -- útil igual para inspeccionar el backlog completo si el job ya terminó (reproduce todo de una vez y cierra). Agregar header 'Last-Event-ID: <seq>' para reanudar desde un punto (AC #3). 404 si el jobId no existe."
+          }
+        },
+        {
+          "name": "Cancelar generación",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{jobId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "jobs", "{{jobId}}", "cancel"]
+            },
+            "description": "202 -- señala la cancelación; el job se detiene en el próximo punto de control (nunca interrumpe una llamada HTTP a un proveedor de IA ya en vuelo, ver AC #4). 404 (JOB_NOT_FOUND) si el jobId no existe. 409 (INVALID_JOB_STATE) si el job ya alcanzó un estado terminal (completed/failed/cancelled)."
+          }
+        }
+      ]
     }
   ]
 }
