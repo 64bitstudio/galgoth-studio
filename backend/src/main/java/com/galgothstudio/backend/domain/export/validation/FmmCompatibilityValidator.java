@@ -89,6 +89,19 @@ public final class FmmCompatibilityValidator {
 
 	// -- referencias de outliner ------------------------------------------------
 
+	/**
+	 * <p><b>Hallazgo real (ticket 033, suite E2E de aceptación)</b>: este
+	 * check asumía SIEMPRE la forma v5 de `outliner` (grupo mínimo
+	 * {@code {uuid,isOpen,children}}, datos reales en `groups[]` aparte)
+	 * -- nunca se había corrido este validador contra la salida de
+	 * `BBModelExporterV4` (014, groups EMBEBIDOS directo en el nodo del
+	 * outliner, sin `groups[]` top-level), así que cada bone de un v4
+	 * real disparaba un falso `OUTLINER_REFERENCE` ("no existe en
+	 * 'groups'"). Un group v4 se detecta por tener `name` inline (mismo
+	 * criterio ya usado en `BlockbenchBbmodelTestParser`, test-only,
+	 * ticket 012) -- en ese caso el nodo ES la definición real, no hay
+	 * nada que resolver contra `groups[]`.
+	 */
 	private static void checkOutlinerReferences(
 			JsonNode outliner, Set<String> elementUuids, Set<String> groupUuids, List<ValidationIssue> issues) {
 		for (JsonNode node : outliner) {
@@ -102,7 +115,8 @@ public final class FmmCompatibilityValidator {
 				}
 			} else {
 				String uuid = node.path("uuid").asText();
-				if (!groupUuids.contains(uuid)) {
+				boolean isV4EmbeddedGroup = node.has("name");
+				if (!isV4EmbeddedGroup && !groupUuids.contains(uuid)) {
 					issues.add(
 							new ValidationIssue(
 									Severity.ERROR, "OUTLINER_REFERENCE", uuid,
@@ -215,7 +229,8 @@ public final class FmmCompatibilityValidator {
 			return;
 		}
 		String uuid = node.path("uuid").asText();
-		JsonNode group = groupsByUuid.get(uuid);
+		// v4 embebe name/etc. directo en el nodo; v5 los deja aparte en groups[] (ver checkOutlinerReferences).
+		JsonNode group = node.has("name") ? node : groupsByUuid.get(uuid);
 		String name = group != null ? group.path("name").asText() : "";
 		if (isSpecialNoGeometryBoneName(name) && hasCuboidChild(node)) {
 			issues.add(

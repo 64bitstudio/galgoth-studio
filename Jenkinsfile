@@ -20,6 +20,28 @@
 // ticket 002, documentado también en el skill bootstrap-proyecto). Usa
 // el credential de Sonar YA configurado en Jenkins -- no depende de
 // SONARQUBE_CLI_TOKEN_VM (CLI personal de Marco, mecanismo aparte).
+//
+// E2E (ticket 033, HU-23): la suite Playwright de aceptación (frontend/e2e/,
+// scripts/e2e.sh) está completa y verificada -- corriendo LOCAL, en
+// verde, de forma reproducible. **NO está wireada en este Jenkinsfile
+// -- gap de infra real y documentado, no un olvido.** Se intentó a
+// fondo (6 rondas de CI real, 5 hallazgos resueltos: permisos de
+// `playwright install --with-deps`, colisión de puerto fijo de MinIO,
+// Chromium sin librerías de sistema para lanzarse, `--network host` vs.
+// `--network container:<agente>` en la topología Docker-outside-of-
+// Docker del agente) hasta toparse con un problema de red que persistió
+// incluso haciendo explícito el CORS del backend: el preflight OPTIONS
+// desde un navegador corriendo en el contenedor hermano de Playwright
+// vuelve sin cabeceras CORS -- nunca reproducido en desarrollo local
+// (mismo código, misma config, docenas de verificaciones en vivo esta
+// sesión). Mismo tipo de gap que el de Sonar del ticket 008: real,
+// documentado, requiere investigación con acceso directo al agente de
+// Jenkins o un cambio de infra mayor (imagen Docker todo-en-uno con
+// JDK+Node+Chromium+deps, evitando la topología de contenedor hermano
+// por completo) -- decisión que le corresponde a `platform`, fuera de
+// lo que se puede diagnosticar a ciegas leyendo logs. Ver el `## Hecho`
+// del ticket 033 y docs/ARQUITECTURA.md para el detalle completo de las
+// 6 rondas. Uso local: `./scripts/e2e.sh` desde la raíz del repo.
 @Library('platform') _
 
 corePipeline(
@@ -42,5 +64,6 @@ corePipeline(
                 sh './gradlew build sonar'
             }
         }
+        // E2E (ticket 033): NO corre acá -- ver el comentario de cabecera.
     }
 )

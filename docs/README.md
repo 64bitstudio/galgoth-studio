@@ -30,6 +30,12 @@ npm run dev             # http://localhost:5173 — /dev/design-system es la vit
 npm run test            # Vitest
 ```
 
+**Suite E2E de aceptación** (ticket 033, HU-23) -- flujo completo del Technical Alpha contra un stack real (Docker Compose + backend con providers mock + frontend), sin necesidad de la API real de Anthropic:
+```bash
+./scripts/e2e.sh        # levanta todo, corre Playwright, apaga todo siempre al salir
+```
+El script asume que nada más está usando los puertos 8080/5173 ni el `docker compose` del proyecto -- párralos primero si los tenías corriendo a mano.
+
 ## Estructura del repo
 
 ```text
