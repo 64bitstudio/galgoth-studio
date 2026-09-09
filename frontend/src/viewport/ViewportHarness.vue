@@ -6,18 +6,19 @@
  * (021/022, que no existen todavía). Se retira o queda oculta detrás de
  * un flag una vez el milestone M3 esté listo (ver Objetivo del ticket).
  *
- * Ticket 016: agrega el selector de cuboid (para probar el outline de
- * selección -- la sincronización real con una jerarquía llega en 017) y
- * el botón de reset de cámara.
+ * Ticket 017: reemplaza el `<select>` de prueba del ticket 016 por el
+ * panel de jerarquía REAL (`HierarchyPanel`), lado a lado con el
+ * viewport -- ambos comparten `useSelectionStore`, así que clickear un
+ * cuboid en cualquiera de los dos resalta en el otro (AC del ticket).
  */
 import { onMounted, ref } from 'vue'
 import ThreeViewport from './ThreeViewport.vue'
 import { threeViewportService } from './ThreeViewportService'
+import HierarchyPanel from '../editor/HierarchyPanel.vue'
 import type { MobProjectModel } from '../domain/MobProjectModel'
 
 const model = ref<MobProjectModel | null>(null)
 const loadError = ref<string | null>(null)
-const selectedCuboidId = ref<string | null>(null)
 
 onMounted(async () => {
   const response = await fetch('/dev-fixtures/carcomido-mob-project-model.json')
@@ -37,16 +38,12 @@ onMounted(async () => {
         <span class="viewport-harness__label">
           Dev harness -- {{ model.name }} ({{ model.cuboids.length }} cuboids, {{ model.bones.length }} bones)
         </span>
-        <label class="viewport-harness__select-label">
-          Seleccionar cuboid (prueba de outline, ver ticket 017 para selección real):
-          <select v-model="selectedCuboidId">
-            <option :value="null">(ninguno)</option>
-            <option v-for="cuboid in model.cuboids" :key="cuboid.id" :value="cuboid.id">{{ cuboid.name }}</option>
-          </select>
-        </label>
         <button type="button" @click="threeViewportService.resetCamera()">Reset cámara</button>
       </div>
-      <ThreeViewport :model="model" :selected-cuboid-id="selectedCuboidId" class="viewport-harness__canvas" />
+      <div class="viewport-harness__body">
+        <HierarchyPanel :model="model" class="viewport-harness__hierarchy" />
+        <ThreeViewport :model="model" class="viewport-harness__canvas" />
+      </div>
     </template>
     <p v-else class="viewport-harness__label">Cargando fixture de desarrollo…</p>
   </div>
@@ -69,8 +66,7 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 
-.viewport-harness__label,
-.viewport-harness__select-label {
+.viewport-harness__label {
   font-family: monospace;
   font-size: 0.85rem;
   color: #666;
@@ -82,8 +78,22 @@ onMounted(async () => {
   color: #c0392b;
 }
 
-.viewport-harness__canvas {
+.viewport-harness__body {
   flex: 1;
   min-height: 0;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.viewport-harness__hierarchy {
+  width: 220px;
+  flex-shrink: 0;
+  border: 1px solid #333;
+  border-radius: 4px;
+}
+
+.viewport-harness__canvas {
+  flex: 1;
+  min-width: 0;
 }
 </style>
