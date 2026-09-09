@@ -1,25 +1,59 @@
-// deploy: false -- todavía no hay Dockerfile/deploy real (el Technical
-// Alpha, docs/definiciones/galgoth-studio-mvp.md, no despliega a ningún
-// dominio real este ciclo, solo Docker Compose local). Sin vhostFile ni
-// certbotDomains por el mismo motivo.
+// Ticket 035: reemplaza el Jenkinsfile mínimo (`deploy: false`, sin
+// vhost/certbot) -- ahora que existen backend/Dockerfile,
+// deploy/docker-compose.{dev,qa,prod}.yml y deploy/cleanup.sh, se activa
+// el pipeline de aplicación real: build + test con cobertura + análisis
+// SonarQube + build de imagen + deploy dev/qa/prod + promoción manual a
+// PROD (gate exclusivo de Marco, sin cambios -- lo gestiona corePipeline
+// mismo). Mismo modelo ya vigente en auth-core-mc/mail-core-mc/
+// texture-studio-mc, sin reinventar nada.
 //
 // buildAndTest corre frontend (ticket 002) y backend (ticket 003) en
 // secuencia dentro del mismo closure -- corePipeline solo admite un
 // buildAndTest por Jenkinsfile.
 //
 // Frontend: lint + tests (Vitest, cobertura lcov) + build + Sonar.
-// Backend: ./gradlew build sonar -- build ya corre test (JUnit +
-// Testcontainers, requiere docker.sock, Jenkins ya lo monta -- mismo
-// patrón que mail-core-mc) y jacocoTestReport (dependencia explícita de
-// la tarea sonar en build.gradle); toolchain Java 25 -- Jenkins ya tiene
-// Temurin 25 instalado (mismo que auth-core-mc).
+// `VITE_API_BASE_URL` vacío (withEnv) SOLO para el build que termina
+// empaquetado en la imagen -- en despliegue real, frontend y backend
+// comparten origen (mismo contenedor, mismo puerto, ver
+// backend/Dockerfile/SpaFallbackController), así que las llamadas a la
+// API deben ser rutas relativas ("/api/..."), no
+// "http://localhost:8080" (el default de desarrollo local, ver
+// frontend/src/api/apiConfig.ts). No afecta a Sonar (analiza fuente +
+// cobertura, no el contenido del bundle).
+//
+// Tras el build del frontend, dos copias ANTES de que corePipeline
+// invoque `docker build ./backend` (contexto de build fijo, nunca ve
+// directorios hermanos -- ver la nota de cabecera de backend/Dockerfile
+// para el detalle completo de por qué ambas son necesarias):
+//   1. `frontend/dist` -> `backend/src/main/resources/static/` (Spring
+//      Boot sirve classpath:/static automáticamente).
+//   2. `contracts/schemas` -> `backend/contracts/schemas` (lo necesita
+//      `build.gradle`, tarea `processResources`, dentro del build de la
+//      imagen).
+// Ambas rutas son gitignored -- se recrean en cada build, nunca
+// contenido real de git.
+//
+// Backend: Java 25/Temurin explícito (la imagen de Jenkins solo trae
+// JDK 21 para correr Jenkins mismo -- mismo hallazgo real ya documentado
+// en auth-core-mc) + `./gradlew build sonar` (build ya corre test JUnit
+// + Testcontainers, requiere docker.sock, Jenkins ya lo monta -- mismo
+// patrón que auth-core-mc/mail-core-mc; jacocoTestReport es dependencia
+// explícita de la tarea sonar en build.gradle).
 //
 // Ambos con withSonarQubeEnv('sonarqube-vm') real -- corePipeline exige
 // un análisis previo o la etapa "Quality Gate de SonarQube" falla con
-// IllegalStateException (gotcha real encontrado en el primer build del
-// ticket 002, documentado también en el skill bootstrap-proyecto). Usa
-// el credential de Sonar YA configurado en Jenkins -- no depende de
-// SONARQUBE_CLI_TOKEN_VM (CLI personal de Marco, mecanismo aparte).
+// IllegalStateException.
+//
+// vhostFile/certbotDomains: subdominio de tercer nivel confirmado por el
+// PO -- studio[.-qa][-dev].galgoth.64bitstudio.com (no el patrón plano
+// <slug>[.-qa][-dev].64bitstudio.com de los 3 cores anteriores). Ver
+// deploy/vm-infra/nginx/galgoth-studio.conf.
+//
+// containerPort/healthPath/healthyPattern: se omiten -- los defaults de
+// corePipeline (8080, /actuator/health, '"status":"UP"') ya son
+// correctos para este backend Spring Boot Actuator, sin necesidad de
+// overrides como los que sí necesitó mail-core-mc (NestJS)/
+// texture-studio-mc (Express).
 //
 // E2E (ticket 033, HU-23): la suite Playwright de aceptación (frontend/e2e/,
 // scripts/e2e.sh) está completa y verificada -- corriendo LOCAL, en
@@ -46,22 +80,41 @@
 
 corePipeline(
     projectName: 'galgoth-studio',
-    deploy: false,
+    vhostFile: 'deploy/vm-infra/nginx/galgoth-studio.conf',
+    certbotDomains: ['studio.galgoth.64bitstudio.com', 'studio-qa.galgoth.64bitstudio.com', 'studio-dev.galgoth.64bitstudio.com'],
     buildAndTest: {
         withEnv(["PATH+SONAR=/opt/sonar-scanner/bin"]) {
             dir('frontend') {
                 sh 'npm ci'
                 sh 'npm run lint'
                 sh 'npm run test:coverage'
-                sh 'npm run build'
+                withEnv(['VITE_API_BASE_URL=']) {
+                    sh 'npm run build'
+                }
                 withSonarQubeEnv('sonarqube-vm') {
                     sh 'sonar-scanner'
                 }
             }
+
+            sh '''
+                rm -rf backend/src/main/resources/static
+                mkdir -p backend/src/main/resources/static
+                cp -r frontend/dist/. backend/src/main/resources/static/
+
+                rm -rf backend/contracts
+                mkdir -p backend/contracts
+                cp -r contracts/schemas backend/contracts/schemas
+            '''
         }
-        dir('backend') {
-            withSonarQubeEnv('sonarqube-vm') {
-                sh './gradlew build sonar'
+
+        withEnv([
+            "JAVA_HOME=/usr/lib/jvm/temurin-25-jdk-arm64",
+            "PATH=/usr/lib/jvm/temurin-25-jdk-arm64/bin:${env.PATH}"
+        ]) {
+            dir('backend') {
+                withSonarQubeEnv('sonarqube-vm') {
+                    sh './gradlew build sonar'
+                }
             }
         }
         // E2E (ticket 033): NO corre acá -- ver el comentario de cabecera.

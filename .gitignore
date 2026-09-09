@@ -27,6 +27,20 @@ HELP.md
 .env
 .env.*
 !.env.example
+# Ticket 035: los .env reales de DEV/QA/PROD viven SOLO en la VM (nunca
+# en git) -- estas son solo las plantillas, mismo patrón que
+# auth-core-mc/mail-core-mc/texture-studio-mc.
+!deploy/.env.dev.example
+!deploy/.env.qa.example
+!deploy/.env.prod.example
 
 # Docker
 docker/volumes/
+
+# Ticket 035: generados por el Jenkinsfile raíz justo antes de
+# `docker build ./backend` (contexto de build fijo, no puede ver
+# `frontend/`/`contracts/` -- ver backend/Dockerfile) -- nunca contenido
+# real de git, ambos se recrean en cada build.
+backend/src/main/resources/static/*
+!backend/src/main/resources/static/.gitkeep
+backend/contracts/
