@@ -8,6 +8,16 @@ Ciclo actual: **Technical Alpha (Fase 1 + Fase 2)**. Ver `docs/definiciones/galg
 
 Sistema de diseño base del frontend (`done/002-...`) y esqueleto real del backend (`done/003-...`, Spring Boot 4.1.0 + Java 25 + Postgres vía Flyway) ya funcionando. Todavía sin pantallas productivas ni lógica de negocio (`project`/`asset`/`ai-orchestrator`/`model-validation`/`export`) — llegan en los tickets 004+.
 
+## Ambientes desplegados (ticket 035)
+
+Desplegado en la VM compartida (mismo patrón que `auth-core-mc`/`mail-core-mc`/`texture-studio-mc` -- ver `docs/ARQUITECTURA.md`):
+
+- **DEV**: https://studio-dev.galgoth.64bitstudio.com -- se actualiza automáticamente en cada push a `dev`.
+- **QA**: https://studio-qa.galgoth.64bitstudio.com -- se actualiza cuando Claude promueve `dev`→`qa` tras verificar DEV.
+- **PROD**: https://studio.galgoth.64bitstudio.com -- solo se actualiza con la aprobación manual explícita de Marco en el pipeline de Jenkins (gate `input`, nunca automático).
+
+Claude real (no mock) en los 3 ambientes -- cualquier generación/edición de IA que se dispare ahí tiene costo real.
+
 ## Setup local
 
 Requiere: Node 24+, JDK 25 (toolchain vía Gradle si no está instalado), Docker (Testcontainers y `docker compose` lo necesitan).
