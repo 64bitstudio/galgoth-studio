@@ -11,7 +11,12 @@
 # Puertos de host reservados por galgoth-studio (coordinado con
 # auth-core-mc 8080-8082, mail-core-mc 8083-8085, texture-studio-mc
 # 8086-8088 -- ver auth-core-mc/docs/ARQUITECTURA.md, "Convenciones de la
-# VM"): PROD 8089 / DEV 8090 / QA 8091 (este archivo).
+# VM"): PROD 8089 / DEV 8091 / QA 8092 (este archivo) -- NO 8090:
+# hallazgo real en el primer deploy a DEV, "port is already allocated"
+# -- Jenkins mismo publica su UI en 127.0.0.1:8090, un puerto que la
+# tabla de "Convenciones de la VM" nunca documentó (solo documentaba los
+# puertos de los 3 cores anteriores, no los de la infra compartida
+# misma) -- corregido también en esa tabla, ver su propio historial.
 #
 # GALGOTH_STORAGE_MINIO_ACCESS_KEY/SECRET_KEY reusan directamente
 # MINIO_ROOT_USER/MINIO_ROOT_PASSWORD (mismo criterio que
@@ -40,7 +45,7 @@ services:
       # contra este QA.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?falta ANTHROPIC_API_KEY en deploy/.env.qa}
     ports:
-      - "8091:8080"
+      - "8092:8080"
     networks:
       - default
       - edge
@@ -57,7 +62,7 @@ services:
       start_period: 40s
     # Ingress compartido de la VM (Traefik) -- enruta
     # studio-qa.galgoth.64bitstudio.com hacia este contenedor. El puerto
-    # de host (8091) sigue publicado además, sin Traefik de por medio,
+    # de host (8092) sigue publicado además, sin Traefik de por medio,
     # porque el propio pipeline (healthcheck del job deploy-qa) le pega
     # directo al contenedor por nombre (ver corePipeline.groovy).
     labels:
