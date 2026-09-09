@@ -5,6 +5,7 @@ import com.galgothstudio.backend.project.ProjectNotFoundException;
 import com.galgothstudio.backend.project.draft.DraftNotFoundException;
 import com.galgothstudio.backend.project.draft.InvalidDraftException;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
+import com.galgothstudio.backend.project.mob.InvalidMobRequestException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -38,6 +39,11 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(InvalidProjectNameException.class)
 	public ResponseEntity<ApiErrorResponse> handleInvalidProjectName(InvalidProjectNameException ex) {
 		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("INVALID_PROJECT_NAME", ex.getMessage(), null));
+	}
+
+	@ExceptionHandler(InvalidMobRequestException.class)
+	public ResponseEntity<ApiErrorResponse> handleInvalidMobRequest(InvalidMobRequestException ex) {
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("INVALID_MOB_REQUEST", ex.getMessage(), null));
 	}
 
 }
