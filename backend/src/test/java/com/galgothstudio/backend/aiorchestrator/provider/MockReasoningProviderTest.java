@@ -46,9 +46,12 @@ class MockReasoningProviderTest {
 	@Test
 	void sin_configurar_nada_editando_un_modelo_sin_hand_right_apunta_al_id_real_del_primer_cuboid() {
 		MockReasoningProvider provider = new MockReasoningProvider();
-		String userPrompt = "Modelo actual:\n"
-				+ "{\"cuboids\":[{\"id\":\"7df30c0e-dec1-4268-9689-251c8efb7ba0\",\"name\":\"torso\",\"boneId\":\"root\"}]}"
-				+ "\n\nInstrucción del usuario: prueba";
+		String userPrompt =
+				"""
+				Modelo actual:
+				{"cuboids":[{"id":"7df30c0e-dec1-4268-9689-251c8efb7ba0","name":"torso","boneId":"root"}]}
+
+				Instrucción del usuario: prueba""";
 		ReasoningRequest request = new ReasoningRequest("system", userPrompt, "edit-planner-v1", "geometry-edit-v1");
 
 		AiProviderResponse response = provider.reason(request);
