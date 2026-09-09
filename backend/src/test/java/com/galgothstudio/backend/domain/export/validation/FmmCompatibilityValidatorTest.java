@@ -3,7 +3,6 @@ package com.galgothstudio.backend.domain.export.validation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.galgothstudio.backend.domain.export.BBModelExporterV5;
-import com.galgothstudio.backend.domain.export.validation.ValidationIssue.Severity;
 import com.galgothstudio.backend.domain.model.BaseType;
 import com.galgothstudio.backend.domain.model.Bone;
 import com.galgothstudio.backend.domain.model.Cuboid;
