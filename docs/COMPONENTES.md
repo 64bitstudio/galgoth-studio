@@ -128,6 +128,15 @@ Instrucción en lenguaje natural → plan (resumen + elementos cambiados + Antes
 - **`MobEditor.vue`**: botón "Asistente IA"/"Editor manual" que intercambia `HierarchyPanel.vue` ⇄ `AiEditPanel.vue` en la columna izquierda. Al recibir `applied` (tras un "Aplicar cambios" exitoso), llama `draft.load(model)` -- el editor manual refleja el cambio aplicado de inmediato, sin recargar la página.
 - **Verificado en vivo** (Claude in Chrome, backend real + Anthropic API real): ver `## Hecho` del ticket `031` para el detalle completo de la corrida real contra Claude.
 
+## Pantalla de exportación (ticket `032`, HU-19, mockup 11)
+
+Estado FMM + draft sin guardar, alcanzable desde `MobEditor.vue` (botón "Exportar").
+
+- **`ExportScreen.vue`** (nuevo, `frontend/src/editor/`, ruta `/projects/:projectId/mobs/:mobId/export`): dueño de su propio fetch (mismo patrón que `MobEditor.vue`, sin orquestador externo). Reutiliza el THUMBNAIL ya generado por 023 (`thumbnailUrl`) en vez de un viewport 3D interactivo -- decisión deliberada, más simple y fiel al mockup (imagen estática, sin controles de cámara), y evita por completo el conflicto de singleton de `ThreeViewportService` que 031 tuvo que resolver con un toggle.
+- **4 estados según `ExportStatus`**: (1) sin draft ni revisión -- mensaje explícito "todavía no tiene ningún contenido", sin botón de exportar; (2) draft sin ninguna revisión guardada -- solo "Guardar y exportar" (no existe "última guardada" que ofrecer); (3) sin cambios sin guardar -- un solo botón "Exportar .bbmodel" (fiel al mockup); (4) con cambios sin guardar -- las 3 acciones del AC (Guardar y exportar / Exportar última versión guardada / Cancelar). El panel de compatibilidad FMM (mismo patrón visual que `ResultStep.vue`, 030: pill Compatible/Con problemas + lista de `fmmIssues` específicos) solo se muestra cuando existe una revisión guardada.
+- **"Guardar y exportar"** pide confirmación en dos pasos (mismo patrón que `HierarchyBoneNode.vue`/`ResultStep.vue`) antes de crear una revisión real -- las acciones de solo lectura (exportar sin guardar) son de un solo clic.
+- **`mobExportApi.ts`** (nuevo): `getExportStatus`/`downloadBbmodel` -- este último lee el nombre real de archivo del header `Content-Disposition` que arma el backend (nunca lo inventa en el cliente) y dispara la descarga real del navegador vía un `<a download>` temporal.
+
 ## Pantallas previstas (12, ver mockups/00_all_views.png del build pack)
 
 1. Inicio / Mis proyectos

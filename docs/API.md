@@ -178,6 +178,24 @@ POST   /api/jobs/{jobId}/apply-edit         -- aplica un plan ya generado (201, 
 - `409 Conflict` (`JOB_NOT_COMPLETED`) si el job no es un `edit` completado.
 - `409 Conflict` (`STALE_EDIT_BASE`) si el draft/revisión base avanzaron desde que se generó el plan (otro autosave/"Guardar" ocurrió mientras tanto) -- no aplica nada; el frontend ofrece regenerar el plan contra el estado actual.
 
+### Exportación (ticket `032`, HU-19, mockup 11)
+
+Implementado en `MobExportController.java` (paquete `project.export`). "Guardar y exportar" NO es un endpoint compuesto: el frontend orquesta `POST /api/mobs/{mobId}/revisions` (020, "Guardar") seguido de `GET .../export/bbmodel` -- dos llamadas sucesivas reutilizando el mecanismo de Guardar tal cual, en vez de un endpoint propio que lo duplique. Difiere de la ruta "prevista" originalmente (`POST .../export/bbmodel`): es `GET`, no `POST` -- exportar es una operación de solo lectura sobre `mob_revisions`, nunca escribe nada por sí misma.
+
+```text
+GET    /api/mobs/{mobId}/export/status    -- estado de la pantalla (200, nunca falla salvo mob inexistente)
+GET    /api/mobs/{mobId}/export/bbmodel   -- descarga el .bbmodel de la última revisión guardada
+```
+
+**`GET /api/mobs/{mobId}/export/status`**
+- `200 OK` — `{mobId, mobName, hasSavedRevision, hasUnsavedChanges, fmmCompatible, fmmIssues}`. `fmmCompatible`/`fmmIssues` se calculan SIEMPRE contra la última revisión GUARDADA (nunca el draft en curso, decisión confirmada explícitamente con el PO) -- son `null`/`[]` cuando `hasSavedRevision=false` (nada guardado todavía). `hasUnsavedChanges=true` cuando el draft difiere de la última revisión (comparación por igualdad de valor de `MobProjectModel`, mismo mecanismo que el dirty-check de autosave, 020) o cuando hay un draft pero ninguna revisión todavía.
+- `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe.
+
+**`GET /api/mobs/{mobId}/export/bbmodel`**
+- `200 OK` — el `.bbmodel` (JSON) de la última revisión guardada, como descarga (`Content-Type: application/octet-stream`, `Content-Disposition: attachment; filename="<nombre-sanitizado>.bbmodel"`). NUNCA lee `mob_drafts`.
+- `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe.
+- `404 Not Found` (`NO_SAVED_REVISION`) si el mob nunca tuvo ninguna revisión guardada (`current_revision_number=0`) -- nada que exportar todavía.
+
 ## Rutas previstas (según `docs/definiciones/galgoth-studio-mvp.md`, sección 19 del master prompt)
 
 ```text
@@ -193,7 +211,6 @@ PATCH  /api/mobs/{mobId}
 POST   /api/mobs/{mobId}/references
 
 POST   /api/mobs/{mobId}/validate
-POST   /api/mobs/{mobId}/export/bbmodel
 ```
 
 La colección Postman vive en `postman/galgoth-studio/` — se actualiza junto con cada endpoint nuevo (convención del equipo, ver `docs-and-task-folder-workflow`).
