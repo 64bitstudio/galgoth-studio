@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Bone, Cuboid, MobProjectModel } from '../../domain/MobProjectModel'
@@ -18,8 +18,13 @@ vi.mock('three', async (importOriginal) => {
   return { ...actual, WebGLRenderer: FakeWebGLRenderer }
 })
 
+vi.mock('../draftPersistenceApi', () => ({ saveRevision: vi.fn() }))
+vi.mock('../thumbnailApi', () => ({ uploadThumbnail: vi.fn() }))
+
 const { default: EditorToolbar } = await import('../EditorToolbar.vue')
 const { threeViewportService } = await import('../../viewport/ThreeViewportService')
+const { saveRevision } = await import('../draftPersistenceApi')
+const { uploadThumbnail } = await import('../thumbnailApi')
 
 const EMPTY_FACES = {
   north: { uv: [0, 0, 0, 0] as [number, number, number, number], texture: null },
@@ -257,6 +262,78 @@ describe('EditorToolbar.vue', () => {
       input.remove()
 
       expect(draft.model!.cuboids).toHaveLength(0) // sin cambios -- el atajo no actuó
+    })
+  })
+
+  describe('Guardar (ticket 023)', () => {
+    it('Guardar exitoso comitea la revisión y luego captura+sube el thumbnail', async () => {
+      const draft = useDraftModelStore()
+      draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
+      vi.mocked(saveRevision).mockResolvedValue({ created: true, revisionNumber: 4, reason: null })
+      const png = new Blob(['fake-png'], { type: 'image/png' })
+      const captureSpy = vi.spyOn(threeViewportService, 'captureThumbnail').mockResolvedValue(png)
+      vi.mocked(uploadThumbnail).mockResolvedValue(undefined)
+      const wrapper = mount(EditorToolbar)
+
+      await findButton(wrapper, 'Guardar').trigger('click')
+      await flushPromises()
+
+      expect(saveRevision).toHaveBeenCalledWith('test-mob', draft.model)
+      expect(captureSpy).toHaveBeenCalled()
+      expect(uploadThumbnail).toHaveBeenCalledWith('test-mob', png)
+      expect(wrapper.text()).toContain('Guardado (revisión 4).')
+    })
+
+    it('un Guardar sin cambios muestra el motivo del backend y NO intenta subir thumbnail', async () => {
+      const draft = useDraftModelStore()
+      draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
+      vi.mocked(saveRevision).mockResolvedValue({ created: false, revisionNumber: 2, reason: 'Sin cambios.' })
+      const captureSpy = vi.spyOn(threeViewportService, 'captureThumbnail').mockResolvedValue(new Blob(['png'], { type: 'image/png' }))
+      const wrapper = mount(EditorToolbar)
+
+      await findButton(wrapper, 'Guardar').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Sin cambios.')
+      // Ambigüedad deliberada: aunque no hubo revisión nueva, el AC del
+      // ticket no exige omitir el thumbnail en este caso -- se documenta
+      // el comportamiento real (sí se intenta, igual que en un save con
+      // cambios) en vez de asumir un requisito no confirmado.
+      expect(captureSpy).toHaveBeenCalled()
+    })
+
+    it('si saveRevision falla, se muestra el error y NUNCA se intenta el thumbnail', async () => {
+      const draft = useDraftModelStore()
+      draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
+      vi.mocked(saveRevision).mockRejectedValue(new Error('El draft no pasa la validación.'))
+      const captureSpy = vi.spyOn(threeViewportService, 'captureThumbnail')
+      const wrapper = mount(EditorToolbar)
+
+      await findButton(wrapper, 'Guardar').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('El draft no pasa la validación.')
+      expect(captureSpy).not.toHaveBeenCalled()
+    })
+
+    it('si el thumbnail falla, el Guardar ya completado sigue mostrando su mensaje de éxito (fallo silencioso, solo console.warn)', async () => {
+      const draft = useDraftModelStore()
+      draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
+      vi.mocked(saveRevision).mockResolvedValue({ created: true, revisionNumber: 1, reason: null })
+      vi.spyOn(threeViewportService, 'captureThumbnail').mockRejectedValue(new Error('boom'))
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const wrapper = mount(EditorToolbar)
+
+      await findButton(wrapper, 'Guardar').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Guardado (revisión 1).')
+      expect(warnSpy).toHaveBeenCalled()
+    })
+
+    it('el botón Guardar está deshabilitado mientras no hay modelo cargado', () => {
+      const wrapper = mount(EditorToolbar)
+      expect(findButton(wrapper, 'Guardar').attributes('disabled')).toBeDefined()
     })
   })
 })

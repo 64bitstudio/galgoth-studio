@@ -187,6 +187,45 @@ export class ThreeViewportService {
       this.animationHandle = null
     }
   }
+
+  /**
+   * Ticket 023: captura un PNG del mob actualmente en escena desde el
+   * ángulo fijo de referencia (misma posición/target que `resetCamera`,
+   * ver diseño "vista fija (ángulo isométrico, iluminación estándar)" en
+   * `docs/definiciones/galgoth-studio-mvp.md`). No usa una cámara/escena
+   * offscreen aparte: reutiliza el mismo renderer/escena singleton
+   * (docstring de la clase) para no abrir un segundo contexto WebGL,
+   * moviendo la cámara al ángulo fijo solo por el instante del render y
+   * restaurándola después para que la vista del usuario no salte.
+   */
+  async captureThumbnail(): Promise<Blob> {
+    const previousPosition = this.camera.position.clone()
+    const previousTarget = this.controls.target.clone()
+
+    try {
+      this.camera.position.copy(DEFAULT_CAMERA_POSITION)
+      this.controls.target.copy(DEFAULT_CAMERA_TARGET)
+      this.camera.lookAt(this.controls.target)
+      this.controls.update()
+      this.renderer.render(this.scene, this.camera)
+
+      return await new Promise<Blob>((resolve, reject) => {
+        this.canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob)
+          } else {
+            reject(new Error('No se pudo generar el thumbnail (toBlob devolvió null).'))
+          }
+        }, 'image/png')
+      })
+    } finally {
+      this.camera.position.copy(previousPosition)
+      this.controls.target.copy(previousTarget)
+      this.camera.lookAt(this.controls.target)
+      this.controls.update()
+      this.renderer.render(this.scene, this.camera)
+    }
+  }
 }
 
 /** Instancia compartida real -- ver docstring de la clase. */

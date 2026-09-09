@@ -14,6 +14,7 @@
  * (contenido interactivo dentro de un `<button>` es HTML inválido) --
  * el menú vive como hermano, superpuesto visualmente en la esquina.
  */
+import { thumbnailUrl } from '../api/apiConfig'
 import GMenu, { type GMenuItem } from '../design-system/components/GMenu.vue'
 import type { ProjectSummary } from './projectsApi'
 
@@ -38,7 +39,7 @@ function handleAction(projectId: string, actionKey: string): void {
     <button type="button" class="project-card__open" @click="emit('open', project.id)">
       <span class="project-card__thumbnails">
         <span v-for="thumb in project.mobThumbnails" :key="thumb.mobId" class="project-card__thumbnail">
-          <img v-if="thumb.thumbnailKey" :src="thumb.thumbnailKey" alt="" />
+          <img v-if="thumb.thumbnailKey" :src="thumbnailUrl(thumb.thumbnailKey)!" alt="" />
           <span v-else class="project-card__placeholder" aria-hidden="true" />
         </span>
         <span v-if="project.mobThumbnails.length === 0" class="project-card__thumbnail">

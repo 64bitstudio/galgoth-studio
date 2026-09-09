@@ -119,6 +119,38 @@
       ]
     },
     {
+      "name": "Thumbnails (ticket 023)",
+      "item": [
+        {
+          "name": "Subir thumbnail de un mob",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "image/png" }],
+            "body": { "mode": "file", "file": {} },
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/thumbnail",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mobs", "{{mobId}}", "thumbnail"]
+            },
+            "description": "Body: bytes crudos de un PNG (elegir un archivo local en la pestaña Body > binary de Postman) -- NO JSON, NO multipart. 204 sin cuerpo si tuvo éxito (sube el PNG a MinIO y actualiza mobs.thumbnail_key al path servible /api/mobs/{mobId}/thumbnail, siempre sobreescribiendo el thumbnail anterior in-place). 404 (MOB_NOT_FOUND) si el mob no existe."
+          }
+        },
+        {
+          "name": "Obtener thumbnail actual de un mob",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/thumbnail",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mobs", "{{mobId}}", "thumbnail"]
+            },
+            "description": "200 con los bytes del PNG (Content-Type: image/png) si el mob ya tiene thumbnail. 404 sin cuerpo si el mob existe pero todavía no tiene ninguno subido; 404 (MOB_NOT_FOUND) si el mob no existe."
+          }
+        }
+      ]
+    },
+    {
       "name": "Draft / Guardar (ticket 020)",
       "item": [
         {

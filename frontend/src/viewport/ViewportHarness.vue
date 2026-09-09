@@ -10,6 +10,14 @@
  * Ticket 018: el fixture se carga en `useDraftModelStore` (ya no un ref
  * local) -- es el mismo draft editable que el toolbar de transformación
  * mutará.
+ *
+ * Ticket 023: el botón "Guardar" real (`EditorToolbar`) necesita un
+ * `mobId` que EXISTA de verdad en el backend -- el fixture estático trae
+ * un `mobId`/`projectId` inventados. En vez de mockear el backend para
+ * este harness de desarrollo, se busca-o-crea un proyecto+mob real
+ * ("Dev Harness"/"carcomido-harness", vía 021/022, ya existentes) y se
+ * sobreescriben esos dos campos del fixture con los ids reales --
+ * conservando toda la geometría rica de Carcomido tal cual.
  */
 import { onMounted, ref } from 'vue'
 import ThreeViewport from './ThreeViewport.vue'
@@ -18,9 +26,25 @@ import HierarchyPanel from '../editor/HierarchyPanel.vue'
 import EditorToolbar from '../editor/EditorToolbar.vue'
 import { useDraftModelStore } from '../editor/draftModelStore'
 import type { MobProjectModel } from '../domain/MobProjectModel'
+import { createProject, listProjects } from '../projects/projectsApi'
+import { createMob, listMobs } from '../projects/mobsApi'
+
+const DEV_PROJECT_NAME = 'Dev Harness'
+const DEV_MOB_NAME = 'carcomido-harness'
 
 const draft = useDraftModelStore()
 const loadError = ref<string | null>(null)
+
+/** Busca el proyecto/mob de desarrollo por nombre, o los crea si es la primera vez que corre el harness contra este backend. */
+async function findOrCreateHarnessMob(): Promise<{ projectId: string; mobId: string }> {
+  const projects = await listProjects()
+  const project = projects.find((p) => p.name === DEV_PROJECT_NAME) ?? (await createProject(DEV_PROJECT_NAME))
+
+  const mobs = await listMobs(project.id)
+  const mob = mobs.find((m) => m.name === DEV_MOB_NAME) ?? (await createMob(project.id, DEV_MOB_NAME, 'custom'))
+
+  return { projectId: project.id, mobId: mob.id }
+}
 
 onMounted(async () => {
   const response = await fetch('/dev-fixtures/carcomido-mob-project-model.json')
@@ -28,7 +52,14 @@ onMounted(async () => {
     loadError.value = `No se pudo cargar el fixture de desarrollo (HTTP ${response.status}).`
     return
   }
-  draft.load((await response.json()) as MobProjectModel)
+  const fixture = (await response.json()) as MobProjectModel
+
+  try {
+    const { projectId, mobId } = await findOrCreateHarnessMob()
+    draft.load({ ...fixture, projectId, mobId })
+  } catch (error) {
+    loadError.value = `No se pudo preparar el proyecto/mob real del harness contra el backend: ${String(error)}`
+  }
 })
 </script>
 
