@@ -8,8 +8,8 @@
  * técnico §8, y AC #3 del ticket 008). Sienta la base para 016/023.
  *
  * Ticket 016: cámara orbital (`OrbitControls`), grid de piso y reset de
- * cámara -- todo vive en el servicio (no en el componente Vue) para que
- * cualquier pantalla que reutilice el singleton herede el mismo
+ * cámara -- esta lógica vive en el servicio (no en el componente Vue)
+ * para que cualquier pantalla que reutilice el singleton herede el mismo
  * comportamiento de cámara sin reconfigurarlo.
  */
 import { AmbientLight, DirectionalLight, GridHelper, Group, PerspectiveCamera, Scene, Vector3, WebGLRenderer } from 'three'

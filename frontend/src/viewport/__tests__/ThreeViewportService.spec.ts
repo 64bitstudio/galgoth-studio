@@ -4,7 +4,7 @@ import type { Cuboid, MobProjectModel } from '../../domain/MobProjectModel'
 // jsdom no implementa un contexto WebGL real (`HTMLCanvasElement.getContext('webgl')`
 // devuelve null) -- `new THREE.WebGLRenderer()` lanza fuera de un navegador
 // real. Se reemplaza SOLO el renderer por un fake mínimo (domElement +
-// setSize + render espiables); todo lo demás de 'three' (Scene, Group,
+// setSize + render espiables); el resto de 'three' (Scene, Group,
 // PerspectiveCamera, Quaternion, matrices...) se usa REAL, sin mock --
 // así se prueba la lógica real del servicio (attach/detach/setModel/loop),
 // no una simulación de Three.js completa.
