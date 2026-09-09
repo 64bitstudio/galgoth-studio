@@ -140,26 +140,26 @@ async function handleSave(): Promise<void> {
 
 <template>
   <div class="editor-toolbar">
-    <div class="editor-toolbar__group" role="group" aria-label="Modo de transformación">
+    <fieldset class="editor-toolbar__group" aria-label="Modo de transformación">
       <IconButton label="Move" :active="mode === 'translate'" @click="setMode('translate')"><IconMove :size="18" /></IconButton>
       <IconButton label="Scale" :active="mode === 'scale'" @click="setMode('scale')"><IconScale :size="18" /></IconButton>
       <IconButton label="Rotate" :active="mode === 'rotate'" @click="setMode('rotate')"><IconRotate :size="18" /></IconButton>
-    </div>
+    </fieldset>
     <span class="editor-toolbar__separator" />
-    <div class="editor-toolbar__group" role="group" aria-label="Agregar elementos">
+    <fieldset class="editor-toolbar__group" aria-label="Agregar elementos">
       <IconButton label="Add cuboid" @click="addCuboid"><IconCuboid :size="18" /></IconButton>
       <IconButton label="Add bone" @click="addBone"><IconBoneJoint :size="18" /></IconButton>
-    </div>
+    </fieldset>
     <span class="editor-toolbar__separator" />
-    <div class="editor-toolbar__group" role="group" aria-label="Duplicar y eliminar">
+    <fieldset class="editor-toolbar__group" aria-label="Duplicar y eliminar">
       <IconButton label="Duplicate" :disabled="!selection.selectedCuboidId" @click="duplicateSelected"><IconDuplicate :size="18" /></IconButton>
       <IconButton label="Delete" :disabled="!selection.selectedCuboidId" @click="deleteSelected"><IconTrash :size="18" /></IconButton>
-    </div>
+    </fieldset>
     <span class="editor-toolbar__separator" />
-    <div class="editor-toolbar__group" role="group" aria-label="Undo y redo">
+    <fieldset class="editor-toolbar__group" aria-label="Undo y redo">
       <IconButton label="Undo" :disabled="!draft.canUndo" @click="draft.undo()"><IconUndo :size="18" /></IconButton>
       <IconButton label="Redo" :disabled="!draft.canRedo" @click="draft.redo()"><IconRedo :size="18" /></IconButton>
-    </div>
+    </fieldset>
     <div class="editor-toolbar__spacer" />
     <span v-if="draft.lastError" class="editor-toolbar__error">{{ draft.lastError }}</span>
     <span v-if="saveMessage" class="editor-toolbar__save-message">{{ saveMessage }}</span>
@@ -179,9 +179,16 @@ async function handleSave(): Promise<void> {
 }
 
 .editor-toolbar__group {
+  /* <fieldset> real en vez de role="group" (hallazgo real de Sonar,
+     S6819 -- mismo criterio ya documentado en GMenu.vue) -- resetea el
+     borde/padding/min-width nativos que un <fieldset> trae por defecto. */
   display: flex;
   align-items: center;
   gap: 2px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
 }
 
 .editor-toolbar__separator {
