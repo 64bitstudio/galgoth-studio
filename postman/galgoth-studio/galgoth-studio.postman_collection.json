@@ -330,6 +330,41 @@
           }
         }
       ]
+    },
+    {
+      "name": "Edición IA (ticket 031)",
+      "item": [
+        {
+          "name": "Generar plan de edición",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instruction\": \"Haz las manos más grandes y los hombros más irregulares.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/ai/edit-geometry",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mobs", "{{mobId}}", "ai", "edit-geometry"]
+            },
+            "description": "200 con {jobId, summary, beforeCuboidCount, beforeBoneCount, afterCuboidCount, afterBoneCount, changedElements, beforeModel, afterModel} -- síncrono (sin SSE), NUNCA toca mob_drafts/mob_revisions. changedElements ({type, id, name, changeKind}) reutiliza el mismo diff puro de 029. Copiar el jobId de la respuesta a la variable de entorno `jobId` para 'Aplicar un plan de edición'. 400 (NO_BASE_REVISION) si el mob todavía no tiene ninguna revisión guardada. 404 (MOB_NOT_FOUND/DRAFT_NOT_FOUND). 400 (INVALID_EDIT_PROPOSAL) si la IA devuelve una propuesta inválida -- se persiste un ai_jobs 'failed' para auditoría, pero el draft/revisión real nunca cambian."
+          }
+        },
+        {
+          "name": "Aplicar un plan de edición",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{jobId}}/apply-edit",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "jobs", "{{jobId}}", "apply-edit"]
+            },
+            "description": "201 con {revisionNumber, draftVersion} -- crea mob_revisions (created_by='ai') Y mob_drafts en la misma transacción, mismo mecanismo que 'Usar este modelo' (030). 404 (JOB_NOT_FOUND). 409 (JOB_NOT_COMPLETED) si el job no es un edit completado. 409 (STALE_EDIT_BASE) si el draft/revisión base avanzaron desde que se generó el plan -- no aplica nada; regenerar el plan contra el estado actual."
+          }
+        }
+      ]
     }
   ]
 }

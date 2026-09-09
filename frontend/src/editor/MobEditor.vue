@@ -21,12 +21,15 @@ import ThreeViewport from '../viewport/ThreeViewport.vue'
 import { threeViewportService } from '../viewport/ThreeViewportService'
 import HierarchyPanel from './HierarchyPanel.vue'
 import EditorToolbar from './EditorToolbar.vue'
+import AiEditPanel from './AiEditPanel.vue'
+import GenerationPreviewViewport from '../ai/GenerationPreviewViewport.vue'
 import { useDraftModelStore } from './draftModelStore'
 import { getDraft } from './draftPersistenceApi'
 import { getMob } from '../projects/mobsApi'
 import { emptyMobProjectModel } from '../domain/emptyMobProjectModel'
 import { ApiError } from '../api/ApiError'
 import GSidebar, { type GSidebarKey } from '../design-system/components/GSidebar.vue'
+import type { MobProjectModel } from '../domain/MobProjectModel'
 
 const route = useRoute()
 const router = useRouter()
@@ -36,6 +39,23 @@ const mobId = route.params.mobId as string
 const draft = useDraftModelStore()
 const loadError = ref<string | null>(null)
 const notFound = ref(false)
+
+// Ticket 031: mientras `AiEditPanel` tiene un plan activo, el canvas
+// principal muestra ese modelo de solo lectura (`aiPreviewModel`) en vez
+// del `ThreeViewport` editable -- ambos envuelven el mismo singleton de
+// `ThreeViewportService` (un solo canvas WebGL del proceso), así que no
+// pueden estar montados a la vez. Ver el comentario de cabecera de
+// `AiEditPanel.vue` para el porqué completo.
+const showAiPanel = ref(false)
+const aiPreviewModel = ref<MobProjectModel | null>(null)
+
+function handleAiPreviewModelChanged(model: MobProjectModel | null): void {
+  aiPreviewModel.value = model
+}
+
+function handleAiEditApplied(model: MobProjectModel): void {
+  draft.load(model)
+}
 
 onMounted(async () => {
   try {
@@ -82,10 +102,23 @@ function backToProject(): void {
       <template v-else-if="draft.model">
         <EditorToolbar />
         <div class="mob-editor__body">
-          <HierarchyPanel class="mob-editor__hierarchy" />
-          <ThreeViewport class="mob-editor__canvas" />
+          <AiEditPanel
+            v-if="showAiPanel"
+            :mob-id="mobId"
+            class="mob-editor__hierarchy"
+            @preview-model-changed="handleAiPreviewModelChanged"
+            @applied="handleAiEditApplied"
+          />
+          <HierarchyPanel v-else class="mob-editor__hierarchy" />
+          <GenerationPreviewViewport v-if="aiPreviewModel" :model="aiPreviewModel" class="mob-editor__canvas" />
+          <ThreeViewport v-else class="mob-editor__canvas" />
         </div>
-        <button type="button" class="mob-editor__reset-camera" @click="threeViewportService.resetCamera()">Reset cámara</button>
+        <div class="mob-editor__actions">
+          <button type="button" class="mob-editor__reset-camera" @click="threeViewportService.resetCamera()">Reset cámara</button>
+          <button type="button" class="mob-editor__ai-toggle" @click="showAiPanel = !showAiPanel">
+            {{ showAiPanel ? 'Editor manual' : 'Asistente IA' }}
+          </button>
+        </div>
       </template>
       <p v-else class="mob-editor__loading">Cargando…</p>
     </main>
@@ -127,8 +160,13 @@ function backToProject(): void {
   min-width: 0;
 }
 
-.mob-editor__reset-camera {
-  align-self: flex-start;
+.mob-editor__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.mob-editor__reset-camera,
+.mob-editor__ai-toggle {
   min-height: var(--hit-target-min);
   padding: 0 var(--space-3);
   background: var(--surface-2);
@@ -136,6 +174,11 @@ function backToProject(): void {
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-md);
   cursor: pointer;
+}
+
+.mob-editor__ai-toggle {
+  border-color: var(--accent);
+  font-weight: 600;
 }
 
 .mob-editor__loading,

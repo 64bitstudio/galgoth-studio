@@ -155,7 +155,28 @@ POST   /api/jobs/{jobId}/apply         -- "Usar este modelo": crea la primera re
 - `404 Not Found` (`JOB_NOT_FOUND`) si el `jobId` no existe.
 - `409 Conflict` (`JOB_NOT_COMPLETED`) si el job todavía no terminó, falló o se canceló.
 
-**Gap conocido, documentado a propósito (VoBo del PO en el ticket 030)**: tras "Usar este modelo", el frontend navega de vuelta a `/projects/:projectId` -- ninguna ruta real de "Editar modelo" existe todavía (el editor manual, 016-018, solo se ejerció vía el harness de desarrollo `/dev/viewport-harness`, nunca un flujo productivo real). Cerrar esa ruta es alcance de un ticket futuro.
+**Gap conocido en su momento, ya cerrado (ticket `034`)**: tras "Usar este modelo", el frontend navega de vuelta a `/projects/:projectId` -- desde ahí, cada tarjeta de mob ya enlaza a `/projects/:projectId/mobs/:mobId/edit` (ver "Detalle de un mob" arriba), la ruta real del editor manual (016-018) montada sobre un `mobId` real.
+
+### Edición IA conversacional sobre un mob existente (ticket `031`, HU-17/HU-18)
+
+Implementado en `backend/.../aiorchestrator/edit/api/AiEditController.java`, orquestado por `AiEditService` (paquete `aiorchestrator.edit`). A diferencia del pipeline de generación (028/029), es **síncrono** -- una sola llamada rápida al `StructuredReasoningProvider`, sin SSE ni job en estado `running`: cada `POST .../ai/edit-geometry` persiste un `ai_jobs` fila `job_type='edit'` ya en estado terminal (`completed`/`failed`).
+
+```text
+POST   /api/mobs/{mobId}/ai/edit-geometry   -- genera un plan de edición sobre el draft actual (200, sin tocar mob_drafts/mob_revisions)
+POST   /api/jobs/{jobId}/apply-edit         -- aplica un plan ya generado (201, crea revisión+draft)
+```
+
+**`POST /api/mobs/{mobId}/ai/edit-geometry`** -- body `{"instruction": "..."}`
+- `200 OK` — `{jobId, summary, beforeCuboidCount, beforeBoneCount, afterCuboidCount, afterBoneCount, changedElements, beforeModel, afterModel}`. `changedElements` (`{type, id, name, changeKind}`, `changeKind` en `added`/`modified`/`removed`) reutiliza el mismo diff puro de 029 (`GenerationPreviewDiff`) contra el draft ANTES vs. la propuesta DESPUÉS.
+- `400 Bad Request` (`NO_BASE_REVISION`) si el mob todavía no tiene ninguna revisión guardada (`mobs.current_revision_number=0`) -- no existe nada que editar todavía; falla antes de gastar una llamada real a la IA.
+- `404 Not Found` (`MOB_NOT_FOUND` / `DRAFT_NOT_FOUND`) si el mob no existe, o tiene revisión pero ningún draft (caso posible si "Guardar" se llamó sin autosave previo).
+- `400 Bad Request` (`INVALID_EDIT_PROPOSAL`) si la IA devuelve una propuesta inválida (JSON malformado, operación fuera de la whitelist, geometría inválida) -- se persiste un `ai_jobs` fila `status='failed'` para auditoría, pero **el draft/revisión real del mob nunca cambian**.
+
+**`POST /api/jobs/{jobId}/apply-edit`**
+- `201 Created` — `{revisionNumber, draftVersion}`. Mismo mecanismo que `POST /api/jobs/{jobId}/apply` (030) -- crea `mob_revisions` (`created_by='ai'`) y `mob_drafts` en la misma transacción.
+- `404 Not Found` (`JOB_NOT_FOUND`) si el `jobId` no existe.
+- `409 Conflict` (`JOB_NOT_COMPLETED`) si el job no es un `edit` completado.
+- `409 Conflict` (`STALE_EDIT_BASE`) si el draft/revisión base avanzaron desde que se generó el plan (otro autosave/"Guardar" ocurrió mientras tanto) -- no aplica nada; el frontend ofrece regenerar el plan contra el estado actual.
 
 ## Rutas previstas (según `docs/definiciones/galgoth-studio-mvp.md`, sección 19 del master prompt)
 
@@ -170,12 +191,9 @@ POST   /api/projects/{id}/mobs
 PATCH  /api/mobs/{mobId}
 
 POST   /api/mobs/{mobId}/references
-POST   /api/mobs/{mobId}/ai/edit-geometry
 
 POST   /api/mobs/{mobId}/validate
 POST   /api/mobs/{mobId}/export/bbmodel
 ```
-
-El "Apply" de ediciones IA incrementales sobre un modelo YA guardado (a diferencia de "Usar este modelo", que es la PRIMERA revisión) es alcance del ticket `031` -- se documenta acá cuando aterrice.
 
 La colección Postman vive en `postman/galgoth-studio/` — se actualiza junto con cada endpoint nuevo (convención del equipo, ver `docs-and-task-folder-workflow`).

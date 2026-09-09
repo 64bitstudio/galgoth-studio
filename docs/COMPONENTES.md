@@ -119,6 +119,15 @@ Primera vez que el editor manual (`ThreeViewport.vue`/`HierarchyPanel.vue`/`Edit
 - **`frontend/src/projects/mobsApi.ts`**: `getMob(mobId)` (nuevo). **`frontend/src/editor/draftPersistenceApi.ts`**: `getDraft(mobId)` (nuevo, primer cliente frontend de `GET /api/mobs/{mobId}/draft`).
 - **Verificado en vivo** (Claude in Chrome, backend+Postgres+MinIO reales): click en la tarjeta de un mob SIN ningún draft todavía → editor real abre vacío (jerarquía/viewport sin geometría, sin error) → click "Guardar" → "Guardado (revisión 1)." real, confirmado en Postgres (`mobs.current_revision_number=1`, `mob_revisions(revision_number=1, created_by='user')`). Navegación directa a la URL de un mob CON draft real (el rig de IA de la verificación del ticket 030) → carga la jerarquía completa (root/torso/head/left_arm/right_arm/left_leg/right_leg + sub-cuboids) y el rig humanoide real en el viewport 3D. URL de un `mobId` inexistente → "Este mob no existe. Volver al proyecto" explícito, nunca una pantalla rota. Sin errores de consola en ningún caso.
 
+## Edición conversacional por IA sobre un mob existente (ticket `031`, HU-17/HU-18, mockup `06_edicion_ia.png`)
+
+Instrucción en lenguaje natural → plan (resumen + elementos cambiados + Antes/Después) → Aplicar/Cancelar, sobre el editor real de `034`.
+
+- **`AiEditPanel.vue`** (nuevo, `frontend/src/editor/`): textarea + "Generar cambios" (llama `POST .../ai/edit-geometry` vía `aiEditApi.ts`, nuevo), muestra el resumen de la IA + la lista "La IA modificará:" (`changedElements`, estilo `nombre (nuevo/modificado/eliminado)`) + toggle Antes/Después + Cancelar/Aplicar cambios (`POST .../apply-edit`). Un 409 `STALE_EDIT_BASE` al aplicar (el draft avanzó desde que se generó el plan) muestra el mensaje real y un botón "Regenerar contra el estado actual" -- nunca un error genérico.
+- **Decisión de layout (confirmada explícitamente, no el lado-a-lado literal del mockup)**: `ThreeViewportService` es un singleton deliberado (un solo canvas WebGL del proceso, ticket 008 AC#3) que `ThreeViewport.vue` (el editor real) ya usa. Mostrar Antes y Después simultáneamente exigiría dos canvases a la vez, lo que rompería ese singleton -- por eso `AiEditPanel.vue` NUNCA monta su propio viewport: emite `preview-model-changed` (el modelo a mostrar, o `null`) y es `MobEditor.vue` quien decide qué montar en el canvas principal (`GenerationPreviewViewport.vue`, de 029, mientras haya un plan activo; `ThreeViewport.vue` en caso contrario).
+- **`MobEditor.vue`**: botón "Asistente IA"/"Editor manual" que intercambia `HierarchyPanel.vue` ⇄ `AiEditPanel.vue` en la columna izquierda. Al recibir `applied` (tras un "Aplicar cambios" exitoso), llama `draft.load(model)` -- el editor manual refleja el cambio aplicado de inmediato, sin recargar la página.
+- **Verificado en vivo** (Claude in Chrome, backend real + Anthropic API real): ver `## Hecho` del ticket `031` para el detalle completo de la corrida real contra Claude.
+
 ## Pantallas previstas (12, ver mockups/00_all_views.png del build pack)
 
 1. Inicio / Mis proyectos
