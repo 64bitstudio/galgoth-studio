@@ -49,7 +49,7 @@ import java.util.Set;
  * <p><b>Hallazgo real de conformidad (ticket 012, fixture `01_cuboid_simple`)</b>:
  * Blockbench permite un cuboid colgado DIRECTO de la raíz del `outliner`,
  * sin ningún group/bone que lo contenga -- pero {@code Cuboid.boneId} en
- * nuestro dominio es un `String` no-nulo obligatorio (todo cuboid
+ * nuestro dominio es un `String` no-nulo obligatorio (cada cuboid
  * pertenece siempre a un bone, invariante de diseño desde el ticket 004,
  * necesaria para animación). Para representar este caso real sin perder
  * geometría (posición/tamaño/rotación/caras se preservan exactos), este
