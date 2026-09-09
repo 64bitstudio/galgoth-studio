@@ -1,0 +1,65 @@
+{
+  "info": {
+    "name": "Galgoth Studio API",
+    "description": "Colección Postman de Galgoth Studio -- ver docs/API.md. Primer endpoint real: ticket 020 (draft persistence + autosave + Guardar).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "mobId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Draft / Guardar (ticket 020)",
+      "item": [
+        {
+          "name": "Obtener el draft actual de un mob",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/draft",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mobs", "{{mobId}}", "draft"]
+            },
+            "description": "200 con { mobId, draftVersion, model, updatedAt } si existe, 404 explícito (DRAFT_NOT_FOUND) si el mob todavía no tiene ningún draft persistido, 404 (MOB_NOT_FOUND) si el mob no existe."
+          }
+        },
+        {
+          "name": "Autosave del draft",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": { }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/draft",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mobs", "{{mobId}}", "draft"]
+            },
+            "description": "Persiste mob_drafts SOLO si el contenido cambió materialmente respecto al último persistido -- responde { changed, draftVersion, updatedAt }. `changed:false` significa que no se escribió nada (ni siquiera updated_at). Nunca crea una mob_revision. 404 (MOB_NOT_FOUND) si el mob no existe."
+          }
+        },
+        {
+          "name": "Guardar (crea una revisión)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": { }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/revisions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mobs", "{{mobId}}", "revisions"]
+            },
+            "description": "Valida el draft actual contra el JSON Schema y crea una fila inmutable en mob_revisions -- 201 si created:true (nueva revisión), 200 si created:false (sin cambios desde la última revisión, no se duplica), 400 (INVALID_DRAFT, con `details`) si falla la validación, 404 (MOB_NOT_FOUND) si el mob no existe."
+          }
+        }
+      ]
+    }
+  ]
+}
