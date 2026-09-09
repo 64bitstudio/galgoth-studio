@@ -3,10 +3,10 @@
  * Paso 4 "Resultado" del wizard (ticket 027 shell → ticket 030 real,
  * HU-12, mockup 04) -- muestra la propuesta YA completada y sus 3
  * acciones reales. Deliberadamente NO hace ningún fetch/llamada HTTP acá
- * (mismo criterio que `ConfigurationStep.vue`, 027): recibe todo como
- * props y solo emite intención (`discard`/`regenerate`/`apply`) -- el
+ * (mismo criterio que `ConfigurationStep.vue`, 027): recibe cada dato
+ * como prop y solo emite intención (`discard`/`regenerate`/`apply`) -- el
  * orquestador (`AiMobWizard.vue`) es quien centraliza los efectos
- * secundarios reales de todo el wizard.
+ * secundarios reales del wizard completo.
  *
  * `jobId` es la única prop verdaderamente opcional (default `null`): sin
  * ella, el componente asume que lo está montando `/dev/wizard-result-harness`
