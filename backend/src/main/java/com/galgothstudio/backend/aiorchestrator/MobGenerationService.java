@@ -8,7 +8,6 @@ import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEventEntity;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEventRepository;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobRepository;
 import com.galgothstudio.backend.aiorchestrator.planner.GeometryPlannerService;
-import com.galgothstudio.backend.aiorchestrator.planner.InvalidGeometryProposalException;
 import com.galgothstudio.backend.aiorchestrator.planner.RawOperationsResult;
 import com.galgothstudio.backend.aiorchestrator.progress.GenerationCancellationRegistry;
 import com.galgothstudio.backend.aiorchestrator.progress.GenerationEventBroadcaster;
@@ -16,7 +15,6 @@ import com.galgothstudio.backend.aiorchestrator.progress.GenerationPreviewDiff;
 import com.galgothstudio.backend.aiorchestrator.progress.GenerationStage;
 import com.galgothstudio.backend.aiorchestrator.progress.PreviewDelta;
 import com.galgothstudio.backend.aiorchestrator.provider.AiProviderResponse;
-import com.galgothstudio.backend.aiorchestrator.vision.InvalidModelIntentException;
 import com.galgothstudio.backend.aiorchestrator.vision.ModelIntentAnalysisResult;
 import com.galgothstudio.backend.aiorchestrator.vision.VisionAnalysisService;
 import com.galgothstudio.backend.asset.AssetStorageService;
@@ -134,16 +132,12 @@ public class MobGenerationService {
 		AiJobEntity job = newRunningJob(mob.getId(), reference.getId());
 		aiJobRepository.save(job);
 
-		UUID jobId = job.getId();
-		UUID projectId = mob.getProjectId();
-		String mobName = mob.getName();
-		String baseType = mob.getBaseType();
-		UUID referenceId = reference.getId();
-		String storageKey = reference.getStorageKey();
-		String contentType = reference.getContentType();
+		GenerationJobContext context = new GenerationJobContext(
+				job.getId(), mob.getId(), mob.getProjectId(), mob.getName(), mob.getBaseType(), reference.getId(), reference.getStorageKey(),
+				reference.getContentType());
 
-		generationExecutor.execute(() -> runPipeline(jobId, mobId, projectId, mobName, baseType, referenceId, storageKey, contentType));
-		return jobId;
+		generationExecutor.execute(() -> runPipeline(context));
+		return context.jobId();
 	}
 
 	public void requestCancellation(UUID jobId) {
@@ -154,18 +148,19 @@ public class MobGenerationService {
 		cancellationRegistry.requestCancel(jobId);
 	}
 
-	private void runPipeline(
-			UUID jobId, UUID mobId, UUID projectId, String mobName, String baseType, UUID referenceId, String storageKey, String contentType) {
+	private void runPipeline(GenerationJobContext context) {
+		UUID jobId = context.jobId();
 		AtomicInteger seq = new AtomicInteger(0);
 		try {
 			checkCancellation(jobId);
 			emit(jobId, seq, GenerationStage.ANALIZANDO_REFERENCIA, "Analizando imagen de referencia…", 5, null);
 
 			byte[] imageBytes = assetStorageService
-					.get(storageKey)
-					.orElseThrow(() -> new IllegalStateException("La imagen de referencia '" + referenceId + "' no está en el storage."));
+					.get(context.storageKey())
+					.orElseThrow(() -> new IllegalStateException(
+							"La imagen de referencia '" + context.referenceId() + "' no está en el storage."));
 
-			ModelIntentAnalysisResult visionResult = visionAnalysisService.analyze(imageBytes, contentType, baseType);
+			ModelIntentAnalysisResult visionResult = visionAnalysisService.analyze(imageBytes, context.contentType(), context.baseType());
 			updateJobProviderInfo(jobId, visionResult.providerResponse());
 			checkCancellation(jobId);
 			emit(jobId, seq, GenerationStage.DETECTANDO_SILUETA, "Silueta detectada: " + visionResult.modelIntent().silhouette(), 25, null);
@@ -174,7 +169,7 @@ public class MobGenerationService {
 			updateJobProviderInfo(jobId, raw.providerResponse());
 			checkCancellation(jobId);
 
-			MobProjectModel emptyModel = emptyModelFor(mobId, projectId, mobName, baseType);
+			MobProjectModel emptyModel = emptyModelFor(context);
 			MobProjectModel finalModel = replayOperationsWithPreview(jobId, seq, raw, emptyModel);
 
 			completeJob(jobId, finalModel);
@@ -182,16 +177,15 @@ public class MobGenerationService {
 		} catch (GenerationCancelledException e) {
 			cancelJob(jobId);
 			emit(jobId, seq, GenerationStage.CANCELADO, e.getMessage(), null, null);
-		} catch (InvalidModelIntentException e) {
-			failJob(jobId, e.providerResponse(), e.getMessage());
-			emit(jobId, seq, GenerationStage.FALLIDO, e.getMessage(), null, null);
-		} catch (InvalidGeometryProposalException e) {
+		} catch (GenerationValidationException e) {
+			// InvalidModelIntentException (AC #1) e InvalidGeometryProposalException
+			// (AC #2) -- mismo tratamiento para ambas, ver GenerationValidationException.
 			failJob(jobId, e.providerResponse(), e.getMessage());
 			emit(jobId, seq, GenerationStage.FALLIDO, e.getMessage(), null, null);
 		} catch (RuntimeException e) {
-			// Red-caída/`AiProviderException`, storage inaccesible, o cualquier
+			// Red caída/`AiProviderException`, storage inaccesible, o cualquier
 			// otro fallo no anticipado -- nunca deja el job colgado en
-			// `running` para siempre (AC implícito: todo job termina).
+			// `running` para siempre (AC implícito: cada job termina).
 			log.error("Fallo inesperado en el pipeline de generación del job {}", jobId, e);
 			failJob(jobId, null, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
 			emit(jobId, seq, GenerationStage.FALLIDO, "Fallo inesperado durante la generación.", null, null);
@@ -236,13 +230,13 @@ public class MobGenerationService {
 		return switch (op) {
 			case CreateBone c -> "Creando hueso: " + c.name();
 			case CreateCuboid c -> "Creando cuboid: " + c.name();
-			case ResizeCuboid ignored -> "Ajustando dimensiones…";
-			case MoveCuboid ignored -> "Ajustando posición…";
-			case RotateCuboid ignored -> "Ajustando rotación…";
-			case SetBonePivot ignored -> "Ajustando pivote del rig…";
-			case SetBoneRotation ignored -> "Ajustando rotación del rig…";
-			case ParentBone ignored -> "Ajustando jerarquía del rig…";
-			case RemoveCuboid ignored -> "Quitando cuboid…";
+			case ResizeCuboid _ -> "Ajustando dimensiones…";
+			case MoveCuboid _ -> "Ajustando posición…";
+			case RotateCuboid _ -> "Ajustando rotación…";
+			case SetBonePivot _ -> "Ajustando pivote del rig…";
+			case SetBoneRotation _ -> "Ajustando rotación del rig…";
+			case ParentBone _ -> "Ajustando jerarquía del rig…";
+			case RemoveCuboid _ -> "Quitando cuboid…";
 		};
 	}
 
@@ -295,12 +289,12 @@ public class MobGenerationService {
 	}
 
 	/** Modelo vacío (sin bones/cuboids) desde el que arranca el Geometry planner -- HU-10 AC #3: nada persistido todavía, el mob real conserva `current_revision_number=0` hasta "Usar este modelo" (030). */
-	private MobProjectModel emptyModelFor(UUID mobId, UUID projectId, String mobName, String baseTypeRaw) {
-		BaseType baseType = objectMapper.convertValue(baseTypeRaw, BaseType.class);
+	private MobProjectModel emptyModelFor(GenerationJobContext context) {
+		BaseType baseType = objectMapper.convertValue(context.baseType(), BaseType.class);
 		return new MobProjectModel(
-				mobId.toString(),
-				projectId.toString(),
-				mobName,
+				context.mobId().toString(),
+				context.projectId().toString(),
+				context.mobName(),
 				baseType,
 				MobProjectModel.UNITS_MINECRAFT_PIXELS,
 				List.of(),

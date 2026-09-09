@@ -71,7 +71,7 @@ public class GenerationEventBroadcaster {
 		try {
 			GenerationEventView view = GenerationEventView.from(event, objectMapper);
 			emitter.send(SseEmitter.event().id(String.valueOf(event.getSeq())).name("progress").data(view, MediaType.APPLICATION_JSON));
-		} catch (IOException e) {
+		} catch (IOException _) {
 			log.info("Cliente SSE desconectado del job {} -- se remueve el emitter.", event.getJobId());
 			removeEmitter(event.getJobId(), emitter);
 		}

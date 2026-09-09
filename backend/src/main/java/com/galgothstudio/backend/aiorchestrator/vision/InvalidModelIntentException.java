@@ -1,5 +1,6 @@
 package com.galgothstudio.backend.aiorchestrator.vision;
 
+import com.galgothstudio.backend.aiorchestrator.GenerationValidationException;
 import com.galgothstudio.backend.aiorchestrator.provider.AiProviderResponse;
 import java.util.List;
 
@@ -11,7 +12,7 @@ import java.util.List;
  * (no solo el mensaje) para que el caller pueda registrar proveedor/
  * modelo reales en `ai_jobs` incluso en el camino de fallo.
  */
-public class InvalidModelIntentException extends RuntimeException {
+public class InvalidModelIntentException extends GenerationValidationException {
 
 	private final transient AiProviderResponse providerResponse;
 	private final transient List<String> validationErrors;
@@ -22,6 +23,7 @@ public class InvalidModelIntentException extends RuntimeException {
 		this.validationErrors = validationErrors;
 	}
 
+	@Override
 	public AiProviderResponse providerResponse() {
 		return providerResponse;
 	}

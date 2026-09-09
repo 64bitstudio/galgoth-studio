@@ -1,7 +1,6 @@
 package com.galgothstudio.backend.aiorchestrator;
 
 import java.util.concurrent.Executor;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -14,13 +13,15 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  * ejecutor síncrono especial de test -- más fiel al comportamiento real,
  * y necesario de todas formas para el test de cancelación, que necesita
  * que el pipeline siga corriendo en OTRO hilo mientras el test dispara
- * la cancelación desde el suyo).
+ * la cancelación desde el suyo). Sin `@Qualifier` explícito en el `@Bean`
+ * -- el nombre del método YA es el nombre del bean ("generationExecutor"),
+ * que es justo el valor que `@Qualifier("generationExecutor")` busca en
+ * el punto de inyección (`MobGenerationService`).
  */
 @Configuration
 public class GenerationExecutorConfig {
 
 	@Bean
-	@Qualifier("generationExecutor")
 	public Executor generationExecutor() {
 		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
 		executor.setCorePoolSize(2);

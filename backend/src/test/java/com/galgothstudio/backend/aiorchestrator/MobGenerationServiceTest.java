@@ -21,8 +21,10 @@ import java.nio.file.Files;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -115,26 +117,13 @@ class MobGenerationServiceTest {
 		return mobId;
 	}
 
-	/** El pipeline real corre en `generationExecutor` (ticket 029) -- se sondea `ai_jobs` (cada `findById` es su propia lectura ya commiteada) en vez de un sleep fijo o un ejecutor síncrono especial de test. */
+	/** El pipeline real corre en `generationExecutor` (ticket 029) -- se sondea `ai_jobs` (cada `findById` es su propia lectura ya commiteada) con Awaitility en vez de un `Thread.sleep()` crudo o un ejecutor síncrono especial de test. */
 	private AiJobEntity awaitTerminalStatus(UUID jobId) {
-		long deadline = System.currentTimeMillis() + 5000;
-		while (System.currentTimeMillis() < deadline) {
-			AiJobEntity job = aiJobRepository.findById(jobId).orElseThrow();
-			if (!"running".equals(job.getStatus())) {
-				return job;
-			}
-			sleep();
-		}
-		throw new AssertionError("El job " + jobId + " no alcanzó un estado terminal dentro del timeout.");
-	}
-
-	private static void sleep() {
-		try {
-			Thread.sleep(25);
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IllegalStateException(e);
-		}
+		Awaitility.await()
+				.atMost(Duration.ofSeconds(5))
+				.pollInterval(Duration.ofMillis(25))
+				.until(() -> !"running".equals(aiJobRepository.findById(jobId).orElseThrow().getStatus()));
+		return aiJobRepository.findById(jobId).orElseThrow();
 	}
 
 	@Test
@@ -219,7 +208,9 @@ class MobGenerationServiceTest {
 
 	@Test
 	void un_mob_inexistente_responde_MobNotFoundException() {
-		assertThatThrownBy(() -> mobGenerationService.startGeneration(UUID.randomUUID())).isInstanceOf(MobNotFoundException.class);
+		UUID mobId = UUID.randomUUID();
+
+		assertThatThrownBy(() -> mobGenerationService.startGeneration(mobId)).isInstanceOf(MobNotFoundException.class);
 	}
 
 	/**
@@ -239,7 +230,7 @@ class MobGenerationServiceTest {
 			visionCalled.countDown();
 			try {
 				testReadyToProceed.await(5, TimeUnit.SECONDS);
-			} catch (InterruptedException e) {
+			} catch (InterruptedException _) {
 				Thread.currentThread().interrupt();
 			}
 		});
@@ -272,7 +263,9 @@ class MobGenerationServiceTest {
 
 	@Test
 	void cancelar_un_job_inexistente_responde_JobNotFoundException() {
-		assertThatThrownBy(() -> mobGenerationService.requestCancellation(UUID.randomUUID())).isInstanceOf(JobNotFoundException.class);
+		UUID jobId = UUID.randomUUID();
+
+		assertThatThrownBy(() -> mobGenerationService.requestCancellation(jobId)).isInstanceOf(JobNotFoundException.class);
 	}
 
 }

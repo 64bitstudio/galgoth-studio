@@ -25,9 +25,11 @@ import com.galgothstudio.backend.aiorchestrator.provider.VisionModelProvider;
 import com.galgothstudio.backend.asset.AssetStorageService;
 import java.io.File;
 import java.nio.file.Files;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -120,20 +122,11 @@ class GenerationJobControllerTest {
 	}
 
 	private AiJobEntity awaitTerminalStatus(UUID jobId) {
-		long deadline = System.currentTimeMillis() + 5000;
-		while (System.currentTimeMillis() < deadline) {
-			AiJobEntity job = aiJobRepository.findById(jobId).orElseThrow();
-			if (!"running".equals(job.getStatus())) {
-				return job;
-			}
-			try {
-				Thread.sleep(25);
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IllegalStateException(e);
-			}
-		}
-		throw new AssertionError("El job " + jobId + " no alcanzó un estado terminal dentro del timeout.");
+		Awaitility.await()
+				.atMost(Duration.ofSeconds(5))
+				.pollInterval(Duration.ofMillis(25))
+				.until(() -> !"running".equals(aiJobRepository.findById(jobId).orElseThrow().getStatus()));
+		return aiJobRepository.findById(jobId).orElseThrow();
 	}
 
 	@Test
