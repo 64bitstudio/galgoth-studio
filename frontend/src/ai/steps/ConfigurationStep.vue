@@ -50,7 +50,7 @@ function confirm(): void {
 <template>
   <div class="configuration-step">
     <div class="configuration-step__preview">
-      <img :src="props.referencePreviewUrl" alt="Imagen de referencia elegida" />
+      <img :src="props.referencePreviewUrl" alt="Referencia elegida" />
       <button type="button" class="configuration-step__back" @click="emit('back')">← Cambiar imagen</button>
     </div>
 

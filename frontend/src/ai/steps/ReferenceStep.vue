@@ -47,19 +47,11 @@ function openFilePicker(): void {
     <h2 class="reference-step__title">Referencia</h2>
     <p class="reference-step__hint">Sube una imagen de concept art como referencia para generar el modelo.</p>
 
-    <div
-      class="reference-step__dropzone"
-      role="button"
-      tabindex="0"
-      @click="openFilePicker"
-      @keydown.enter="openFilePicker"
-      @dragover.prevent
-      @drop="handleDrop"
-    >
+    <button type="button" class="reference-step__dropzone" @click="openFilePicker" @dragover.prevent @drop="handleDrop">
       <span class="reference-step__dropzone-icon" aria-hidden="true">⬆</span>
       <span>Arrastra una imagen o hace clic para elegir un archivo</span>
       <span class="reference-step__dropzone-formats">PNG o JPEG, máximo 10MB</span>
-    </div>
+    </button>
     <label class="reference-step__file-label">
       Elegir imagen de referencia
       <input ref="filePickerEl" type="file" accept="image/png,image/jpeg" aria-label="Elegir imagen de referencia" @change="handleFiles(($event.target as HTMLInputElement).files)" />
@@ -96,12 +88,15 @@ function openFilePicker(): void {
   flex-direction: column;
   align-items: center;
   gap: var(--space-2);
+  width: 100%;
   padding: var(--space-6);
+  background: transparent;
   border: 2px dashed var(--border);
   border-radius: var(--radius-lg);
   color: var(--muted);
   cursor: pointer;
   text-align: center;
+  font: inherit;
 }
 
 .reference-step__dropzone:hover,
