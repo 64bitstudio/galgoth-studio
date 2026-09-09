@@ -73,8 +73,10 @@ class GeometryPlannerServiceTest {
 				[{"op":"deleteEverything","target":"x"}]
 				""");
 		GeometryPlannerService service = newService(mockProvider);
+		ModelIntent modelIntent = aModelIntent();
+		MobProjectModel startingModel = emptyModel();
 
-		assertThatThrownBy(() -> service.plan(aModelIntent(), emptyModel())).isInstanceOf(InvalidGeometryProposalException.class);
+		assertThatThrownBy(() -> service.plan(modelIntent, startingModel)).isInstanceOf(InvalidGeometryProposalException.class);
 	}
 
 	@Test
@@ -82,8 +84,10 @@ class GeometryPlannerServiceTest {
 		MockReasoningProvider mockProvider = new MockReasoningProvider();
 		mockProvider.setNextResponse("esto no es un array JSON");
 		GeometryPlannerService service = newService(mockProvider);
+		ModelIntent modelIntent = aModelIntent();
+		MobProjectModel startingModel = emptyModel();
 
-		assertThatThrownBy(() -> service.plan(aModelIntent(), emptyModel()))
+		assertThatThrownBy(() -> service.plan(modelIntent, startingModel))
 				.isInstanceOf(InvalidGeometryProposalException.class)
 				.satisfies(e -> assertThat(((InvalidGeometryProposalException) e).providerResponse().provider()).isEqualTo("mock"));
 	}
@@ -99,8 +103,10 @@ class GeometryPlannerServiceTest {
 				]
 				""");
 		GeometryPlannerService service = newService(mockProvider);
+		ModelIntent modelIntent = aModelIntent();
+		MobProjectModel startingModel = emptyModel();
 
-		assertThatThrownBy(() -> service.plan(aModelIntent(), emptyModel())).isInstanceOf(InvalidGeometryProposalException.class);
+		assertThatThrownBy(() -> service.plan(modelIntent, startingModel)).isInstanceOf(InvalidGeometryProposalException.class);
 	}
 
 }

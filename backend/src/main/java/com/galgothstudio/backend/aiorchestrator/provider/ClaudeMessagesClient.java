@@ -144,11 +144,11 @@ public class ClaudeMessagesClient {
 		if (text.isEmpty()) {
 			String stopReason = response.path("stop_reason").asText("");
 			if ("max_tokens".equals(stopReason)) {
-				// Hallazgo real (ticket 028): el modelo gastó todo max_tokens en
-				// un bloque "thinking" antes de llegar a emitir texto -- un
-				// error específico ahorra tener que releer la respuesta cruda
-				// completa (miles de caracteres de "thinking" en base64) la
-				// próxima vez que esto pase.
+				// Hallazgo real (ticket 028): el modelo consumió el presupuesto
+				// completo de max_tokens en un bloque "thinking" antes de llegar
+				// a emitir texto -- un error específico ahorra tener que releer
+				// la respuesta cruda completa (miles de caracteres de "thinking"
+				// en base64) la próxima vez que esto pase.
 				throw new AiProviderException(
 						"Respuesta de Anthropic truncada por max_tokens antes de emitir ningún bloque de texto "
 								+ "(probable razonamiento extendido consumiendo todo el presupuesto) -- subir MAX_TOKENS.");

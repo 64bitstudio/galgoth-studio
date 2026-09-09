@@ -187,7 +187,9 @@ class MobGenerationServiceTest {
 
 	@Test
 	void un_mob_inexistente_responde_MobNotFoundException() {
-		assertThatThrownBy(() -> mobGenerationService.generate(UUID.randomUUID())).isInstanceOf(MobNotFoundException.class);
+		UUID mobId = UUID.randomUUID();
+
+		assertThatThrownBy(() -> mobGenerationService.generate(mobId)).isInstanceOf(MobNotFoundException.class);
 	}
 
 }
