@@ -25,12 +25,20 @@
 // completo (Docker Compose Postgres+MinIO, backend con providers mock,
 // frontend) y corre la suite Playwright de aceptación -- después de
 // lint/test/build/Sonar de ambos, para no gastar tiempo de stack real
-// si algo más básico ya falló. `npx playwright install --with-deps
-// chromium` instala el navegador + dependencias de sistema (apt) --
-// **riesgo de infra no verificado**: no se confirmó si el agente de
-// Jenkins tiene permisos/paquetes para esto (decisión explícita del PO:
-// agregarlo igual y resolverlo en el primer PR real si falla, en vez de
-// dejar la suite sin ningún camino de CI).
+// si algo más básico ya falló.
+//
+// **Hallazgo real confirmado en el primer PR (033)**: `npx playwright
+// install --with-deps chromium` falla ("su: Authentication failure")
+// -- el agente de Jenkins no tiene sudo/root, y `--with-deps` necesita
+// root para `apt install` las librerías de sistema de Chromium. Sin
+// `--with-deps` (solo descarga el binario del navegador, sin tocar
+// paquetes de sistema) -- si el agente ya tiene las librerías
+// necesarias (glibc/libnss3/libatk/etc., típico en una imagen Ubuntu
+// completa) esto alcanza; si no, Chromium fallará al LANZARSE (no al
+// instalarse) y haría falta una imagen Docker con Playwright pre-armado
+// (`mcr.microsoft.com/playwright:*`) -- cambio de infra mayor (agente
+// Docker dedicado), fuera de alcance de este ticket, a decidir con VoBo
+// sobre `platform` si este intento más liviano tampoco alcanza.
 @Library('platform') _
 
 corePipeline(
@@ -46,7 +54,7 @@ corePipeline(
                 withSonarQubeEnv('sonarqube-vm') {
                     sh 'sonar-scanner'
                 }
-                sh 'npx playwright install --with-deps chromium'
+                sh 'npx playwright install chromium'
             }
         }
         dir('backend') {
