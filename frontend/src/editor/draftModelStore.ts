@@ -7,11 +7,21 @@
  * logueado con `console.warn` además de guardado, para que la UI decida
  * cómo mostrarlo sin que el error quede invisible en ningún caso.
  *
+ * Ticket 019: pila de Command de Undo/Redo sobre este mismo draft --
+ * "Command" aquí no es una clase propia, es simplemente la referencia al
+ * `MobProjectModel` INMEDIATAMENTE ANTERIOR a cada edición exitosa. Esto
+ * es seguro y barato porque cada función de `geometryOperations.ts` es
+ * pura (nunca muta su modelo de entrada, siempre retorna uno nuevo vía
+ * spread) -- las referencias históricas en la pila nunca se corrompen
+ * por una mutación posterior. Ninguna operación rechazada empuja un
+ * Command (deshacer un no-op no tendría sentido); Undo/Redo NUNCA crea
+ * ni destruye una `mob_revision` -- solo re-asignan `model`.
+ *
  * Persistencia real (Guardar/autosave) llega en el ticket 020 -- este
  * store SOLO mantiene el estado en memoria, no lo guarda todavía.
  */
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { MobProjectModel, Vec3 } from '../domain/MobProjectModel'
 import type { BoneRemovalImpact } from './geometryOperations'
 import {
@@ -36,10 +46,45 @@ function describeError(error: unknown): string {
 export const useDraftModelStore = defineStore('draftModel', () => {
   const model = ref<MobProjectModel | null>(null)
   const lastError = ref<string | null>(null)
+  const undoStack = ref<MobProjectModel[]>([])
+  const redoStack = ref<MobProjectModel[]>([])
+
+  const canUndo = computed(() => undoStack.value.length > 0)
+  const canRedo = computed(() => redoStack.value.length > 0)
 
   function load(loadedModel: MobProjectModel): void {
     model.value = loadedModel
     lastError.value = null
+    // Cargar un mob es el INICIO de una historia de edición, no un paso
+    // dentro de una ya existente -- ninguna pila sobrevive a un load().
+    undoStack.value = []
+    redoStack.value = []
+  }
+
+  /** Registra un Command exitoso: `previous` es el estado justo antes del cambio que ya se aplicó a `model`. Descarta la rama de redo pendiente (historial lineal estándar, AC #3). */
+  function recordCommand(previous: MobProjectModel): void {
+    undoStack.value = [...undoStack.value, previous]
+    redoStack.value = []
+  }
+
+  function undo(): void {
+    if (!model.value || undoStack.value.length === 0) {
+      return
+    }
+    const previous = undoStack.value[undoStack.value.length - 1]!
+    undoStack.value = undoStack.value.slice(0, -1)
+    redoStack.value = [...redoStack.value, model.value]
+    model.value = previous
+  }
+
+  function redo(): void {
+    if (!model.value || redoStack.value.length === 0) {
+      return
+    }
+    const next = redoStack.value[redoStack.value.length - 1]!
+    redoStack.value = redoStack.value.slice(0, -1)
+    undoStack.value = [...undoStack.value, model.value]
+    model.value = next
   }
 
   /** Envuelve una operación que puede lanzar `InvalidGeometryError`; aplica el resultado o reporta el rechazo. */
@@ -47,9 +92,11 @@ export const useDraftModelStore = defineStore('draftModel', () => {
     if (!model.value) {
       return
     }
+    const previous = model.value
     try {
-      model.value = operation(model.value)
+      model.value = operation(previous)
       lastError.value = null
+      recordCommand(previous)
     } catch (error) {
       const message = describeError(error)
       console.warn(`[draftModelStore] ${context} rechazado:`, message)
@@ -82,11 +129,13 @@ export const useDraftModelStore = defineStore('draftModel', () => {
     if (!model.value) {
       return null
     }
+    const previous = model.value
     let createdId: string | null = null
     try {
-      const result = createCuboid(model.value, boneId, name, from, to, origin)
+      const result = createCuboid(previous, boneId, name, from, to, origin)
       model.value = result.model
       lastError.value = null
+      recordCommand(previous)
       createdId = result.cuboidId
     } catch (error) {
       const message = describeError(error)
@@ -101,11 +150,13 @@ export const useDraftModelStore = defineStore('draftModel', () => {
     if (!model.value) {
       return null
     }
+    const previous = model.value
     let createdId: string | null = null
     try {
-      const result = createBone(model.value, parentId, name, pivot, rotation)
+      const result = createBone(previous, parentId, name, pivot, rotation)
       model.value = result.model
       lastError.value = null
+      recordCommand(previous)
       createdId = result.boneId
     } catch (error) {
       const message = describeError(error)
@@ -132,11 +183,13 @@ export const useDraftModelStore = defineStore('draftModel', () => {
     if (!model.value) {
       return null
     }
+    const previous = model.value
     let createdId: string | null = null
     try {
-      const result = duplicateCuboid(model.value, cuboidId)
+      const result = duplicateCuboid(previous, cuboidId)
       model.value = result.model
       lastError.value = null
+      recordCommand(previous)
       createdId = result.cuboidId
     } catch (error) {
       const message = describeError(error)
@@ -149,7 +202,11 @@ export const useDraftModelStore = defineStore('draftModel', () => {
   return {
     model,
     lastError,
+    canUndo,
+    canRedo,
     load,
+    undo,
+    redo,
     moveSelectedCuboid,
     resizeSelectedCuboid,
     rotateSelectedCuboid,
