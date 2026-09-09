@@ -13,6 +13,12 @@
  * (ticket 027) con datos de ejemplo, y lo dice explícitamente en pantalla
  * -- nunca deja que un dato inventado se confunda con uno real.
  *
+ * Ticket 037 (corrección de UX/fidelidad visual, mockup 04): `previewModel`
+ * (nuevo, opcional) es el modelo final que `GenerationStep` ya construyó
+ * en memoria vía SSE -- lo reutiliza `GenerationPreviewViewport` (029) de
+ * solo lectura para que "Resultado" muestre el modelo real, no solo
+ * números. Sin esta prop (harness de desarrollo), se omite sin más.
+ *
  * **Gap conocido, documentado a propósito (VoBo del PO en este ticket)**:
  * al confirmar "Usar este modelo" NO existe todavía una ruta real de
  * "Editar modelo" (el editor manual, 016-018, solo se ejerció vía el
@@ -22,10 +28,16 @@
  */
 import { ref } from 'vue'
 import type { FmmIssue } from '../../api/generationResultApi'
+import type { MobProjectModel } from '../../domain/MobProjectModel'
+import GButton from '../../design-system/components/GButton.vue'
+import IconCheck from '../../design-system/icons/IconCheck.vue'
+import IconWarning from '../../design-system/icons/IconWarning.vue'
+import GenerationPreviewViewport from '../GenerationPreviewViewport.vue'
 
 const props = withDefaults(
   defineProps<{
     jobId?: string | null
+    previewModel?: MobProjectModel | null
     mobName?: string
     cuboidCount?: number
     boneCount?: number
@@ -38,6 +50,7 @@ const props = withDefaults(
   }>(),
   {
     jobId: null,
+    previewModel: null,
     mobName: 'Carcomido',
     cuboidCount: 27,
     boneCount: 7,
@@ -58,7 +71,7 @@ const pendingAction = ref<PendingAction>(null)
 const CONFIRM_COPY: Record<Exclude<PendingAction, null>, string> = {
   discard: '¿Descartar esta propuesta? No se guarda ningún draft ni revisión.',
   regenerate: '¿Regenerar? Se descarta esta propuesta y se inicia un nuevo intento con la misma imagen de referencia.',
-  apply: '¿Usar este modelo? Se crea la primera revisión guardada del mob a partir de esta propuesta.',
+  apply: '¿Usar este modelo? Se creará la primera revisión guardada del mob a partir de esta propuesta -- pasará a ser el modelo base real.',
 }
 
 function requestAction(action: Exclude<PendingAction, null>): void {
@@ -87,63 +100,70 @@ function confirmPendingAction(): void {
 <template>
   <div class="result-step">
     <p v-if="!props.jobId" class="result-step__example-notice">Vista previa con datos de ejemplo -- así se ve esta pantalla con una propuesta real.</p>
-    <h2 class="result-step__ready">¡Tu modelo está listo!</h2>
-    <h3 class="result-step__name">{{ props.mobName }}</h3>
 
-    <dl class="result-step__stats">
-      <div class="result-step__stat">
-        <dt>Cuboides</dt>
-        <dd>{{ props.cuboidCount }}</dd>
+    <div class="result-step__header">
+      <span class="result-step__badge"><IconCheck :size="18" /></span>
+      <div>
+        <h2 class="result-step__ready">¡Tu modelo está listo!</h2>
+        <h3 class="result-step__name">{{ props.mobName }}</h3>
       </div>
-      <div class="result-step__stat">
-        <dt>Bones</dt>
-        <dd>{{ props.boneCount }}</dd>
-      </div>
-      <div class="result-step__stat">
-        <dt>Textura</dt>
-        <dd>{{ props.textureWidth }}×{{ props.textureHeight }}</dd>
-      </div>
-      <div class="result-step__stat">
-        <dt>Compatibilidad FMM</dt>
-        <dd :class="{ 'result-step__stat-value--ok': props.fmmCompatible, 'result-step__stat-value--error': !props.fmmCompatible }">
-          {{ props.fmmCompatible ? 'Compatible' : 'Con problemas' }}
-        </dd>
-      </div>
-    </dl>
+    </div>
 
-    <ul v-if="props.fmmIssues.length > 0" class="result-step__fmm-issues">
-      <li v-for="(issue, index) in props.fmmIssues" :key="index" class="result-step__fmm-issue">
-        <strong>{{ issue.severity === 'ERROR' ? 'Error' : 'Aviso' }}</strong> ({{ issue.element }}): {{ issue.message }}
-      </li>
-    </ul>
-
-    <p v-if="props.actionError" class="result-step__action-error">{{ props.actionError }}</p>
-
-    <template v-if="pendingAction">
-      <p class="result-step__confirm-copy">{{ CONFIRM_COPY[pendingAction] }}</p>
-      <div class="result-step__confirm-actions">
-        <button type="button" class="result-step__action" :disabled="props.busy" @click="confirmPendingAction">Confirmar</button>
-        <button type="button" class="result-step__action" :disabled="props.busy" @click="cancelPendingAction">Cancelar</button>
+    <div class="result-step__body">
+      <div class="result-step__panel result-step__panel--preview">
+        <GenerationPreviewViewport v-if="props.previewModel" :model="props.previewModel" class="result-step__viewport" />
+        <div v-else class="result-step__viewport-placeholder">{{ props.mobName.charAt(0).toUpperCase() }}</div>
       </div>
-    </template>
-    <div v-else class="result-step__actions">
-      <button
-        type="button"
-        class="result-step__action result-step__action--danger"
-        :disabled="props.busy"
-        @click="requestAction('discard')"
-      >
-        Descartar
-      </button>
-      <button type="button" class="result-step__action" :disabled="props.busy" @click="requestAction('regenerate')">Regenerar</button>
-      <button
-        type="button"
-        class="result-step__action result-step__action--primary"
-        :disabled="props.busy"
-        @click="requestAction('apply')"
-      >
-        Usar este modelo
-      </button>
+
+      <div class="result-step__panel result-step__panel--summary">
+        <dl class="result-step__stats">
+          <div class="result-step__stat">
+            <dt>Cuboides</dt>
+            <dd>{{ props.cuboidCount }}</dd>
+          </div>
+          <div class="result-step__stat">
+            <dt>Bones</dt>
+            <dd>{{ props.boneCount }}</dd>
+          </div>
+          <div class="result-step__stat">
+            <dt>Textura</dt>
+            <dd>{{ props.textureWidth }}×{{ props.textureHeight }}</dd>
+          </div>
+          <div class="result-step__stat">
+            <dt>Compatibilidad FMM</dt>
+            <dd class="result-step__fmm" :class="{ 'result-step__fmm--ok': props.fmmCompatible, 'result-step__fmm--error': !props.fmmCompatible }">
+              <IconCheck v-if="props.fmmCompatible" :size="14" />
+              <IconWarning v-else :size="14" />
+              {{ props.fmmCompatible ? 'Compatible' : 'Con problemas' }}
+            </dd>
+          </div>
+        </dl>
+
+        <ul v-if="props.fmmIssues.length > 0" class="result-step__fmm-issues">
+          <li v-for="(issue, index) in props.fmmIssues" :key="index" class="result-step__fmm-issue">
+            <strong>{{ issue.severity === 'ERROR' ? 'Error' : 'Aviso' }}</strong> ({{ issue.element }}): {{ issue.message }}
+          </li>
+        </ul>
+
+        <p v-if="props.actionError" class="result-step__action-error">{{ props.actionError }}</p>
+
+        <template v-if="pendingAction">
+          <div class="result-step__confirm">
+            <p class="result-step__confirm-copy">{{ CONFIRM_COPY[pendingAction] }}</p>
+            <div class="result-step__confirm-actions">
+              <GButton variant="ghost" :disabled="props.busy" @click="cancelPendingAction">Cancelar</GButton>
+              <GButton :variant="pendingAction === 'discard' ? 'danger' : 'primary'" :disabled="props.busy" @click="confirmPendingAction">
+                {{ props.busy ? 'Procesando…' : 'Confirmar' }}
+              </GButton>
+            </div>
+          </div>
+        </template>
+        <div v-else class="result-step__actions">
+          <GButton variant="danger" :disabled="props.busy" @click="requestAction('discard')">Descartar</GButton>
+          <GButton variant="secondary" :disabled="props.busy" @click="requestAction('regenerate')">Regenerar</GButton>
+          <GButton variant="primary" :disabled="props.busy" @click="requestAction('apply')">Usar este modelo</GButton>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -152,8 +172,9 @@ function confirmPendingAction(): void {
 .result-step {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  max-width: 360px;
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
 }
 
 .result-step__example-notice {
@@ -164,21 +185,91 @@ function confirmPendingAction(): void {
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-md);
   padding: var(--space-2);
+  align-self: flex-start;
+}
+
+.result-step__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.result-step__badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .result-step__ready {
   margin: 0;
   color: var(--accent);
+  font-size: var(--text-lg);
 }
 
 .result-step__name {
-  margin: 0;
+  margin: var(--space-1) 0 0;
+}
+
+.result-step__body {
+  display: flex;
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.result-step__panel {
+  background: var(--panel);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.result-step__panel--preview {
+  flex: 1.2;
+  min-width: 0;
+  min-height: 360px;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.result-step__viewport {
+  width: 100%;
+  min-height: 360px;
+  border: none;
+  border-radius: 0;
+}
+
+.result-step__viewport-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 64px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--surface-2);
+}
+
+.result-step__panel--summary {
+  width: 340px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
 }
 
 .result-step__stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-3);
+  gap: var(--space-4);
   margin: 0;
   padding: var(--space-4);
   background: var(--surface);
@@ -192,15 +283,23 @@ function confirmPendingAction(): void {
 }
 
 .result-step__stat dd {
-  margin: 0;
+  margin: var(--space-1) 0 0;
   font-weight: 600;
+  font-size: var(--text-md);
 }
 
-.result-step__stat-value--ok {
+.result-step__fmm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-base) !important;
+}
+
+.result-step__fmm--ok {
   color: var(--accent);
 }
 
-.result-step__stat-value--error {
+.result-step__fmm--error {
   color: var(--danger);
 }
 
@@ -223,42 +322,32 @@ function confirmPendingAction(): void {
   font-size: var(--text-sm);
 }
 
+.result-step__confirm {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--accent-soft);
+  border: var(--border-width) solid var(--accent);
+  border-radius: var(--radius-md);
+}
+
 .result-step__confirm-copy {
   margin: 0;
   font-size: var(--text-sm);
 }
 
-.result-step__actions,
 .result-step__confirm-actions {
   display: flex;
-  flex-direction: column;
+  justify-content: flex-end;
   gap: var(--space-2);
 }
 
-.result-step__action {
-  min-height: var(--hit-target-min);
-  padding: 0 var(--space-4);
-  border-radius: var(--radius-md);
-  border: var(--border-width) solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  font-weight: 600;
-}
-
-.result-step__action--primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-}
-
-.result-step__action--danger {
-  border-color: var(--danger);
-  color: var(--danger);
-  background: transparent;
-}
-
-.result-step__action:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
+.result-step__actions {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 </style>
