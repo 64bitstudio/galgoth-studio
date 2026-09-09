@@ -21,24 +21,31 @@
 // el credential de Sonar YA configurado en Jenkins -- no depende de
 // SONARQUBE_CLI_TOKEN_VM (CLI personal de Marco, mecanismo aparte).
 //
-// E2E (ticket 033, HU-23): `scripts/e2e.sh` levanta el stack real
-// completo (Docker Compose Postgres+MinIO, backend con providers mock,
-// frontend) y corre la suite Playwright de aceptación -- después de
-// lint/test/build/Sonar de ambos, para no gastar tiempo de stack real
-// si algo más básico ya falló.
+// E2E (ticket 033, HU-23): la suite Playwright de aceptación corre
+// después de lint/test/build/Sonar de ambos, para no gastar tiempo de
+// stack real si algo más básico ya falló.
 //
-// **Hallazgo real confirmado en el primer PR (033)**: `npx playwright
-// install --with-deps chromium` falla ("su: Authentication failure")
-// -- el agente de Jenkins no tiene sudo/root, y `--with-deps` necesita
-// root para `apt install` las librerías de sistema de Chromium. Sin
-// `--with-deps` (solo descarga el binario del navegador, sin tocar
-// paquetes de sistema) -- si el agente ya tiene las librerías
-// necesarias (glibc/libnss3/libatk/etc., típico en una imagen Ubuntu
-// completa) esto alcanza; si no, Chromium fallará al LANZARSE (no al
-// instalarse) y haría falta una imagen Docker con Playwright pre-armado
-// (`mcr.microsoft.com/playwright:*`) -- cambio de infra mayor (agente
-// Docker dedicado), fuera de alcance de este ticket, a decidir con VoBo
-// sobre `platform` si este intento más liviano tampoco alcanza.
+// **Dos hallazgos reales de infra, resueltos en los primeros intentos
+// de CI de 033** (ver docs/ARQUITECTURA.md y el `## Hecho` del ticket
+// para el detalle completo): (1) `--with-deps` de `playwright install`
+// necesita root, el agente no lo tiene -- se instala sin esa flag.
+// (2) el puerto fijo de MinIO (9000) colisionaba con otro job en el
+// agente compartido -- resuelto con puerto dinámico + descubrimiento
+// (`scripts/e2e-up.sh`).
+//
+// **Tercer hallazgo, el más profundo**: aun con el navegador instalado,
+// Chromium no podía LANZARSE en el agente (`libglib-2.0.so.0` faltante,
+// sin root para instalarla vía apt). `scripts/e2e.sh` se partió en
+// `e2e-up.sh` (levanta Docker Compose + backend + frontend, sin
+// bloquear) / `e2e-down.sh` (los apaga) para que el paso que SÍ toca
+// Chromium corra en un contenedor Docker con Playwright + sus
+// dependencias YA resueltas (`mcr.microsoft.com/playwright`, imagen
+// oficial) -- `--network host` para que ese contenedor vea el backend/
+// frontend ya levantados en el agente como si fueran locales (`localhost`
+// compartido). El resto (Compose/backend/frontend/gradle/npm) sigue
+// corriendo en el agente normal -- la imagen de Playwright no tiene
+// JDK/Gradle. `finally` garantiza `e2e-down.sh` incluso si Playwright
+// falla dentro del contenedor.
 @Library('platform') _
 
 corePipeline(
@@ -54,7 +61,6 @@ corePipeline(
                 withSonarQubeEnv('sonarqube-vm') {
                     sh 'sonar-scanner'
                 }
-                sh 'npx playwright install chromium'
             }
         }
         dir('backend') {
@@ -62,6 +68,15 @@ corePipeline(
                 sh './gradlew build sonar'
             }
         }
-        sh './scripts/e2e.sh'
+        sh './scripts/e2e-up.sh'
+        try {
+            docker.image('mcr.microsoft.com/playwright:v1.63.0-noble').inside('--network host') {
+                dir('frontend') {
+                    sh 'npx playwright test'
+                }
+            }
+        } finally {
+            sh './scripts/e2e-down.sh --dump-logs'
+        }
     }
 )

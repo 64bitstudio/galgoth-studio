@@ -1,74 +1,27 @@
 #!/usr/bin/env bash
-# Ticket 033 (HU-23) -- orquesta el stack real completo (Docker Compose
-# Postgres+MinIO, backend con providers mock, frontend) para la suite
-# Playwright de aceptación, y lo apaga SIEMPRE al salir (éxito o fallo) --
-# mismo patrón manual ya usado en cada verificación en vivo de esta
-# sesión, ahora repetible/script-able para CI (Jenkinsfile) y local.
+# Ticket 033 (HU-23) -- uso LOCAL: levanta el stack real completo, corre
+# Playwright directo en este Mac (Chromium ya instalado por
+# `npx playwright install`, sin las restricciones de un agente de CI sin
+# root), y apaga todo siempre al salir (éxito o fallo). CI (Jenkinsfile)
+# usa `e2e-up.sh`/`e2e-down.sh` por separado para poder correr
+# `npx playwright test` en un contenedor Docker con Chromium+deps ya
+# resueltas -- ver el comentario de cabecera de esos dos scripts.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BACKEND_LOG="$(mktemp -t galgoth-e2e-backend.XXXXXX)"
-FRONTEND_LOG="$(mktemp -t galgoth-e2e-frontend.XXXXXX)"
-BACKEND_PID=""
-FRONTEND_PID=""
 
 cleanup() {
 	local exit_code=$?
-	echo "--- e2e.sh: limpiando (exit code $exit_code) ---"
-	[ -n "$FRONTEND_PID" ] && kill "$FRONTEND_PID" 2>/dev/null || true
-	[ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null || true
-	(cd "$ROOT_DIR/backend" && ./gradlew --stop >/dev/null 2>&1) || true
-	# `npm run dev`/`gradlew bootRun` en background dejan procesos hijos
-	# (vite/java) que NO reciben el kill de arriba (matan solo el wrapper
-	# de shell, no el proceso real que abrió el puerto) -- red de
-	# seguridad real, encontrada en la primera corrida de este script:
-	# dos `vite` quedaron vivos pese a que el script reportó limpieza OK.
-	lsof -tiTCP:5173 -sTCP:LISTEN 2>/dev/null | xargs -r kill 2>/dev/null || true
-	lsof -tiTCP:8080 -sTCP:LISTEN 2>/dev/null | xargs -r kill 2>/dev/null || true
-	(cd "$ROOT_DIR" && docker compose -f docker/docker-compose.yml down >/dev/null 2>&1) || true
 	if [ "$exit_code" -ne 0 ]; then
-		echo "--- backend log (últimas 100 líneas) ---"
-		tail -n 100 "$BACKEND_LOG" || true
-		echo "--- frontend log (últimas 50 líneas) ---"
-		tail -n 50 "$FRONTEND_LOG" || true
+		"$ROOT_DIR/scripts/e2e-down.sh" --dump-logs
+	else
+		"$ROOT_DIR/scripts/e2e-down.sh"
 	fi
-	rm -f "$BACKEND_LOG" "$FRONTEND_LOG"
 	exit "$exit_code"
 }
 trap cleanup EXIT
 
-wait_for() {
-	local url="$1" label="$2" attempts=60
-	for _ in $(seq 1 "$attempts"); do
-		if curl -sS -o /dev/null -m 2 "$url"; then
-			echo "$label: listo ($url)"
-			return 0
-		fi
-		sleep 2
-	done
-	echo "$label: nunca respondió en $url" >&2
-	return 1
-}
-
-# MINIO_HOST_PORT=0 -- Docker asigna un puerto de host libre (el fijo
-# 9000/9001 de docker-compose.yml puede estar ya ocupado en un agente de
-# CI compartido, hallazgo real de este ticket). Se descubre el puerto
-# real ya asignado ANTES de levantar el backend, y se lo pasa por env var
-# (GALGOTH_STORAGE_MINIO_ENDPOINT, ver application.properties).
-echo "--- levantando Postgres + MinIO ---"
-(cd "$ROOT_DIR" && MINIO_HOST_PORT=0 MINIO_CONSOLE_HOST_PORT=0 docker compose -f docker/docker-compose.yml up -d)
-MINIO_PORT="$(cd "$ROOT_DIR" && docker compose -f docker/docker-compose.yml port minio 9000 | cut -d: -f2)"
-echo "MinIO real en el puerto $MINIO_PORT"
-
-echo "--- levantando backend (AI_VISION_PROVIDER=mock, AI_REASONING_PROVIDER=mock) ---"
-(cd "$ROOT_DIR/backend" && AI_VISION_PROVIDER=mock AI_REASONING_PROVIDER=mock GALGOTH_STORAGE_MINIO_ENDPOINT="http://localhost:$MINIO_PORT" ./gradlew bootRun --console=plain >"$BACKEND_LOG" 2>&1) &
-BACKEND_PID=$!
-wait_for "http://localhost:8080/actuator/health" "backend"
-
-echo "--- levantando frontend ---"
-(cd "$ROOT_DIR/frontend" && npm run dev >"$FRONTEND_LOG" 2>&1) &
-FRONTEND_PID=$!
-wait_for "http://localhost:5173/" "frontend"
+"$ROOT_DIR/scripts/e2e-up.sh"
 
 echo "--- corriendo la suite Playwright ---"
 (cd "$ROOT_DIR/frontend" && npx playwright test)
