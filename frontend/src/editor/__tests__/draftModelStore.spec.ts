@@ -119,5 +119,85 @@ describe('useDraftModelStore', () => {
     const store = useDraftModelStore()
     expect(() => store.moveSelectedCuboid('c', [1, 0, 0])).not.toThrow()
     expect(store.addCuboid('b', 'x', [0, 0, 0], [1, 1, 1], [0, 0, 0])).toBeNull()
+    expect(store.addBone(null, 'x', [0, 0, 0], [0, 0, 0])).toBeNull()
+    expect(store.duplicate('c')).toBeNull()
+  })
+
+  it('setPivot actualiza el pivote de un bone existente', () => {
+    const store = useDraftModelStore()
+    store.load(modelWith([bone('b', null)], []))
+
+    store.setPivot('b', [1, 2, 3])
+
+    expect(store.model?.bones[0]!.pivot).toEqual([1, 2, 3])
+    expect(store.lastError).toBeNull()
+  })
+
+  it('setPivot con un bone inexistente NO cambia el modelo y guarda lastError', () => {
+    const store = useDraftModelStore()
+    store.load(modelWith([bone('b', null)], []))
+
+    store.setPivot('no-existe', [1, 2, 3])
+
+    expect(store.model?.bones[0]!.pivot).toEqual([0, 0, 0])
+    expect(store.lastError).not.toBeNull()
+  })
+
+  it('setRotation actualiza la rotación de un bone existente', () => {
+    const store = useDraftModelStore()
+    store.load(modelWith([bone('b', null)], []))
+
+    store.setRotation('b', [0, 90, 0])
+
+    expect(store.model?.bones[0]!.rotation).toEqual([0, 90, 0])
+    expect(store.lastError).toBeNull()
+  })
+
+  it('setRotation con un bone inexistente guarda lastError', () => {
+    const store = useDraftModelStore()
+    store.load(modelWith([bone('b', null)], []))
+
+    store.setRotation('no-existe', [0, 90, 0])
+
+    expect(store.lastError).not.toBeNull()
+  })
+
+  it('addBone crea un bone hijo del parentId dado', () => {
+    const store = useDraftModelStore()
+    store.load(modelWith([bone('padre', null)], []))
+
+    const newId = store.addBone('padre', 'hijo', [0, 0, 0], [0, 0, 0])
+
+    expect(newId).toBeTruthy()
+    expect(store.model?.bones.find((b) => b.id === newId)?.parentId).toBe('padre')
+  })
+
+  it('addBone con parentId inexistente devuelve null y guarda lastError', () => {
+    const store = useDraftModelStore()
+    store.load(modelWith([], []))
+
+    const newId = store.addBone('no-existe', 'x', [0, 0, 0], [0, 0, 0])
+
+    expect(newId).toBeNull()
+    expect(store.lastError).not.toBeNull()
+  })
+
+  it('deleteCuboid elimina el cuboid del modelo', () => {
+    const store = useDraftModelStore()
+    store.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
+
+    store.deleteCuboid('c1')
+
+    expect(store.model?.cuboids).toHaveLength(0)
+  })
+
+  it('duplicate con un cuboidId inexistente devuelve null y guarda lastError', () => {
+    const store = useDraftModelStore()
+    store.load(modelWith([bone('b', null)], []))
+
+    const newId = store.duplicate('no-existe')
+
+    expect(newId).toBeNull()
+    expect(store.lastError).not.toBeNull()
   })
 })

@@ -10,7 +10,8 @@
  * tempRef -- cada función se invoca de inmediato por una acción directa
  * del usuario en el editor (Command manual, ver Diseño técnico §4), no
  * como un batch de operaciones de IA no confiables. El backend sigue
- * siendo la autoridad canónica final (revalida todo en Guardar/Apply/export).
+ * siendo la autoridad canónica final (revalida cada operación por completo
+ * en Guardar/Apply/export).
  */
 import { layoutUv } from '../domain/autoUv'
 import type { Bone, Cuboid, MobProjectModel, Vec3 } from '../domain/MobProjectModel'
