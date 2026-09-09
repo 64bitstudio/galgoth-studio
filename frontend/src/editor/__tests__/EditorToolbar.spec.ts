@@ -191,4 +191,72 @@ describe('EditorToolbar.vue', () => {
 
     expect(wrapper.text()).toContain(draft.lastError)
   })
+
+  describe('Undo/Redo (ticket 019)', () => {
+    it('Undo/Redo están deshabilitados sin historial, y se habilitan tras un cambio', async () => {
+      const draft = useDraftModelStore()
+      draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
+      const selection = useSelectionStore()
+      selection.select('c1')
+      const wrapper = mount(EditorToolbar)
+
+      expect(findButton(wrapper, 'Undo').attributes('disabled')).toBeDefined()
+      expect(findButton(wrapper, 'Redo').attributes('disabled')).toBeDefined()
+
+      await findButton(wrapper, 'Duplicate').trigger('click')
+
+      expect(findButton(wrapper, 'Undo').attributes('disabled')).toBeUndefined()
+      expect(findButton(wrapper, 'Redo').attributes('disabled')).toBeDefined()
+    })
+
+    it('el botón Undo deshace el último Command, y Redo lo rehace', async () => {
+      const draft = useDraftModelStore()
+      draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
+      const selection = useSelectionStore()
+      selection.select('c1')
+      const wrapper = mount(EditorToolbar)
+
+      await findButton(wrapper, 'Delete').trigger('click')
+      expect(draft.model!.cuboids).toHaveLength(0)
+
+      await findButton(wrapper, 'Undo').trigger('click')
+      expect(draft.model!.cuboids).toHaveLength(1)
+
+      await findButton(wrapper, 'Redo').trigger('click')
+      expect(draft.model!.cuboids).toHaveLength(0)
+    })
+
+    it('Cmd/Ctrl+Z deshace y Cmd/Ctrl+Shift+Z rehace desde el teclado', async () => {
+      const draft = useDraftModelStore()
+      draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
+      const selection = useSelectionStore()
+      selection.select('c1')
+      mount(EditorToolbar)
+
+      draft.deleteCuboid('c1')
+      expect(draft.model!.cuboids).toHaveLength(0)
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true }))
+      expect(draft.model!.cuboids).toHaveLength(1)
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, shiftKey: true }))
+      expect(draft.model!.cuboids).toHaveLength(0)
+    })
+
+    it('Cmd/Ctrl+Z NO actúa si el foco está en un input (evita pelear con el undo nativo del campo)', async () => {
+      const draft = useDraftModelStore()
+      draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
+      const selection = useSelectionStore()
+      selection.select('c1')
+      mount(EditorToolbar)
+      draft.deleteCuboid('c1')
+
+      const input = document.createElement('input')
+      document.body.appendChild(input)
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }))
+      input.remove()
+
+      expect(draft.model!.cuboids).toHaveLength(0) // sin cambios -- el atajo no actuó
+    })
+  })
 })

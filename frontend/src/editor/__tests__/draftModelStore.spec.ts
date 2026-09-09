@@ -200,4 +200,147 @@ describe('useDraftModelStore', () => {
     expect(newId).toBeNull()
     expect(store.lastError).not.toBeNull()
   })
+
+  describe('Command stack de Undo/Redo (ticket 019)', () => {
+    it('recién cargado el modelo, no hay nada para deshacer ni rehacer', () => {
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], [cuboid('c', 'b')]))
+
+      expect(store.canUndo).toBe(false)
+      expect(store.canRedo).toBe(false)
+    })
+
+    it('Undo revierte la última edición exitosa exactamente, AC #1', () => {
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], [cuboid('c', 'b')]))
+      const originalFrom = store.model!.cuboids[0]!.from
+
+      store.moveSelectedCuboid('c', [1, 0, 0])
+      expect(store.model?.cuboids[0]!.from).toEqual([-3, 0, -4])
+
+      store.undo()
+
+      expect(store.model?.cuboids[0]!.from).toEqual(originalFrom)
+      expect(store.canUndo).toBe(false)
+      expect(store.canRedo).toBe(true)
+    })
+
+    it('una serie de cambios se deshace paso a paso en el orden inverso exacto, AC #1', () => {
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], [cuboid('c', 'b')]))
+
+      store.moveSelectedCuboid('c', [1, 0, 0]) // from.x: -4 -> -3
+      store.moveSelectedCuboid('c', [1, 0, 0]) // from.x: -3 -> -2
+      store.moveSelectedCuboid('c', [1, 0, 0]) // from.x: -2 -> -1
+      expect(store.model?.cuboids[0]!.from[0]).toBe(-1)
+
+      store.undo()
+      expect(store.model?.cuboids[0]!.from[0]).toBe(-2)
+      store.undo()
+      expect(store.model?.cuboids[0]!.from[0]).toBe(-3)
+      store.undo()
+      expect(store.model?.cuboids[0]!.from[0]).toBe(-4)
+      expect(store.canUndo).toBe(false)
+    })
+
+    it('Redo avanza el draft hasta el estado más reciente tras deshacer, AC #2', () => {
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], [cuboid('c', 'b')]))
+
+      store.moveSelectedCuboid('c', [1, 0, 0])
+      store.moveSelectedCuboid('c', [1, 0, 0])
+      store.undo()
+      store.undo()
+
+      store.redo()
+      expect(store.model?.cuboids[0]!.from[0]).toBe(-3)
+      store.redo()
+      expect(store.model?.cuboids[0]!.from[0]).toBe(-2)
+      expect(store.canRedo).toBe(false)
+    })
+
+    it('un cambio nuevo aplicado después de deshacer descarta la rama de redo pendiente, AC #3', () => {
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], [cuboid('c', 'b')]))
+
+      store.moveSelectedCuboid('c', [1, 0, 0])
+      store.moveSelectedCuboid('c', [1, 0, 0])
+      store.undo() // hay una rama de redo pendiente ahora
+
+      store.moveSelectedCuboid('c', [0, 1, 0]) // Command nuevo
+
+      expect(store.canRedo).toBe(false)
+      expect(store.model?.cuboids[0]!.from).toEqual([-3, 1, -4])
+    })
+
+    it('undo/redo nunca crea ni destruye una mob_revision -- ninguna acción de este store lo hace (solo reasignan model)', () => {
+      // Este store no conoce el concepto de mob_revision en absoluto (llega
+      // en el ticket 020) -- la ausencia total de esa noción aquí ES la
+      // prueba de que Undo/Redo jamás puede tocarla.
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], [cuboid('c', 'b')]))
+      store.moveSelectedCuboid('c', [1, 0, 0])
+
+      store.undo()
+      store.redo()
+
+      expect(store).not.toHaveProperty('createRevision')
+      expect(store).not.toHaveProperty('mobRevisions')
+    })
+
+    it('una operación rechazada NO genera un Command (nada que deshacer)', () => {
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], [cuboid('c', 'b')]))
+
+      store.resizeSelectedCuboid('c', [1, 0, 1]) // scale.y = 0 -> inválido, rechazado
+
+      expect(store.lastError).not.toBeNull()
+      expect(store.canUndo).toBe(false)
+    })
+
+    it('addCuboid/addBone/duplicate/deleteCuboid también generan un Command deshacible', () => {
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], [cuboid('c', 'b')]))
+
+      const newCuboidId = store.addCuboid('b', 'x', [0, 0, 0], [1, 1, 1], [0, 0, 0])
+      expect(store.model?.cuboids).toHaveLength(2)
+      store.undo()
+      expect(store.model?.cuboids).toHaveLength(1)
+      store.redo()
+      expect(store.model?.cuboids.map((c) => c.id)).toContain(newCuboidId)
+
+      store.deleteCuboid('c')
+      expect(store.model?.cuboids.map((c) => c.id)).not.toContain('c')
+      store.undo()
+      expect(store.model?.cuboids.map((c) => c.id)).toContain('c')
+    })
+
+    it('undo()/redo() no hacen nada si la pila correspondiente está vacía (sin lanzar)', () => {
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], [cuboid('c', 'b')]))
+      const original = store.model
+
+      expect(() => store.undo()).not.toThrow()
+      expect(() => store.redo()).not.toThrow()
+      expect(store.model).toBe(original)
+    })
+
+    it('undo()/redo() no hacen nada si no hay modelo cargado (sin lanzar)', () => {
+      const store = useDraftModelStore()
+      expect(() => store.undo()).not.toThrow()
+      expect(() => store.redo()).not.toThrow()
+    })
+
+    it('load() reinicia ambas pilas -- cargar un mob nuevo no hereda historial del anterior', () => {
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], [cuboid('c', 'b')]))
+      store.moveSelectedCuboid('c', [1, 0, 0])
+      expect(store.canUndo).toBe(true)
+
+      store.load(modelWith([bone('b2', null)], []))
+
+      expect(store.canUndo).toBe(false)
+      expect(store.canRedo).toBe(false)
+    })
+  })
 })

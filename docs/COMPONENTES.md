@@ -47,6 +47,17 @@ Implementado en `frontend/src/editor/` y `frontend/src/viewport/`:
 - **`EditorToolbar.vue`**: botones Move/Scale/Rotate (controlan el modo del gizmo compartido) + Add cuboid/Add bone/Duplicate/Delete, y muestra `draft.lastError` cuando una operación es rechazada.
 - **Verificado en vivo** (Claude in Chrome, `/dev/viewport-harness` contra el fixture real Carcomido, 24 cuboids/6 bones): selección + gizmos de Move/Scale/Rotate confirmados visualmente (el cuboid se mueve/escala/rota y el cambio persiste en el modelo tras soltar), Delete y Add bone confirmados, edición de pivote confirmada (el marcador esférico del bone se reubica), advertencia de cascada + Cancelar confirmados. **Hallazgo real (no un bug -- comportamiento correcto)**: el fixture Carcomido ya satura su atlas UV de 64×64 -- tanto "Add cuboid" como "Duplicate" son rechazados en vivo con `UvAtlasOverflowError` (`el atlas actual (64x64) no alcanza... se requieren al menos 64x88/64x114`), y el rechazo se refleja correctamente en `draft.lastError` sin aplicar ningún cambio parcial. Confirma que la integración con AutoUv (007) valida extremo a extremo, no solo en los tests unitarios.
 
+## Command stack de Undo/Redo (ticket `019-command-stack-undo-redo`)
+
+Implementado en `frontend/src/editor/draftModelStore.ts` (mismo store, no uno separado -- ver razonamiento en el comentario de cabecera del archivo):
+
+- Un "Command" no es una clase propia: es simplemente la referencia al `MobProjectModel` inmediatamente anterior a cada edición exitosa, guardada en una pila (`undoStack`). Esto es seguro y barato porque toda función de `geometryOperations.ts` es pura -- nunca muta su modelo de entrada -- así que las referencias históricas nunca se corrompen por una mutación posterior; no hace falta clonar nada.
+- `undo()`/`redo()` mueven el modelo actual entre `undoStack`/`redoStack`, reasignando `model` -- nunca crean ni destruyen una `mob_revision` (ese concepto ni siquiera existe todavía en este store, llega en el 020). Una operación RECHAZADA (geometría inválida, referencia inexistente) nunca genera un Command -- no hay nada que deshacer de un no-op.
+- `load()` (cargar un mob nuevo) reinicia ambas pilas -- un mob nuevo empieza una historia de edición nueva, no hereda la del anterior.
+- Un Command nuevo aplicado después de un `undo()` descarta la rama de redo pendiente (historial lineal estándar, sin árbol de ramas).
+- **`EditorToolbar.vue`**: botones Undo/Redo (deshabilitados según `draft.canUndo`/`draft.canRedo`) + atajos de teclado estándar Cmd/Ctrl+Z (deshacer) y Cmd/Ctrl+Shift+Z (rehacer), ignorados mientras el foco esté en un `<input>`/`<textarea>` para no pelear con el undo nativo del propio campo (ej. editando un pivote).
+- **Verificado en vivo** (Claude in Chrome, `/dev/viewport-harness`): Delete → Undo (restaura el cuboid) → Redo (lo vuelve a eliminar) confirmado tanto con los botones como con los atajos de teclado (Ctrl+Z / Ctrl+Shift+Z), sin errores de consola.
+
 ## Pantallas previstas (12, ver mockups/00_all_views.png del build pack)
 
 1. Inicio / Mis proyectos
