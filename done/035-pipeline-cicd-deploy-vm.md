@@ -85,6 +85,16 @@ Marco abrió `https://studio-dev.galgoth.64bitstudio.com` en el navegador real y
 
 **Lección para el próximo despliegue que necesite una env var de build-time**: no confiar en `withEnv` de Jenkins para un valor vacío -- usar asignación inline de shell (`VAR=valor comando`), que es el mecanismo que de verdad se probó y funcionó tanto local como en CI.
 
+### Segundo addendum (mismo día): CORS rechazaba "Crear proyecto" con 403 -- también encontrado por Marco navegando
+
+Tras el fix de `VITE_API_BASE_URL`, "Crear proyecto" seguía fallando -- ahora con `403 Forbidden` real (no `ERR_CONNECTION_REFUSED`), captado de nuevo por Marco en DevTools contra el subdominio real. **Causa raíz real**: `WebConfig` (CORS) solo permitía `http://localhost:5173`/`5174` (los puertos de Vite en dev local) -- correcto para desarrollo, pero `Spring`'s `CorsUtils.isCorsRequest` activa el filtro de CORS con la sola PRESENCIA de la cabecera `Origin`, sin comparar si coincide con el propio host de la request. El navegador manda `Origin` en un `POST` con `Content-Type: application/json` aunque sea estrictamente same-origin (no es un request "simple" del Fetch spec) -- confirmado reproduciendo con `curl -H "Origin: https://studio-dev.galgoth.64bitstudio.com"` contra el subdominio real (403) vs. sin esa cabecera (201, el mismo request que sí probé al cerrar el ticket).
+
+**Mismo patrón de gap de verificación que el addendum anterior**: verificar "la API responde" con `curl` sin cabecera `Origin` no prueba nada sobre CORS -- hay que simular la cabecera real que manda el navegador para encontrar este tipo de bug.
+
+Fix: `galgoth.cors.allowed-origins` (relaxed binding, `WebConfig` ahora lee un array vía `@Value`) con los 3 subdominios reales como default de `application-deploy.properties`, sin tocar el comportamiento local. Verificado localmente ANTES de commitear (`GALGOTH_CORS_ALLOWED_ORIGINS` + `curl` con `Origin` real -> 201), y de nuevo en vivo tras el redeploy real (`Access-Control-Allow-Origin: https://studio-dev.galgoth.64bitstudio.com` presente en la respuesta real).
+
+**`qa` sigue deliberadamente sin tocar** -- instrucción explícita de Marco, ambos bugs (VITE_API_BASE_URL y CORS) siguen presentes ahí hasta que se pida promoverlo.
+
 **Hallazgo real encontrado en el primer deploy (no en ningún test)**: el bloque de puertos reservado (PROD 8089/DEV 8090/QA 8091, siguiendo la secuencia de los 3 cores anteriores) nunca se cruzó contra los puertos de la infra COMPARTIDA misma -- 8090 ya lo publica Jenkins mismo (`127.0.0.1:8090`), nunca documentado en la tabla "Convenciones de la VM" de `auth-core-mc` (que solo listaba cores de aplicación). `docker compose up -d` falló con `port is already allocated` en el primer intento (build 36). Corregido: DEV→8091/QA→8092 (PROD 8089 no colisionaba) vía PR #38, y la tabla de convenciones corregida en `auth-core-mc#95` (con la lista completa de puertos de infra compartida) para que el próximo core no repita el mismo hallazgo a ciegas.
 
 **Decisión real tomada con el PO durante el trabajo**: `galgoth.64bitstudio.com`/`store.galgoth.64bitstudio.com` ya existían apuntando a la VM de Diana (Minecraft server), no a la VM de plataforma -- se confirmó explícitamente con el PO que `studio.galgoth.64bitstudio.com` va a la VM de plataforma (159.54.153.37), no a la de Diana, antes de crear ningún registro DNS.
