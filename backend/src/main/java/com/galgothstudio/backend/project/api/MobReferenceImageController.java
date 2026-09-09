@@ -54,7 +54,7 @@ public class MobReferenceImageController {
 	public ResponseEntity<byte[]> download(@PathVariable UUID mobId, @PathVariable UUID referenceId) {
 		return referenceImageService
 				.download(mobId, referenceId)
-				.map(image -> ResponseEntity.ok().contentType(MediaType.parseMediaType(image.getContentType())).body(image.getContent()))
+				.map(image -> ResponseEntity.ok().contentType(MediaType.parseMediaType(image.contentType())).body(image.content()))
 				.orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
 	}
 

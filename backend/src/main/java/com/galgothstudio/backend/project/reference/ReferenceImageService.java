@@ -110,7 +110,7 @@ public class ReferenceImageService {
 		try {
 			MediaType parsed = MediaType.parseMediaType(rawContentType);
 			return parsed.getType() + "/" + parsed.getSubtype();
-		} catch (InvalidMediaTypeException e) {
+		} catch (InvalidMediaTypeException _) {
 			throw new InvalidReferenceImageException("Content-Type inválido: '" + rawContentType + "'.");
 		}
 	}
