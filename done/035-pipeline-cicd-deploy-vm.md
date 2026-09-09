@@ -64,4 +64,21 @@ de IA que se dispare contra esos ambientes.
   simula esa aprobación.
 
 ## Hecho
-(se completa al cerrar el ticket)
+
+Todos los criterios de aceptación cumplidos, verificados en vivo contra la infra real (no solo local):
+
+- **Imagen única**: `backend/Dockerfile` (multi-stage, Temurin 25) sirve la SPA de Vue y la API desde el mismo puerto. El contexto de build fijo de `corePipeline` (`./backend`) nunca ve `frontend/`/`contracts/` -- el `Jenkinsfile` aterriza ahí el bundle de producción del frontend (`VITE_API_BASE_URL` vacío) y `contracts/schemas` justo antes del build de imagen. Verificado local con `docker build`+`docker run` real antes de cada commit, y de nuevo en vivo en la VM.
+- **`SpaResourceConfig`**: fallback real a `index.html` para las rutas de Vue Router. Un primer intento con regex por convención de nombres se detectó roto ANTES de commitear (capturaba también los assets reales, `text/html` en vez del JS real) -- corregido con un `PathResourceResolver` que pregunta si el archivo existe de verdad.
+- **`deploy/docker-compose.{dev,qa,prod}.yml` + `cleanup.sh` + `.env.{dev,qa,prod}.example` + vhost de nginx**: mismo patrón que los 3 cores anteriores. Puertos finales: PROD 8089 / DEV 8091 / QA 8092.
+- **`Jenkinsfile`**: `deploy: true`, `vhostFile`/`certbotDomains` para `studio[.-qa][-dev].galgoth.64bitstudio.com`.
+- **DNS real** (Cloudflare, 3 registros A sin proxy → `159.54.153.37`) y **certificado TLS real** (Let's Encrypt vía `certbot`, los 3 subdominios).
+- **Secretos reales**: `DB_PASSWORD` en Vault (`secret/galgoth-studio/{dev,qa,prod}`, vía el AppRole `platform-admin`, sin tocar el token root) + `ANTHROPIC_API_KEY`/credenciales de MinIO reales en `/home/ubuntu/secrets/galgoth-studio/.env.{dev,qa,prod}` -- ninguno committeado.
+- **DEV y QA verificados end-to-end desde fuera de la VM**: `https://studio-dev.galgoth.64bitstudio.com` y `https://studio-qa.galgoth.64bitstudio.com` responden 200 en `/actuator/health`, sirven la SPA real (deep-link sin 404, asset real `text/javascript`) y `/api/projects` real -- verificado con `curl` externo.
+- **QA promovido por Claude** (`dev`→`qa`, fast-forward, mismo mecanismo que los demás cores).
+- **PROD queda pendiente de la aprobación manual de Marco** -- `corePipeline` ya pausó el pipeline en el gate `input` exclusivo de él (timeout 7 días). Comportamiento esperado del AC, no un bloqueo.
+
+**Hallazgo real encontrado en el primer deploy (no en ningún test)**: el bloque de puertos reservado (PROD 8089/DEV 8090/QA 8091, siguiendo la secuencia de los 3 cores anteriores) nunca se cruzó contra los puertos de la infra COMPARTIDA misma -- 8090 ya lo publica Jenkins mismo (`127.0.0.1:8090`), nunca documentado en la tabla "Convenciones de la VM" de `auth-core-mc` (que solo listaba cores de aplicación). `docker compose up -d` falló con `port is already allocated` en el primer intento (build 36). Corregido: DEV→8091/QA→8092 (PROD 8089 no colisionaba) vía PR #38, y la tabla de convenciones corregida en `auth-core-mc#95` (con la lista completa de puertos de infra compartida) para que el próximo core no repita el mismo hallazgo a ciegas.
+
+**Decisión real tomada con el PO durante el trabajo**: `galgoth.64bitstudio.com`/`store.galgoth.64bitstudio.com` ya existían apuntando a la VM de Diana (Minecraft server), no a la VM de plataforma -- se confirmó explícitamente con el PO que `studio.galgoth.64bitstudio.com` va a la VM de plataforma (159.54.153.37), no a la de Diana, antes de crear ningún registro DNS.
+
+Sin hallazgos automáticos de QA/Sonar pendientes en ninguno de los 3 PRs (#37, #38) -- ambos gates de Sonar (frontend/backend) verificados manualmente contra `sonarqube-db` en cada uno (gap conocido del ticket 008).
