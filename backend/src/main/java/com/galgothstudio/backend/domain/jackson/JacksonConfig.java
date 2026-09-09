@@ -15,9 +15,9 @@ import org.springframework.http.converter.json.MappingJackson2HttpMessageConvert
  * dejó de autoconfigurarse como bean. Antes de este ticket nadie lo
  * notó porque ningún controlador REST existía todavía -- los tests
  * construían su propio {@code ObjectMapper} manualmente, sin pasar por
- * Spring. Se define el bean a mano aquí (en vez de migrar todo el
- * dominio a Jackson 3, fuera de alcance de este ticket -- ver Hecho del
- * ticket 020) para que CUALQUIER controlador REST (este y los futuros)
+ * Spring. Se define el bean a mano aquí (en vez de migrar el dominio
+ * completo a Jackson 3, fuera de alcance de este ticket -- ver Hecho
+ * del ticket 020) para que CUALQUIER controlador REST (este y los futuros)
  * reciba/devuelva {@code MobProjectModel} con el mismo formato de array
  * para Vec3/Vec4 que el frontend y el JSON Schema.
  */
