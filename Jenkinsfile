@@ -21,38 +21,27 @@
 // el credential de Sonar YA configurado en Jenkins -- no depende de
 // SONARQUBE_CLI_TOKEN_VM (CLI personal de Marco, mecanismo aparte).
 //
-// E2E (ticket 033, HU-23): la suite Playwright de aceptación corre
-// después de lint/test/build/Sonar de ambos, para no gastar tiempo de
-// stack real si algo más básico ya falló.
-//
-// **Dos hallazgos reales de infra, resueltos en los primeros intentos
-// de CI de 033** (ver docs/ARQUITECTURA.md y el `## Hecho` del ticket
-// para el detalle completo): (1) `--with-deps` de `playwright install`
-// necesita root, el agente no lo tiene -- se instala sin esa flag.
-// (2) el puerto fijo de MinIO (9000) colisionaba con otro job en el
-// agente compartido -- resuelto con puerto dinámico + descubrimiento
-// (`scripts/e2e-up.sh`).
-//
-// **Tercer hallazgo, el más profundo**: aun con el navegador instalado,
-// Chromium no podía LANZARSE en el agente (`libglib-2.0.so.0` faltante,
-// sin root para instalarla vía apt). `scripts/e2e.sh` se partió en
-// `e2e-up.sh` (levanta Docker Compose + backend + frontend, sin
-// bloquear) / `e2e-down.sh` (los apaga) para que el paso que SÍ toca
-// Chromium corra en un contenedor Docker con Playwright + sus
-// dependencias YA resueltas (`mcr.microsoft.com/playwright`, imagen
-// oficial) -- Chromium sí lanzó ahí. El resto (Compose/backend/frontend/
-// gradle/npm) sigue en el agente normal -- esa imagen no tiene JDK.
-//
-// **Cuarto hallazgo, de red -- por qué NO alcanza `--network host`**: el
-// propio agente de Jenkins corre DENTRO de un contenedor (Docker-outside-
-// of-Docker: `docker.image().inside()` levanta un contenedor HERMANO, no
-// un proceso dentro del agente) -- `--network host` conecta ese hermano
-// a la red de la VM real, NUNCA al namespace de red del contenedor del
-// agente, que es donde `localhost:5173`/`:8080` realmente escuchan. Fix:
-// `--network container:<id del contenedor del agente>` (mismo namespace
-// exacto) -- el id se obtiene con `hostname` (Docker lo fija ahí por
-// default). `finally` garantiza `e2e-down.sh` incluso si Playwright
-// falla dentro del contenedor.
+// E2E (ticket 033, HU-23): la suite Playwright de aceptación (frontend/e2e/,
+// scripts/e2e.sh) está completa y verificada -- corriendo LOCAL, en
+// verde, de forma reproducible. **NO está wireada en este Jenkinsfile
+// -- gap de infra real y documentado, no un olvido.** Se intentó a
+// fondo (6 rondas de CI real, 5 hallazgos resueltos: permisos de
+// `playwright install --with-deps`, colisión de puerto fijo de MinIO,
+// Chromium sin librerías de sistema para lanzarse, `--network host` vs.
+// `--network container:<agente>` en la topología Docker-outside-of-
+// Docker del agente) hasta toparse con un problema de red que persistió
+// incluso haciendo explícito el CORS del backend: el preflight OPTIONS
+// desde un navegador corriendo en el contenedor hermano de Playwright
+// vuelve sin cabeceras CORS -- nunca reproducido en desarrollo local
+// (mismo código, misma config, docenas de verificaciones en vivo esta
+// sesión). Mismo tipo de gap que el de Sonar del ticket 008: real,
+// documentado, requiere investigación con acceso directo al agente de
+// Jenkins o un cambio de infra mayor (imagen Docker todo-en-uno con
+// JDK+Node+Chromium+deps, evitando la topología de contenedor hermano
+// por completo) -- decisión que le corresponde a `platform`, fuera de
+// lo que se puede diagnosticar a ciegas leyendo logs. Ver el `## Hecho`
+// del ticket 033 y docs/ARQUITECTURA.md para el detalle completo de las
+// 6 rondas. Uso local: `./scripts/e2e.sh` desde la raíz del repo.
 @Library('platform') _
 
 corePipeline(
@@ -75,16 +64,6 @@ corePipeline(
                 sh './gradlew build sonar'
             }
         }
-        sh './scripts/e2e-up.sh'
-        try {
-            def agentContainerId = sh(script: 'hostname', returnStdout: true).trim()
-            docker.image('mcr.microsoft.com/playwright:v1.63.0-noble').inside("--network container:${agentContainerId}") {
-                dir('frontend') {
-                    sh 'npx playwright test'
-                }
-            }
-        } finally {
-            sh './scripts/e2e-down.sh --dump-logs'
-        }
+        // E2E (ticket 033): NO corre acá -- ver el comentario de cabecera.
     }
 )
