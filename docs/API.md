@@ -65,6 +65,27 @@ POST   /api/mobs/{mobId}/revisions    -- Guardar (valida y crea una revisión in
 
 **Todos los errores** siguen la misma forma: `{ error, message, details }` (`details` es `null` salvo en `INVALID_DRAFT`).
 
+### Asset-service: subida de imagen de referencia (ticket `024`, HU-10)
+
+Implementados en `backend/.../project/api/MobReferenceImageController.java`. Autoridad de negocio: `ReferenceImageService` (paquete `project.reference`), sobre `AssetStorageService` (ticket 023, mismo cliente S3 genérico que el pipeline de thumbnails). **Backend-only en este ticket** — la UI real del paso "Referencia" del wizard llega en el ticket 027 (Wizard 4 pasos), que depende explícitamente de este.
+
+```text
+POST   /api/mobs/{mobId}/references          -- subir una imagen de referencia
+GET    /api/mobs/{mobId}/references          -- listar las imágenes de referencia de un mob
+GET    /api/mobs/{mobId}/references/{id}     -- servir una imagen de referencia ya subida
+```
+
+Límites concretos (dejados abiertos a propósito por el documento de definición para resolverse en este ticket, VoBo explícito del Product Owner): solo `image/png`/`image/jpeg`, máximo 10MB por archivo.
+
+**`POST /api/mobs/{mobId}/references`** — body: bytes crudos de la imagen, header `Content-Type: image/png` o `image/jpeg` (NO JSON, NO multipart — mismo estilo que el thumbnail del ticket 023).
+- `201 Created` — `ReferenceImageSummary { id, url, width, height, contentType, createdAt }`. `width`/`height` se decodifican SIEMPRE de los bytes reales (nunca confiados del cliente); `url` es la ruta servible por esta misma API (`/api/mobs/{mobId}/references/{id}`), no la key interna de S3. Persiste un `INSERT` en `reference_images` (append-only — puede haber varias imágenes por mob, a diferencia del thumbnail que tiene una sola key fija).
+- `400 Bad Request` (`error: "INVALID_REFERENCE_IMAGE"`) — content-type fuera de la whitelist, archivo por encima de 10MB, o bytes que no decodifican como una imagen válida. El content-type del header se normaliza a `tipo/subtipo` antes de compararlo contra la whitelist (ignora parámetros como `;charset=...` que algunos clientes HTTP agregan incluso a tipos binarios).
+- `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe.
+
+**`GET /api/mobs/{mobId}/references`** — `ReferenceImageSummary[]` de todas las imágenes del mob, en orden de subida (más antigua primero). `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe.
+
+**`GET /api/mobs/{mobId}/references/{id}`** — bytes de la imagen con su `Content-Type` real (`image/png` o `image/jpeg`, según lo que se subió). `404 Not Found` sin cuerpo si la imagen no existe; `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe.
+
 ### Pipeline de thumbnails (ticket `023`)
 
 Implementados en `backend/.../project/api/MobThumbnailController.java`. Autoridad de negocio: `ThumbnailService` (paquete `project.thumbnail`), sobre `AssetStorageService` (paquete `asset`, cliente S3 genérico contra MinIO — ver `docs/ARQUITECTURA.md`).
