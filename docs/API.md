@@ -67,7 +67,7 @@ POST   /api/mobs/{mobId}/revisions    -- Guardar (valida y crea una revisión in
 
 ### Asset-service: subida de imagen de referencia (ticket `024`, HU-10)
 
-Implementados en `backend/.../project/api/MobReferenceImageController.java`. Autoridad de negocio: `ReferenceImageService` (paquete `project.reference`), sobre `AssetStorageService` (ticket 023, mismo cliente S3 genérico que el pipeline de thumbnails). **Backend-only en este ticket** — la UI real del paso "Referencia" del wizard llega en el ticket 027 (Wizard 4 pasos), que depende explícitamente de este.
+Implementados en `backend/.../project/api/MobReferenceImageController.java`. Autoridad de negocio: `ReferenceImageService` (paquete `project.reference`), sobre `AssetStorageService` (ticket 023, mismo cliente S3 genérico que el pipeline de thumbnails). **Backend-only en este ticket** — la UI real del paso "Referencia" del wizard llegó en el ticket 027 (Wizard 4 pasos), que dependía explícitamente de este; primer consumidor frontend real: `frontend/src/api/referenceImagesApi.ts`.
 
 ```text
 POST   /api/mobs/{mobId}/references          -- subir una imagen de referencia

@@ -27,6 +27,13 @@ const router = createRouter({
       component: () => import('../projects/ProjectDetail.vue'),
     },
     {
+      // Ticket 027: wizard de generación IA, HU-10 -- pasos "Generación"/"Resultado"
+      // son shells visuales sin job real todavía (VoBo del PO, 029/030 los conectan).
+      path: '/projects/:projectId/mobs/new-ai',
+      name: 'ai-mob-wizard',
+      component: () => import('../ai/AiMobWizard.vue'),
+    },
+    {
       path: '/dev/design-system',
       name: 'design-system-showcase',
       component: () => import('../design-system/Showcase.vue'),
@@ -35,6 +42,13 @@ const router = createRouter({
       path: '/dev/viewport-harness',
       name: 'viewport-harness',
       component: () => import('../viewport/ViewportHarness.vue'),
+    },
+    {
+      // Ticket 027: "Resultado" (mockup 04) no es parte del flujo real navegable
+      // todavía (sin propuesta real hasta 029/030) -- solo verificable visualmente acá.
+      path: '/dev/wizard-result-harness',
+      name: 'wizard-result-harness',
+      component: () => import('../ai/steps/ResultStep.vue'),
     },
   ],
 })
