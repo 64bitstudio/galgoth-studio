@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { MobProjectModel } from '../../domain/MobProjectModel'
+import type { Cuboid, MobProjectModel } from '../../domain/MobProjectModel'
 
 // jsdom no implementa un contexto WebGL real (`HTMLCanvasElement.getContext('webgl')`
 // devuelve null) -- `new THREE.WebGLRenderer()` lanza fuera de un navegador
@@ -102,6 +102,59 @@ describe('ThreeViewportService', () => {
     service.startRenderLoop()
 
     expect(rafSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('ticket 016: la cámara arranca en la posición/ángulo por defecto', () => {
+    // Constructor ya llama resetCamera() -- se verifica el estado inicial,
+    // sin llamar resetCamera() de nuevo, para probar el default real.
+    expect(service.camera.position.x).toBeCloseTo(40, 9)
+    expect(service.camera.position.y).toBeCloseTo(40, 9)
+    expect(service.camera.position.z).toBeCloseTo(40, 9)
+    expect(service.controls.target.x).toBe(0)
+    expect(service.controls.target.y).toBeCloseTo(16, 9)
+    expect(service.controls.target.z).toBe(0)
+  })
+
+  it('ticket 016: resetCamera() vuelve a la posición/ángulo por defecto tras moverla', () => {
+    service.camera.position.set(100, 5, -30)
+    service.controls.target.set(9, 9, 9)
+
+    service.resetCamera()
+
+    expect(service.camera.position.x).toBeCloseTo(40, 9)
+    expect(service.camera.position.y).toBeCloseTo(40, 9)
+    expect(service.camera.position.z).toBeCloseTo(40, 9)
+    expect(service.controls.target.x).toBe(0)
+    expect(service.controls.target.y).toBeCloseTo(16, 9)
+    expect(service.controls.target.z).toBe(0)
+  })
+
+  it('ticket 016: setModel propaga selectedCuboidId a buildMobGroup (el mesh seleccionado recibe outline)', () => {
+    const model = emptyModel('mob-uno')
+    const cuboid: Cuboid = {
+      id: 'cube-1',
+      name: 'cube-1',
+      boneId: 'bone-1',
+      from: [-1, -1, -1],
+      to: [1, 1, 1],
+      origin: [0, 0, 0],
+      rotation: [0, 0, 0],
+      faces: {
+        north: { uv: [0, 0, 0, 0], texture: null },
+        south: { uv: [0, 0, 0, 0], texture: null },
+        east: { uv: [0, 0, 0, 0], texture: null },
+        west: { uv: [0, 0, 0, 0], texture: null },
+        up: { uv: [0, 0, 0, 0], texture: null },
+        down: { uv: [0, 0, 0, 0], texture: null },
+      },
+    }
+    const modelWithCuboid = { ...model, cuboids: [cuboid] }
+
+    service.setModel(modelWithCuboid, 'cube-1')
+
+    const mobGroup = service.scene.children.find((c) => c.name === 'mob-uno')!
+    const cubeMesh = mobGroup.children.find((c) => c.name === 'cube-1')!
+    expect(cubeMesh.children.some((c) => c.name === 'selection-outline')).toBe(true)
   })
 
   it('resizeToContainer ajusta el tamaño del renderer y el aspect ratio de la cámara', () => {
