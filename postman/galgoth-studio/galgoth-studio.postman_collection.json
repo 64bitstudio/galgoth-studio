@@ -7,7 +7,8 @@
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8080" },
     { "key": "projectId", "value": "" },
-    { "key": "mobId", "value": "" }
+    { "key": "mobId", "value": "" },
+    { "key": "referenceId", "value": "" }
   ],
   "item": [
     {
@@ -146,6 +147,51 @@
               "path": ["api", "mobs", "{{mobId}}", "thumbnail"]
             },
             "description": "200 con los bytes del PNG (Content-Type: image/png) si el mob ya tiene thumbnail. 404 sin cuerpo si el mob existe pero todavía no tiene ninguno subido; 404 (MOB_NOT_FOUND) si el mob no existe."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Imágenes de referencia (ticket 024)",
+      "item": [
+        {
+          "name": "Subir una imagen de referencia",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "image/png" }],
+            "body": { "mode": "file", "file": {} },
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/references",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mobs", "{{mobId}}", "references"]
+            },
+            "description": "Body: bytes crudos de una imagen (elegir un archivo local en la pestaña Body > binary de Postman) -- solo image/png o image/jpeg, máx 10MB. 201 con { id, url, width, height, contentType, createdAt } -- width/height se decodifican de los bytes reales. 400 (INVALID_REFERENCE_IMAGE) si el formato/tamaño no es soportado o el archivo no decodifica como imagen válida. 404 (MOB_NOT_FOUND) si el mob no existe."
+          }
+        },
+        {
+          "name": "Listar imágenes de referencia de un mob",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/references",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mobs", "{{mobId}}", "references"]
+            },
+            "description": "ReferenceImageSummary[] en orden de subida (más antigua primero). 404 (MOB_NOT_FOUND) si el mob no existe."
+          }
+        },
+        {
+          "name": "Obtener una imagen de referencia",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/references/{{referenceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mobs", "{{mobId}}", "references", "{{referenceId}}"]
+            },
+            "description": "200 con los bytes de la imagen (Content-Type real: image/png o image/jpeg). 404 sin cuerpo si esa imagen no existe; 404 (MOB_NOT_FOUND) si el mob no existe."
           }
         }
       ]
