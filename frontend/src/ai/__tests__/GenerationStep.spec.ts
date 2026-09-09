@@ -110,7 +110,7 @@ describe('GenerationStep.vue', () => {
     expect(wrapper.find('.generation-preview-viewport').exists()).toBe(true) // no lanzó -- el viewport siguió montado
   })
 
-  it('el evento terminal "completado" muestra el aviso de éxito, cierra el stream y habilita volver AC1', async () => {
+  it('el evento terminal "completado" muestra el aviso de éxito, cierra el stream y emite "completed" con el jobId real, ticket 030', async () => {
     const wrapper = mount(GenerationStep, { props: PROPS })
     await flushPromises()
 
@@ -120,7 +120,10 @@ describe('GenerationStep.vue', () => {
 
     expect(wrapper.text()).toContain('Generación completada')
     expect(FakeEventSource.instances[0]!.close).toHaveBeenCalled()
-    expect(wrapper.find('.generation-step__back').exists()).toBe(true)
+    expect(wrapper.emitted('completed')).toEqual([['job-1']])
+    // El botón "Ir al proyecto" es solo el escape hatch de fallido/cancelado
+    // -- al completar, es AiMobWizard.vue (030) quien avanza a "Resultado".
+    expect(wrapper.find('.generation-step__back').exists()).toBe(false)
   })
 
   it('el evento terminal "fallido" muestra el mensaje real del error', async () => {

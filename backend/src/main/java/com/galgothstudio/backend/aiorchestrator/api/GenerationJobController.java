@@ -1,5 +1,6 @@
 package com.galgothstudio.backend.aiorchestrator.api;
 
+import com.galgothstudio.backend.aiorchestrator.GenerationResultService;
 import com.galgothstudio.backend.aiorchestrator.JobNotFoundException;
 import com.galgothstudio.backend.aiorchestrator.MobGenerationService;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEntity;
@@ -7,6 +8,7 @@ import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEventEntity;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEventRepository;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobRepository;
 import com.galgothstudio.backend.aiorchestrator.progress.GenerationEventBroadcaster;
+import com.galgothstudio.backend.project.draft.ApplyGenerationResponse;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.MediaType;
@@ -23,16 +25,19 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class GenerationJobController {
 
 	private final MobGenerationService mobGenerationService;
+	private final GenerationResultService generationResultService;
 	private final AiJobRepository aiJobRepository;
 	private final AiJobEventRepository aiJobEventRepository;
 	private final GenerationEventBroadcaster eventBroadcaster;
 
 	public GenerationJobController(
 			MobGenerationService mobGenerationService,
+			GenerationResultService generationResultService,
 			AiJobRepository aiJobRepository,
 			AiJobEventRepository aiJobEventRepository,
 			GenerationEventBroadcaster eventBroadcaster) {
 		this.mobGenerationService = mobGenerationService;
+		this.generationResultService = generationResultService;
 		this.aiJobRepository = aiJobRepository;
 		this.aiJobEventRepository = aiJobEventRepository;
 		this.eventBroadcaster = eventBroadcaster;
@@ -93,6 +98,18 @@ public class GenerationJobController {
 	public ResponseEntity<Void> cancel(@PathVariable UUID jobId) {
 		mobGenerationService.requestCancellation(jobId);
 		return ResponseEntity.accepted().build();
+	}
+
+	/** Ticket 030, AC #1 -- solo lectura, nunca re-ejecuta el pipeline de IA. */
+	@GetMapping("/api/jobs/{jobId}/result")
+	public GenerationResultView result(@PathVariable UUID jobId) {
+		return generationResultService.getResult(jobId);
+	}
+
+	/** "Usar este modelo" (ticket 030, AC #4). */
+	@PostMapping("/api/jobs/{jobId}/apply")
+	public ResponseEntity<ApplyGenerationResponse> apply(@PathVariable UUID jobId) {
+		return ResponseEntity.status(201).body(generationResultService.apply(jobId));
 	}
 
 }

@@ -105,14 +105,16 @@ GET    /api/mobs/{mobId}/thumbnail    -- servir el PNG actual del mob
 
 El thumbnail es un asset **derivado y best-effort**: el frontend lo genera/sube DESPUÉS de un Guardar exitoso (`EditorToolbar.vue`, botón "Guardar" real añadido en este mismo ticket — el ticket 020 solo implementó el backend de "Guardar"), en un paso separado cuyo fallo nunca revierte ni bloquea la revisión ya guardada (solo `console.warn` en el frontend).
 
-### Pipeline de generación IA + progreso SSE (tickets `028`/`029`, HU-13/HU-14/HU-15/HU-11)
+### Pipeline de generación IA + progreso SSE + Resultado (tickets `028`/`029`/`030`, HU-11/HU-12/HU-13/HU-14/HU-15)
 
-Implementados en `backend/.../aiorchestrator/api/GenerationJobController.java`. Orquestador: `MobGenerationService` (`aiorchestrator`), que corre el pipeline Vision→`ModelIntent`→Geometry planner→`MobProjectModel` de forma **asíncrona** (`generationExecutor`, ver `GenerationExecutorConfig`) — el nombre real difiere de `/ai/generate-geometry` previsto originalmente en la sección "Rutas previstas" de más abajo, unificado en un solo endpoint de arranque en vez de separar vision/geometría en dos llamadas HTTP distintas.
+Implementados en `backend/.../aiorchestrator/api/GenerationJobController.java`. Orquestador: `MobGenerationService` (`aiorchestrator`), que corre el pipeline Vision→`ModelIntent`→Geometry planner→`MobProjectModel` de forma **asíncrona** (`generationExecutor`, ver `GenerationExecutorConfig`) — el nombre real difiere de `/ai/generate-geometry` previsto originalmente en la sección "Rutas previstas" de más abajo, unificado en un solo endpoint de arranque en vez de separar vision/geometría en dos llamadas HTTP distintas. `GenerationResultService` (mismo paquete `aiorchestrator`) es el lado "leer resultado"/"aceptar propuesta" (030) -- nunca re-ejecuta el pipeline de IA.
 
 ```text
 POST   /api/mobs/{mobId}/generate      -- arranca un job de generación (202, no bloqueante)
 GET    /api/jobs/{jobId}/events        -- progreso en vivo (SSE), reanudable con Last-Event-ID
 POST   /api/jobs/{jobId}/cancel        -- cancela un job en curso (efectivo en el próximo punto de control, no instantáneo)
+GET    /api/jobs/{jobId}/result        -- resumen de un job completado (conteos + compatibilidad FMM real)
+POST   /api/jobs/{jobId}/apply         -- "Usar este modelo": crea la primera revisión+draft del mob
 ```
 
 **`POST /api/mobs/{mobId}/generate`**
@@ -130,6 +132,19 @@ POST   /api/jobs/{jobId}/cancel        -- cancela un job en curso (efectivo en e
 - `202 Accepted` — señala la cancelación; el job se detiene en el próximo punto de control (nunca interrumpe una llamada HTTP a un proveedor de IA ya en vuelo).
 - `404 Not Found` (`JOB_NOT_FOUND`) si el `jobId` no existe.
 - `409 Conflict` (`INVALID_JOB_STATE`) si el job ya alcanzó un estado terminal.
+
+**`GET /api/jobs/{jobId}/result`** (ticket 030, HU-12, AC #1)
+- `200 OK` — `{jobId, mobId, mobName, cuboidCount, boneCount, textureWidth, textureHeight, fmmCompatible, fmmIssues}`. Calculado en vivo desde `ai_jobs.proposal_jsonb` (nunca re-ejecuta `GeometryEngine`) -- `fmmCompatible`/`fmmIssues` son el resultado REAL de exportar la propuesta a `.bbmodel` (010/011) y correrle `FmmCompatibilityValidator` (013) encima, no un estimado.
+- `404 Not Found` (`JOB_NOT_FOUND`) si el `jobId` no existe.
+- `409 Conflict` (`JOB_NOT_COMPLETED`) si el job todavía no terminó, falló o se canceló.
+
+**`POST /api/jobs/{jobId}/apply`** ("Usar este modelo", ticket 030, HU-12, AC #4)
+- `201 Created` — `{revisionNumber, draftVersion}`. Crea `mob_revisions` (`created_by='ai'`) Y `mob_drafts` en la MISMA transacción (`DraftPersistenceService.applyGenerationProposal`, mismo mecanismo que "Guardar", 020) y avanza `mobs.current_revision_number` -- nunca ocurre implícitamente antes de este clic.
+- `400 Bad Request` (`INVALID_DRAFT`) si la propuesta no pasa la validación de invariantes (defensa en profundidad -- en la práctica, una propuesta que ya pasó por `GeometryEngine` en 028 siempre es válida).
+- `404 Not Found` (`JOB_NOT_FOUND`) si el `jobId` no existe.
+- `409 Conflict` (`JOB_NOT_COMPLETED`) si el job todavía no terminó, falló o se canceló.
+
+**Gap conocido, documentado a propósito (VoBo del PO en el ticket 030)**: tras "Usar este modelo", el frontend navega de vuelta a `/projects/:projectId` -- ninguna ruta real de "Editar modelo" existe todavía (el editor manual, 016-018, solo se ejerció vía el harness de desarrollo `/dev/viewport-harness`, nunca un flujo productivo real). Cerrar esa ruta es alcance de un ticket futuro.
 
 ## Rutas previstas (según `docs/definiciones/galgoth-studio-mvp.md`, sección 19 del master prompt)
 
@@ -151,6 +166,6 @@ POST   /api/mobs/{mobId}/validate
 POST   /api/mobs/{mobId}/export/bbmodel
 ```
 
-Endpoints de "Apply"/"Usar este modelo" (mismo mecanismo de commit que Guardar, ver `docs/ARQUITECTURA.md`) se documentan aquí conforme aterricen los tickets `030`/`031`.
+El "Apply" de ediciones IA incrementales sobre un modelo YA guardado (a diferencia de "Usar este modelo", que es la PRIMERA revisión) es alcance del ticket `031` -- se documenta acá cuando aterrice.
 
 La colección Postman vive en `postman/galgoth-studio/` — se actualiza junto con cada endpoint nuevo (convención del equipo, ver `docs-and-task-folder-workflow`).

@@ -13,10 +13,10 @@
  * textura" no existen este ciclo, UV es determinista y la textura
  * pintada es Fase 3).
  *
- * Al completar, esta pantalla NO navega sola al paso "Resultado" --
- * conectar esa transición con la propuesta real es alcance del ticket
- * 030 (mismo límite honesto ya establecido en 027/028: `ResultStep.vue`
- * sigue siendo un shell hasta ese ticket).
+ * Al completar (ticket 030), emite `completed` con el `jobId` real --
+ * `AiMobWizard.vue` es quien busca el resultado (`GET /api/jobs/{jobId}/result`)
+ * y avanza al paso "Resultado"; este componente nunca hace esa llamada
+ * ni navega por su cuenta.
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { BaseType } from '../../projects/mobsApi'
@@ -28,7 +28,7 @@ import GButton from '../../design-system/components/GButton.vue'
 import GenerationPreviewViewport from '../GenerationPreviewViewport.vue'
 
 const props = defineProps<{ mobId: string; projectId: string; mobName: string; baseType: BaseType }>()
-defineEmits<{ 'back-to-project': [] }>()
+const emit = defineEmits<{ 'back-to-project': []; completed: [jobId: string] }>()
 
 const STAGE_ORDER = [
   { key: 'analizando_referencia', label: 'Analizando referencia…' },
@@ -98,6 +98,9 @@ function handleProgressEvent(raw: MessageEvent): void {
       failureMessage.value = event.message
     }
     closeStream()
+    if (terminalOutcome === 'completed' && jobId.value) {
+      emit('completed', jobId.value)
+    }
     return
   }
   currentPipelineStage.value = event.stage
@@ -177,9 +180,7 @@ onBeforeUnmount(closeStream)
 
       <GenerationPreviewViewport :model="previewModel" />
 
-      <p v-if="outcome === 'completed'" class="generation-step__notice generation-step__notice--ok">
-        Generación completada -- la pantalla de Resultado con esta propuesta real llega en el ticket 030.
-      </p>
+      <p v-if="outcome === 'completed'" class="generation-step__notice generation-step__notice--ok">Generación completada.</p>
       <p v-else-if="outcome === 'failed'" class="generation-step__notice generation-step__notice--error">
         La generación falló: {{ failureMessage }}
       </p>
@@ -196,7 +197,7 @@ onBeforeUnmount(closeStream)
     </template>
 
     <button
-      v-if="outcome !== 'running' || startError"
+      v-if="outcome === 'failed' || outcome === 'cancelled' || startError"
       type="button"
       class="generation-step__back"
       @click="$emit('back-to-project')"

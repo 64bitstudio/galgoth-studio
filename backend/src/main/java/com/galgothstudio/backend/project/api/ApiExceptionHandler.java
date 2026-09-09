@@ -1,6 +1,7 @@
 package com.galgothstudio.backend.project.api;
 
 import com.galgothstudio.backend.aiorchestrator.InvalidJobStateException;
+import com.galgothstudio.backend.aiorchestrator.JobNotCompletedException;
 import com.galgothstudio.backend.aiorchestrator.JobNotFoundException;
 import com.galgothstudio.backend.aiorchestrator.NoReferenceImageException;
 import com.galgothstudio.backend.project.InvalidProjectNameException;
@@ -68,6 +69,11 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(InvalidJobStateException.class)
 	public ResponseEntity<ApiErrorResponse> handleInvalidJobState(InvalidJobStateException ex) {
 		return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiErrorResponse("INVALID_JOB_STATE", ex.getMessage(), null));
+	}
+
+	@ExceptionHandler(JobNotCompletedException.class)
+	public ResponseEntity<ApiErrorResponse> handleJobNotCompleted(JobNotCompletedException ex) {
+		return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiErrorResponse("JOB_NOT_COMPLETED", ex.getMessage(), null));
 	}
 
 }

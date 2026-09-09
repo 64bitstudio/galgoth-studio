@@ -249,7 +249,7 @@
       ]
     },
     {
-      "name": "Generación IA (ticket 029)",
+      "name": "Generación IA (tickets 029/030)",
       "item": [
         {
           "name": "Iniciar generación",
@@ -288,6 +288,32 @@
               "path": ["api", "jobs", "{{jobId}}", "cancel"]
             },
             "description": "202 -- señala la cancelación; el job se detiene en el próximo punto de control (nunca interrumpe una llamada HTTP a un proveedor de IA ya en vuelo, ver AC #4). 404 (JOB_NOT_FOUND) si el jobId no existe. 409 (INVALID_JOB_STATE) si el job ya alcanzó un estado terminal (completed/failed/cancelled)."
+          }
+        },
+        {
+          "name": "Obtener resultado de un job (ticket 030)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{jobId}}/result",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "jobs", "{{jobId}}", "result"]
+            },
+            "description": "200 con {jobId, mobId, mobName, cuboidCount, boneCount, textureWidth, textureHeight, fmmCompatible, fmmIssues} -- calculado en vivo desde ai_jobs.proposal_jsonb, nunca re-ejecuta GeometryEngine. fmmCompatible/fmmIssues son el resultado REAL de exportar a .bbmodel (010/011) y correrle FmmCompatibilityValidator (013) encima. 404 (JOB_NOT_FOUND) si el jobId no existe. 409 (JOB_NOT_COMPLETED) si el job todavía no terminó, falló o se canceló."
+          }
+        },
+        {
+          "name": "Usar este modelo (ticket 030)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{jobId}}/apply",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "jobs", "{{jobId}}", "apply"]
+            },
+            "description": "201 con {revisionNumber, draftVersion} -- crea mob_revisions (created_by='ai') Y mob_drafts en la MISMA transacción, avanza mobs.current_revision_number (AC #4). 400 (INVALID_DRAFT) si la propuesta no pasa la validación de invariantes. 404 (JOB_NOT_FOUND) si el jobId no existe. 409 (JOB_NOT_COMPLETED) si el job todavía no terminó, falló o se canceló."
           }
         }
       ]
