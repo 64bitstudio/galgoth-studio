@@ -20,6 +20,17 @@
 // ticket 002, documentado también en el skill bootstrap-proyecto). Usa
 // el credential de Sonar YA configurado en Jenkins -- no depende de
 // SONARQUBE_CLI_TOKEN_VM (CLI personal de Marco, mecanismo aparte).
+//
+// E2E (ticket 033, HU-23): `scripts/e2e.sh` levanta el stack real
+// completo (Docker Compose Postgres+MinIO, backend con providers mock,
+// frontend) y corre la suite Playwright de aceptación -- después de
+// lint/test/build/Sonar de ambos, para no gastar tiempo de stack real
+// si algo más básico ya falló. `npx playwright install --with-deps
+// chromium` instala el navegador + dependencias de sistema (apt) --
+// **riesgo de infra no verificado**: no se confirmó si el agente de
+// Jenkins tiene permisos/paquetes para esto (decisión explícita del PO:
+// agregarlo igual y resolverlo en el primer PR real si falla, en vez de
+// dejar la suite sin ningún camino de CI).
 @Library('platform') _
 
 corePipeline(
@@ -35,6 +46,7 @@ corePipeline(
                 withSonarQubeEnv('sonarqube-vm') {
                     sh 'sonar-scanner'
                 }
+                sh 'npx playwright install --with-deps chromium'
             }
         }
         dir('backend') {
@@ -42,5 +54,6 @@ corePipeline(
                 sh './gradlew build sonar'
             }
         }
+        sh './scripts/e2e.sh'
     }
 )

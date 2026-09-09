@@ -23,3 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 coverage
+
+# Playwright (ticket 033) -- resultados/reportes de corridas locales, nunca versionados
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

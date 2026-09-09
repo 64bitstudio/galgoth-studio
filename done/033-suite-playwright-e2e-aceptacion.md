@@ -1,0 +1,34 @@
+# 033 — Suite Playwright del flujo E2E de aceptación
+
+**Milestone:** M6 · **Depende de:** 020, 030, 031, 032, 014 · **HUs:** HU-23
+
+## Objetivo
+Nace de `docs/definiciones/galgoth-studio-mvp.md` (HU-23, criterios de aceptación núm. 1-12 del master prompt). Automatizar el flujo E2E completo del Technical Alpha: crear proyecto Galgoth → agregar mob Carcomido → generar geometría por IA → Usar este modelo → editar a mano y Guardar → editar por IA con diff y Apply → validar → exportar `.bbmodel` (v5, y v4 vía 014) → abrir en Blockbench sin diálogos de reparación.
+
+## Criterios de aceptación (TDD)
+- Dado el flujo completo descrito arriba, cuando corre la suite Playwright, entonces cada paso pasa contra un backend real (Docker Compose) con `MockProvider` (025) para las llamadas de IA.
+- Dado el `.bbmodel` resultante (v5 y v4), cuando se valida contra las fixtures de Blockbench real (012), entonces ambos abren sin diálogo de reparación.
+- Dado que la suite corre en CI, cuando termina, entonces reporta verde antes de considerar cerrado el Technical Alpha (Gate M6) — incluyendo que 014 (V4) esté completo, como exige el Gate M6 de la épica 009.
+
+## Hecho
+
+Implementado end-to-end: Playwright (frontend, nuevo) + un test de integración backend dedicado a la mitad v4 del AC, ambos corriendo contra un stack real.
+
+**AC #1 (flujo real contra Docker Compose + MockProvider) -- cumplido**: `scripts/e2e.sh` (nuevo, raíz del repo) levanta Postgres+MinIO (Docker Compose), el backend (`AI_VISION_PROVIDER=mock`/`AI_REASONING_PROVIDER=mock`) y el frontend, corre `npx playwright test`, y apaga todo SIEMPRE al salir (éxito o fallo, `trap cleanup EXIT`). `frontend/e2e/technical-alpha-acceptance.spec.ts`: crear proyecto → agregar mob + generar geometría por IA (el wizard, 027, crea el mob como parte de su propio flujo -- "agregar mob" y "generar por IA" son un solo flujo de UI real, no dos pasos separados) → "Usar este modelo" → editar a mano (Add cuboid) y Guardar → editar por IA con diff y Aplicar (031) → exportar `.bbmodel` v5 real, con descarga capturada y verificada (formato/elementos/groups reales, no solo "el botón no rompió").
+
+**AC #2, mitad v4 -- decisión confirmada explícitamente con el PO**: el producto real (032) nunca expuso una opción de exportar en v4 (ni mockup ni endpoint -- V4 es una capacidad interna de compatibilidad con FreeMinecraftModels, 014), así que ningún paso de navegador puede ejercerla. Se cubre en `backend/.../aiorchestrator/E2eAcceptanceBbmodelExportTest.java`: el MISMO pipeline de generación (mock providers) que el flujo Playwright dispara por navegador, exportado en AMBOS formatos (v5 y v4) y validado con `FmmCompatibilityValidator` (013) -- sin acoplarse al proceso/DB de la corrida Playwright (frágil, cruza lenguajes), pero sobre un modelo con la misma forma real (multi-bone/multi-cuboid) que el flujo E2E produce.
+
+**AC #2, "abren sin diálogo de reparación"**: ya demostrado con Blockbench real al cerrar 009/012/014 (mismo exportador, mismo código -- ver el `## Hecho` de esos tickets) -- no se repite acá.
+
+**Tres hallazgos reales de conformidad, solo detectables al ejercitar el flujo COMPLETO de punta a punta (nunca con los tests unitarios/integración existentes, cada uno mockeaba su propio escenario aislado)**:
+1. `MockReasoningProvider` (025) tenía un ÚNICO default literal (el ejemplo de EDICIÓN del master prompt §9.3) compartido por los dos llamadores reales de la interfaz -- generación (sobre un modelo VACÍO) y edición (sobre un modelo YA existente). Un servidor real recién levantado sin ningún test que llamara `setNextResponse` habría fallado el paso de generación de verdad (`resizeCuboid` sobre un target que no existe en un modelo vacío). Fix: dos defaults, elegidos por `promptVersion`.
+2. Aun separados, el default de edición seguía apuntando a ids LITERALES (`hand_right`/`hand_left`/`shoulder_right_detail`) que solo existen en el fixture armado a mano de `AiGeometryEditPlannerServiceTest` (031) -- `GeometryEngine.applyCreateCuboid` SIEMPRE asigna un UUID nuevo al crear (nunca el `tempId` original de la operación), así que ningún cuboid generado -- por el mock o por Claude real -- termina llamándose literalmente así. Fix: el mock extrae por regex el id REAL del primer cuboid del `userPrompt` (que ya incluye el modelo actual serializado) cuando el modelo no contiene el fixture literal de 031 -- preserva el comportamiento exacto de los tests existentes (031/025) y funciona contra cualquier modelo real.
+3. `FmmCompatibilityValidator` (013) asumía SIEMPRE la forma v5 de `outliner` (groups separados en `groups[]`) -- nunca se había corrido contra la salida de `BBModelExporterV4` (014, groups embebidos directo en el outliner), así que cada bone de un v4 real disparaba un falso `OUTLINER_REFERENCE` ("no existe en 'groups'"). Fix: mismo criterio de detección (¿tiene `name` inline?) ya usado en el parser test-only de 012.
+
+**Tests**: 219 backend (+3: `E2eAcceptanceBbmodelExportTest`, más 2 nuevos en `MockReasoningProviderTest`/`GeometryPlannerServiceTest` cubriendo los hallazgos #1/#2) + 1 test Playwright real (flujo completo, verificado corriendo 3 veces localmente contra el stack real, reproducible). `npm run lint`/`vue-tsc -b`/`npm run build`/`npm run test` (Vitest) sin tocar -- ningún cambio en esos.
+
+**AC #3 (CI)**: agregada una etapa al `Jenkinsfile` (`npx playwright install --with-deps chromium` + `scripts/e2e.sh`, después de lint/test/build/Sonar de ambos). **Riesgo de infra no verificado, decisión explícita del PO**: no se confirmó si el agente de Jenkins tiene permisos/paquetes (apt/sudo) para instalar Chromium -- se agregó la etapa igual, a resolver en el primer PR real si falla, en vez de dejar la suite sin ningún camino de CI.
+
+**Hallazgo real de proceso, encontrado escribiendo `scripts/e2e.sh`**: matar el PID de un `npm run dev`/`gradlew bootRun` lanzado en background (`comando &`) NO mata el proceso real (`vite`/`java`) que abrió el puerto -- npm/gradle lo lanzan como hijo, y el kill al wrapper no se propaga. Confirmado real: dos procesos `vite` quedaron vivos después de que el script reportara "limpieza OK". Fix: además del kill por PID, `lsof -tiTCP:<puerto> | xargs kill` como red de seguridad explícita en el cleanup -- verificado con 3 corridas seguidas, siempre limpio.
+
+Con este cierre, los 33 tickets originales + el ticket 034 insertado quedan íntegramente en `done/` -- Technical Alpha (Gate M6) completo.

@@ -66,6 +66,24 @@ class GeometryPlannerServiceTest {
 		assertThat(result.providerResponse().provider()).isEqualTo("mock");
 	}
 
+	/**
+	 * Ticket 033 -- el default literal de `MockReasoningProvider` SIN
+	 * ningún `setNextResponse` explícito (el caso real de un servidor
+	 * recién levantado con `AI_REASONING_PROVIDER=mock`, como en la
+	 * suite Playwright de aceptación) debe ser un rig de creación
+	 * aplicable sobre un modelo vacío -- nunca el ejemplo de edición
+	 * (que fallaría acá, sus targets no existen todavía).
+	 */
+	@Test
+	void sinConfigurarNadaElDefaultDelMockEsUnRigDeCreacionAplicableSobreUnModeloVacio() {
+		GeometryPlannerService service = newService(new MockReasoningProvider());
+
+		GeometryPlanResult result = service.plan(aModelIntent(), emptyModel());
+
+		assertThat(result.model().bones()).isNotEmpty();
+		assertThat(result.model().cuboids()).isNotEmpty();
+	}
+
 	@Test
 	void una_operacion_fuera_de_la_whitelist_detiene_el_flujo_AC2() {
 		MockReasoningProvider mockProvider = new MockReasoningProvider();

@@ -14,6 +14,10 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    // `e2e/` es la suite Playwright (ticket 033) -- usa su propio `test`/
+    // `expect` de `@playwright/test`, incompatible con Vitest; sin esta
+    // exclusión, Vitest intenta correrla igual y falla al importarla.
+    exclude: ['**/node_modules/**', 'e2e/**'],
     coverage: {
       provider: 'v8',
       // 'lcov' es el formato que consume sonar.javascript.lcov.reportPaths
