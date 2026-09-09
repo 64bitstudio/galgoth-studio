@@ -35,7 +35,8 @@ de IA que se dispare contra esos ambientes.
   3 cores anteriores (Postgres+MinIO persistentes, healthcheck contra
   `/actuator/health`, labels de Traefik, red `edge`, nombre de proyecto
   de Compose explícito, puertos de host reservados siguiendo la secuencia
-  ya en uso: PROD 8089 / DEV 8090 / QA 8091).
+  ya en uso: PROD 8089 / DEV 8091 / QA 8092 — NO 8090, ocupado por
+  Jenkins mismo, hallazgo real del primer deploy).
 - `Jenkinsfile` con `deploy: true` (ya no `false`), `vhostFile`,
   `certbotDomains` para los 3 subdominios, y el paso de build que aterriza
   el bundle de producción del frontend + el schema compartido de
