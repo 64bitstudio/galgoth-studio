@@ -4,6 +4,9 @@ import com.galgothstudio.backend.aiorchestrator.InvalidJobStateException;
 import com.galgothstudio.backend.aiorchestrator.JobNotCompletedException;
 import com.galgothstudio.backend.aiorchestrator.JobNotFoundException;
 import com.galgothstudio.backend.aiorchestrator.NoReferenceImageException;
+import com.galgothstudio.backend.aiorchestrator.edit.NoBaseRevisionException;
+import com.galgothstudio.backend.aiorchestrator.edit.StaleEditBaseException;
+import com.galgothstudio.backend.aiorchestrator.planner.InvalidGeometryProposalException;
 import com.galgothstudio.backend.project.InvalidProjectNameException;
 import com.galgothstudio.backend.project.ProjectNotFoundException;
 import com.galgothstudio.backend.project.draft.DraftNotFoundException;
@@ -74,6 +77,22 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(JobNotCompletedException.class)
 	public ResponseEntity<ApiErrorResponse> handleJobNotCompleted(JobNotCompletedException ex) {
 		return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiErrorResponse("JOB_NOT_COMPLETED", ex.getMessage(), null));
+	}
+
+	@ExceptionHandler(StaleEditBaseException.class)
+	public ResponseEntity<ApiErrorResponse> handleStaleEditBase(StaleEditBaseException ex) {
+		return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiErrorResponse("STALE_EDIT_BASE", ex.getMessage(), null));
+	}
+
+	@ExceptionHandler(NoBaseRevisionException.class)
+	public ResponseEntity<ApiErrorResponse> handleNoBaseRevision(NoBaseRevisionException ex) {
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("NO_BASE_REVISION", ex.getMessage(), null));
+	}
+
+	/** Ticket 031, AC #6 -- primera vez que esta excepción (028) cruza la frontera HTTP directamente (028/029 siempre la manejaban internamente, nunca dejándola llegar a un controlador). */
+	@ExceptionHandler(InvalidGeometryProposalException.class)
+	public ResponseEntity<ApiErrorResponse> handleInvalidGeometryProposal(InvalidGeometryProposalException ex) {
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("INVALID_EDIT_PROPOSAL", ex.getMessage(), null));
 	}
 
 }

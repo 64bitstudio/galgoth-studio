@@ -133,4 +133,84 @@ describe('MobEditor.vue', () => {
 
     expect(wrapper.text()).toContain('Fallo real del servidor.')
   })
+
+  describe('Asistente IA (ticket 031)', () => {
+    const draftModel = {
+      mobId: 'mob-1',
+      projectId: 'p1',
+      name: 'Carcomido',
+      baseType: 'humanoid' as const,
+      units: 'minecraft_pixels' as const,
+      bones: [],
+      cuboids: [],
+      texture: { width: 128, height: 128, storageKey: null },
+      uv: { textureWidth: 128, textureHeight: 128, regions: [] },
+      animations: [],
+      exportSettings: { preferredFormatVersion: 'v5' as const },
+      referenceImages: [],
+    }
+
+    async function mountLoaded(): Promise<ReturnType<typeof shallowMount>> {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof fetch>(async (url) => {
+          const u = String(url)
+          if (u.match(/\/api\/mobs\/mob-1$/)) {
+            return jsonResponse({ id: 'mob-1', name: 'Carcomido', baseType: 'humanoid', status: 'draft', thumbnailKey: null, updatedAt: '' })
+          }
+          if (u.endsWith('/api/mobs/mob-1/draft')) {
+            return jsonResponse({ mobId: 'mob-1', draftVersion: 2, model: draftModel, updatedAt: '' })
+          }
+          throw new Error(`fetch inesperado: ${u}`)
+        }),
+      )
+      const wrapper = shallowMount(MobEditor, { global: { plugins: [await routerAt('p1', 'mob-1')] } })
+      await flushPromises()
+      return wrapper
+    }
+
+    it('por default muestra HierarchyPanel + ThreeViewport, y el botón "Asistente IA" cambia a AiEditPanel', async () => {
+      const wrapper = await mountLoaded()
+
+      expect(wrapper.findComponent({ name: 'HierarchyPanel' }).exists()).toBe(true)
+      expect(wrapper.findComponent({ name: 'AiEditPanel' }).exists()).toBe(false)
+      expect(wrapper.findComponent({ name: 'ThreeViewport' }).exists()).toBe(true)
+
+      const toggle = wrapper.findAll('button').find((b) => b.text() === 'Asistente IA')!
+      await toggle.trigger('click')
+
+      expect(wrapper.findComponent({ name: 'AiEditPanel' }).exists()).toBe(true)
+      expect(wrapper.findComponent({ name: 'HierarchyPanel' }).exists()).toBe(false)
+      expect(wrapper.findAll('button').find((b) => b.text() === 'Editor manual')).toBeDefined()
+    })
+
+    it('preview-model-changed de AiEditPanel muestra GenerationPreviewViewport en vez de ThreeViewport (mismo singleton de canvas)', async () => {
+      const wrapper = await mountLoaded()
+      await wrapper.findAll('button').find((b) => b.text() === 'Asistente IA')!.trigger('click')
+
+      const aiPanel = wrapper.findComponent({ name: 'AiEditPanel' })
+      const previewModel = { ...draftModel, name: 'preview' }
+      await aiPanel.vm.$emit('preview-model-changed', previewModel)
+
+      expect(wrapper.findComponent({ name: 'ThreeViewport' }).exists()).toBe(false)
+      expect(wrapper.findComponent({ name: 'GenerationPreviewViewport' }).exists()).toBe(true)
+
+      await aiPanel.vm.$emit('preview-model-changed', null)
+
+      expect(wrapper.findComponent({ name: 'ThreeViewport' }).exists()).toBe(true)
+      expect(wrapper.findComponent({ name: 'GenerationPreviewViewport' }).exists()).toBe(false)
+    })
+
+    it('applied de AiEditPanel actualiza el draftModelStore real (el editor manual refleja el cambio aplicado)', async () => {
+      const wrapper = await mountLoaded()
+      await wrapper.findAll('button').find((b) => b.text() === 'Asistente IA')!.trigger('click')
+
+      const aiPanel = wrapper.findComponent({ name: 'AiEditPanel' })
+      const appliedModel = { ...draftModel, name: 'Carcomido editado' }
+      await aiPanel.vm.$emit('applied', appliedModel)
+
+      const draft = useDraftModelStore()
+      expect(draft.model?.name).toBe('Carcomido editado')
+    })
+  })
 })
