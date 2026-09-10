@@ -51,7 +51,7 @@ function modelWith(bones: Bone[], cuboids: Cuboid[]): MobProjectModel {
     bones,
     cuboids,
     texture: { width: 64, height: 64, storageKey: null },
-    uv: { textureWidth: 64, textureHeight: 64, regions: [] },
+    uv: { textureWidth: 64, textureHeight: 64, regions: [], reservations: [] },
     animations: [],
     exportSettings: { preferredFormatVersion: 'v5' },
     referenceImages: [],
@@ -169,7 +169,12 @@ describe('removeCuboid', () => {
   it('elimina el cuboid y hace cascade de sus uv.regions', () => {
     const model: MobProjectModel = {
       ...modelWith([bone('b', null)], [cuboid('c', 'b')]),
-      uv: { textureWidth: 64, textureHeight: 64, regions: [{ cuboidId: 'c', face: 'north', rect: [0, 0, 8, 8] }] },
+      uv: {
+        textureWidth: 64,
+        textureHeight: 64,
+        regions: [{ cuboidId: 'c', face: 'north', rect: [0, 0, 8, 8], status: 'unpainted' }],
+        reservations: [],
+      },
     }
 
     const result = removeCuboid(model, 'c')

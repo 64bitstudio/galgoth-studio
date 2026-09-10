@@ -87,6 +87,26 @@ export const useDraftModelStore = defineStore('draftModel', () => {
     model.value = next
   }
 
+  /**
+   * Commit genérico de un `MobProjectModel` ya calculado por fuera de
+   * `geometryOperations.ts` (p. ej. un resultado confirmado por el backend,
+   * ticket 041) -- pasa por el MISMO mecanismo de Command que toda otra
+   * operación (push de `previous`, descarta la rama de redo), sin ninguna
+   * lógica específica de QUÉ cambió entre `previous` y `next`. Es lo que
+   * prueba, sin lógica de Undo nueva, que el mecanismo genérico de snapshot
+   * ya cubre cualquier campo aditivo de `MobProjectModel` (ticket 040, AC #4)
+   * -- incluyendo `uv.reservations`.
+   */
+  function commitExternalModel(next: MobProjectModel): void {
+    if (!model.value) {
+      return
+    }
+    const previous = model.value
+    model.value = next
+    lastError.value = null
+    recordCommand(previous)
+  }
+
   /** Envuelve una operación que puede lanzar `InvalidGeometryError`; aplica el resultado o reporta el rechazo. */
   function apply(context: string, operation: (current: MobProjectModel) => MobProjectModel): void {
     if (!model.value) {
@@ -207,6 +227,7 @@ export const useDraftModelStore = defineStore('draftModel', () => {
     load,
     undo,
     redo,
+    commitExternalModel,
     moveSelectedCuboid,
     resizeSelectedCuboid,
     rotateSelectedCuboid,

@@ -40,7 +40,7 @@ function emptyModel(name: string): MobProjectModel {
     bones: [],
     cuboids: [],
     texture: { width: 64, height: 64, storageKey: null },
-    uv: { textureWidth: 64, textureHeight: 64, regions: [] },
+    uv: { textureWidth: 64, textureHeight: 64, regions: [], reservations: [] },
     animations: [],
     exportSettings: { preferredFormatVersion: 'v5' },
     referenceImages: [],

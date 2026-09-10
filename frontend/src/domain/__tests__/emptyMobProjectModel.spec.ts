@@ -8,7 +8,7 @@ describe('emptyMobProjectModel', () => {
     expect(model.bones).toEqual([])
     expect(model.cuboids).toEqual([])
     expect(model.texture).toEqual({ width: 128, height: 128, storageKey: null })
-    expect(model.uv).toEqual({ textureWidth: 128, textureHeight: 128, regions: [] })
+    expect(model.uv).toEqual({ textureWidth: 128, textureHeight: 128, regions: [], reservations: [] })
   })
 
   it('conserva mobId/projectId/name/baseType reales', () => {

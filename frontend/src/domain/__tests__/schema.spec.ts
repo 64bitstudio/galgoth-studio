@@ -55,4 +55,49 @@ describe('MobProjectModel JSON Schema', () => {
     expect(validate.errors ?? []).toEqual([])
     expect(valid).toBe(true)
   })
+
+  describe('UvRegion.status / UvReservation (ticket 040)', () => {
+    it('uvRegion.status y uvLayout.reservations existen en el esquema (AC #5)', () => {
+      const defs = (schema as { $defs: Record<string, { properties?: Record<string, unknown> }> }).$defs
+      expect(Object.keys(defs.uvRegion!.properties!)).toEqual(expect.arrayContaining(['status']))
+      expect(Object.keys(defs.uvLayout!.properties!)).toEqual(expect.arrayContaining(['reservations']))
+      expect(defs.uvReservation).toBeDefined()
+      expect(defs.uvRegionStatus).toBeDefined()
+      expect(defs.uvReservationReason).toBeDefined()
+    })
+
+    it('rechaza una uvRegion a la que le falta el campo requerido status', () => {
+      const withoutStatus = readJson('contracts/fixtures/model-spec-example.json') as {
+        uv: { regions: Array<Record<string, unknown>> }
+      }
+      delete withoutStatus.uv.regions[0]!.status
+      expect(validate(withoutStatus)).toBe(false)
+    })
+
+    it('rechaza un uvLayout al que le falta el campo requerido reservations', () => {
+      const withoutReservations = readJson('contracts/fixtures/model-spec-example.json') as {
+        uv: Record<string, unknown>
+      }
+      delete withoutReservations.uv.reservations
+      expect(validate(withoutReservations)).toBe(false)
+    })
+
+    it('acepta una uvReservation completa con reason=resize_abandoned', () => {
+      const withReservation = readJson('contracts/fixtures/model-spec-example.json') as {
+        uv: { reservations: unknown[] }
+      }
+      withReservation.uv.reservations = [
+        {
+          id: 'reservation-1',
+          rect: [0, 0, 8, 8],
+          reason: 'resize_abandoned',
+          sourceCuboidId: 'head_main',
+          sourceFace: 'north',
+        },
+      ]
+      const valid = validate(withReservation)
+      expect(validate.errors ?? []).toEqual([])
+      expect(valid).toBe(true)
+    })
+  })
 })

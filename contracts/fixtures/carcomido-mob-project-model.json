@@ -2050,7 +2050,8 @@
   "uv": {
     "textureWidth": 64,
     "textureHeight": 64,
-    "regions": []
+    "regions": [],
+    "reservations": []
   },
   "animations": [],
   "exportSettings": {
