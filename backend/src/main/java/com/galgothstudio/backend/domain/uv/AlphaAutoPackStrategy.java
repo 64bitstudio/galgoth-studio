@@ -40,15 +40,30 @@ public final class AlphaAutoPackStrategy implements UvLayoutStrategy {
 	private record Placement(int x, int y) {
 	}
 
-	private record PackResult(List<Placement> placements, int totalHeight, int maxRowWidth) {
+	/** Paquete-visible (no {@code private}) desde el ticket 042: {@link AtlasResolutionCalculator} lee {@code totalHeight()}/{@code maxRowWidth()} vía {@link #packedBoundsOf}. */
+	record PackResult(List<Placement> placements, int totalHeight, int maxRowWidth) {
 	}
 
 	@Override
 	public Result layout(List<Cuboid> cuboids, int textureWidth, int textureHeight) {
-		List<BoxUvMath.Footprint> footprints = new ArrayList<>(cuboids.size());
-		for (Cuboid cuboid : cuboids) {
-			footprints.add(BoxUvMath.footprintOf(cuboid));
-		}
+		return layout(cuboids, textureWidth, textureHeight, TexelDensity.X1);
+	}
+
+	/**
+	 * Ticket 042, Diseño técnico §7: variante aditiva que empaqueta a una
+	 * {@link TexelDensity} explícita -- NO forma parte del contrato
+	 * {@link UvLayoutStrategy} (que no tiene noción de densidad; ningún
+	 * {@code MobProjectModel}/{@code UvLayout} persiste todavía qué
+	 * densidad está vigente, fuera de alcance de este ticket). Único
+	 * consumidor real: {@link TexelDensityUpgrade} (upgrade explícito
+	 * x1→x2 ANTES de contenido {@code PAINTED}). La sobrecarga de 3
+	 * argumentos de arriba (contrato {@link UvLayoutStrategy}, tickets
+	 * 006/007/041) es exactamente equivalente a llamar esta con
+	 * {@link TexelDensity#X1} -- CERO cambio de comportamiento para el
+	 * código ya existente.
+	 */
+	public Result layout(List<Cuboid> cuboids, int textureWidth, int textureHeight, TexelDensity density) {
+		List<BoxUvMath.Footprint> footprints = footprintsOf(cuboids, density);
 
 		PackResult attempt = packWithinWidth(footprints, textureWidth);
 		if (attempt.totalHeight() > textureHeight || attempt.maxRowWidth() > textureWidth) {
@@ -64,7 +79,7 @@ public final class AlphaAutoPackStrategy implements UvLayoutStrategy {
 		for (int i = 0; i < cuboids.size(); i++) {
 			Cuboid cuboid = cuboids.get(i);
 			Placement placement = attempt.placements().get(i);
-			CuboidFaces faces = BoxUvMath.boxUnwrapFaces(cuboid, placement.x(), placement.y());
+			CuboidFaces faces = BoxUvMath.boxUnwrapFaces(cuboid, placement.x(), placement.y(), density);
 
 			updatedCuboids.add(
 					new Cuboid(
@@ -76,6 +91,29 @@ public final class AlphaAutoPackStrategy implements UvLayoutStrategy {
 		}
 
 		return new Result(updatedCuboids, regions);
+	}
+
+	private static List<BoxUvMath.Footprint> footprintsOf(List<Cuboid> cuboids, TexelDensity density) {
+		List<BoxUvMath.Footprint> footprints = new ArrayList<>(cuboids.size());
+		for (Cuboid cuboid : cuboids) {
+			footprints.add(BoxUvMath.footprintOf(cuboid, density));
+		}
+		return footprints;
+	}
+
+	/**
+	 * Caja envolvente (ancho/alto totales) del shelf-packing de
+	 * {@code footprints}, empaquetando con el ancho mínimo con el que CADA
+	 * footprint individual entra en su propia fila (el footprint más ancho
+	 * de la lista) -- SIN calcular placements. Ticket 042: expuesto
+	 * paquete-visible para que {@link AtlasResolutionCalculator} decida el
+	 * tamaño de atlas ANTES de que exista ninguno, reusando el MISMO
+	 * algoritmo de {@link #packWithinWidth} en vez de duplicarlo.
+	 */
+	static PackResult packedBoundsOf(List<Cuboid> cuboids, TexelDensity density) {
+		List<BoxUvMath.Footprint> footprints = footprintsOf(cuboids, density);
+		int narrowestSafeWidth = footprints.stream().mapToInt(BoxUvMath.Footprint::width).max().orElseThrow();
+		return packWithinWidth(footprints, narrowestSafeWidth);
 	}
 
 	/** Shelf-packing sin límite de alto -- envuelve de fila cuando se excede {@code width}. */

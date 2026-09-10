@@ -84,6 +84,38 @@ class GeometryPlannerServiceTest {
 		assertThat(result.model().cuboids()).isNotEmpty();
 	}
 
+	/**
+	 * Ticket 042, Diseño técnico §7: el atlas inicial de un mob generado
+	 * por IA es SIEMPRE la potencia de 2 que contiene el footprint
+	 * empaquetado de sus cuboids reales a densidad X1 -- nunca el
+	 * {@code TextureDocument} de {@code startingModel} (acá 64x64,
+	 * deliberadamente distinto del resultado esperado, para probar que se
+	 * IGNORA) ni un valor fijo hardcodeado (128x128, el que existía antes
+	 * de este ticket).
+	 */
+	@Test
+	void elAtlasInicial_seCalculaDelFootprintEmpaquetadoRealDeLosCuboids_nuncaDeUnValorFijo() {
+		MockReasoningProvider mockProvider = new MockReasoningProvider();
+		mockProvider.setNextResponse(
+				"""
+				[
+				  {"op":"createBone","tempId":"root","name":"body","parentId":null,"pivot":[0,0,0],"rotation":[0,0,0]},
+				  {"op":"createCuboid","tempId":"c1","name":"body","boneId":"root","from":[-4,0,-4],"to":[4,8,4],"origin":[0,4,0],"rotation":[0,0,0]}
+				]
+				""");
+		GeometryPlannerService service = newService(mockProvider);
+
+		GeometryPlanResult result = service.plan(aModelIntent(), emptyModel());
+
+		// Cuboid 8(x) x 8(y) x 4(z) -- footprint = 2*(8+4)=24 de ancho,
+		// (4+8)=12 de alto -- atlas = potencia de 2 inmediatamente
+		// contenedora: 32x16.
+		assertThat(result.model().texture().width()).isEqualTo(32);
+		assertThat(result.model().texture().height()).isEqualTo(16);
+		assertThat(result.model().uv().textureWidth()).isEqualTo(32);
+		assertThat(result.model().uv().textureHeight()).isEqualTo(16);
+	}
+
 	@Test
 	void una_operacion_fuera_de_la_whitelist_detiene_el_flujo_AC2() {
 		MockReasoningProvider mockProvider = new MockReasoningProvider();

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.galgothstudio.backend.domain.model.Cuboid;
 import com.galgothstudio.backend.domain.model.CuboidFaces;
 import com.galgothstudio.backend.domain.model.Face;
+import com.galgothstudio.backend.domain.model.FaceName;
 import com.galgothstudio.backend.domain.model.Vec3;
 import org.junit.jupiter.api.Test;
 
@@ -33,6 +34,58 @@ class BoxUvMathTest {
 		BoxUvMath.Footprint footprint = BoxUvMath.footprintOf(cube("head", 8));
 
 		assertThat(footprint).isEqualTo(new BoxUvMath.Footprint(32, 16));
+	}
+
+	// -- Ticket 042, Diseño técnico §7: footprintOf/boxUnwrapFaces(cuboid, TexelDensity) --
+
+	@Test
+	void footprintOfSinDensidad_delegaEnDensidadX1_sinCambiarComportamientoDe041() {
+		Cuboid head = cube("head", 8);
+
+		assertThat(BoxUvMath.footprintOf(head)).isEqualTo(BoxUvMath.footprintOf(head, TexelDensity.X1));
+	}
+
+	@Test
+	void boxUnwrapFacesSinDensidad_delegaEnDensidadX1_sinCambiarComportamientoDe041() {
+		Cuboid head = cube("head", 8);
+
+		assertThat(BoxUvMath.boxUnwrapFaces(head, 3, 5)).isEqualTo(BoxUvMath.boxUnwrapFaces(head, 3, 5, TexelDensity.X1));
+	}
+
+	@Test
+	void unaCaraFisicaDe8x8Unidades_aDensidadX1_produce8x8Texels() {
+		// AC del ticket 042: cuboid con una cara física de 8x8 unidades, a
+		// densidad x1, produce una región de 8x8 texels.
+		Cuboid head = cube("head", 8);
+
+		CuboidFaces faces = BoxUvMath.boxUnwrapFaces(head, 0, 0, TexelDensity.X1);
+		Face north = BoxUvMath.faceOf(faces, FaceName.NORTH);
+
+		assertThat(north.uv().c() - north.uv().a()).isEqualTo(8);
+		assertThat(north.uv().d() - north.uv().b()).isEqualTo(8);
+	}
+
+	@Test
+	void laMismaCaraFisicaDe8x8Unidades_aDensidadX2_produce16x16Texels() {
+		// Mismo AC, a densidad x2: 16x16 texels -- "el mismo cuboid,
+		// empaquetado a densidades distintas, produce footprints de tamaño
+		// distinto" (nunca "el mismo layout UV al doble de resolución").
+		Cuboid head = cube("head", 8);
+
+		CuboidFaces faces = BoxUvMath.boxUnwrapFaces(head, 0, 0, TexelDensity.X2);
+		Face north = BoxUvMath.faceOf(faces, FaceName.NORTH);
+
+		assertThat(north.uv().c() - north.uv().a()).isEqualTo(16);
+		assertThat(north.uv().d() - north.uv().b()).isEqualTo(16);
+	}
+
+	@Test
+	void footprintOfADensidadX2_esElDobleLinealDelFootprintADensidadX1() {
+		Cuboid head = cube("head", 8); // footprint X1 = 32x16 (ver test de arriba)
+
+		BoxUvMath.Footprint footprintX2 = BoxUvMath.footprintOf(head, TexelDensity.X2);
+
+		assertThat(footprintX2).isEqualTo(new BoxUvMath.Footprint(64, 32));
 	}
 
 	@Test

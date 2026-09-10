@@ -40,11 +40,33 @@ public final class BoxUvMath {
 	public record Footprint(int width, int height) {
 	}
 
-	/** Dimensiones (en píxeles de textura) del footprint de box-unwrap de un cuboid. */
+	/**
+	 * Dimensiones (en píxeles de textura) del footprint de box-unwrap de un
+	 * cuboid, a densidad de texel {@link TexelDensity#X1} (1 texel por
+	 * unidad de modelo) -- sobrecarga pre-042 que se conserva sin cambios
+	 * de comportamiento para {@link AlphaAutoPackStrategy}/{@link StableUvStrategy}
+	 * (tickets 006/007/041), que siguen sin recibir densidad como
+	 * parámetro. Delega en {@link #footprintOf(Cuboid, TexelDensity)}.
+	 */
 	public static Footprint footprintOf(Cuboid cuboid) {
-		int x = boxSizeAxis(cuboid.from().x(), cuboid.to().x());
-		int y = boxSizeAxis(cuboid.from().y(), cuboid.to().y());
-		int z = boxSizeAxis(cuboid.from().z(), cuboid.to().z());
+		return footprintOf(cuboid, TexelDensity.X1);
+	}
+
+	/**
+	 * Dimensiones (en píxeles de textura) del footprint de box-unwrap de un
+	 * cuboid a la {@code density} de texel dada -- ticket 042, Diseño
+	 * técnico §7 de `docs/definiciones/galgoth-studio-fase3-textura.md`:
+	 * cada eje del cuboid (en unidades de modelo) se multiplica por
+	 * {@link TexelDensity#texelsPerUnit()} ANTES de armar la cruz de
+	 * box-unwrap -- a densidad {@code X2}, el mismo cuboid produce un
+	 * footprint del DOBLE de tamaño lineal en cada eje (nunca "el mismo
+	 * layout UV al doble de resolución").
+	 */
+	public static Footprint footprintOf(Cuboid cuboid, TexelDensity density) {
+		int factor = density.texelsPerUnit();
+		int x = boxSizeAxis(cuboid.from().x(), cuboid.to().x()) * factor;
+		int y = boxSizeAxis(cuboid.from().y(), cuboid.to().y()) * factor;
+		int z = boxSizeAxis(cuboid.from().z(), cuboid.to().z()) * factor;
 		return new Footprint(2 * (x + z), z + y);
 	}
 
@@ -52,11 +74,32 @@ public final class BoxUvMath {
 		return (int) Math.round(Math.abs(to - from));
 	}
 
-	/** Coloca las 6 caras del box-unwrap de {@code cuboid} con su esquina superior-izquierda en {@code (offsetX, offsetY)}. */
+	/**
+	 * Coloca las 6 caras del box-unwrap de {@code cuboid} con su esquina
+	 * superior-izquierda en {@code (offsetX, offsetY)}, a densidad de
+	 * texel {@link TexelDensity#X1} -- sobrecarga pre-042 que se conserva
+	 * sin cambios de comportamiento para {@link AlphaAutoPackStrategy}
+	 * (tickets 006/007/041, contrato {@link UvLayoutStrategy}). Delega en
+	 * {@link #boxUnwrapFaces(Cuboid, int, int, TexelDensity)}.
+	 */
 	public static CuboidFaces boxUnwrapFaces(Cuboid cuboid, int offsetX, int offsetY) {
-		int x = boxSizeAxis(cuboid.from().x(), cuboid.to().x());
-		int y = boxSizeAxis(cuboid.from().y(), cuboid.to().y());
-		int z = boxSizeAxis(cuboid.from().z(), cuboid.to().z());
+		return boxUnwrapFaces(cuboid, offsetX, offsetY, TexelDensity.X1);
+	}
+
+	/**
+	 * Igual que {@link #boxUnwrapFaces(Cuboid, int, int)}, pero cada eje
+	 * del cuboid se multiplica por {@link TexelDensity#texelsPerUnit()}
+	 * ANTES de armar la cruz -- a densidad {@code X2}, cada cara resultante
+	 * mide el doble en cada dimensión (ticket 042, AC: cara física de 8×8
+	 * unidades → región de 16×16 texels). {@code offsetX}/{@code offsetY}
+	 * ya se interpretan en texels del atlas final (no en unidades de
+	 * modelo), así que no se escalan.
+	 */
+	public static CuboidFaces boxUnwrapFaces(Cuboid cuboid, int offsetX, int offsetY, TexelDensity density) {
+		int factor = density.texelsPerUnit();
+		int x = boxSizeAxis(cuboid.from().x(), cuboid.to().x()) * factor;
+		int y = boxSizeAxis(cuboid.from().y(), cuboid.to().y()) * factor;
+		int z = boxSizeAxis(cuboid.from().z(), cuboid.to().z()) * factor;
 
 		Face up = faceAt(offsetX + z, offsetY, x, z);
 		Face down = faceAt(offsetX + z + x, offsetY, x, z);
