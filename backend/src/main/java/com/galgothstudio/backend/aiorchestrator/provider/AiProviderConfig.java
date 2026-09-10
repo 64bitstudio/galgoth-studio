@@ -73,4 +73,22 @@ public class AiProviderConfig {
 		return new MockReasoningProvider();
 	}
 
+	/** Ticket 051, mismo mecanismo que vision/reasoning arriba: `AI_IMAGE_PROVIDER` (relaxed binding -&gt; `ai.image-provider`) elige entre OpenAI (default) y Mock. `ImageGenerationProvider` es una interfaz distinta de `VisionModelProvider`/`StructuredReasoningProvider` y `OpenAiImageProvider`/`MockImageProvider` no implementan ninguna de esas otras dos -- el hallazgo de ambigüedad documentado arriba no aplica acá. */
+	@Bean
+	@ConditionalOnProperty(name = "ai.image-provider", havingValue = "openai", matchIfMissing = true)
+	public ImageGenerationProvider openAiImageProvider(
+			RestClient.Builder restClientBuilder,
+			ObjectMapper objectMapper,
+			@Value("${ai.openai.base-url}") String baseUrl,
+			@Value("${ai.openai.api-key:}") String apiKey,
+			@Value("${ai.openai.image-model}") String model) {
+		return new OpenAiImageProvider(restClientBuilder, objectMapper, baseUrl, apiKey, model);
+	}
+
+	@Bean
+	@ConditionalOnProperty(name = "ai.image-provider", havingValue = "mock")
+	public ImageGenerationProvider mockImageProvider() {
+		return new MockImageProvider();
+	}
+
 }
