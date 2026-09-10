@@ -236,4 +236,74 @@ describe('MobEditor.vue', () => {
       expect(draft.model?.name).toBe('Carcomido editado')
     })
   })
+
+  describe('Tab "Textura" (ticket 050, HU-41 -- mockup 07)', () => {
+    const draftModel = {
+      mobId: 'mob-1',
+      projectId: 'p1',
+      name: 'Carcomido',
+      baseType: 'humanoid' as const,
+      units: 'minecraft_pixels' as const,
+      bones: [],
+      cuboids: [],
+      texture: { width: 128, height: 128, storageKey: null },
+      uv: { textureWidth: 128, textureHeight: 128, regions: [] },
+      animations: [],
+      exportSettings: { preferredFormatVersion: 'v5' as const },
+      referenceImages: [],
+    }
+
+    async function mountLoaded(): Promise<ReturnType<typeof shallowMount>> {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof fetch>(async (url) => {
+          const u = String(url)
+          if (u.match(/\/api\/mobs\/mob-1$/)) {
+            return jsonResponse({ id: 'mob-1', name: 'Carcomido', baseType: 'humanoid', status: 'draft', thumbnailKey: null, updatedAt: '' })
+          }
+          if (u.endsWith('/api/mobs/mob-1/draft')) {
+            return jsonResponse({ mobId: 'mob-1', draftVersion: 2, model: draftModel, updatedAt: '' })
+          }
+          throw new Error(`fetch inesperado: ${u}`)
+        }),
+      )
+      const wrapper = shallowMount(MobEditor, { global: { plugins: [await routerAt('p1', 'mob-1')] } })
+      await flushPromises()
+      return wrapper
+    }
+
+    it('por default (tab Modelo) NO monta TextureCanvas', async () => {
+      const wrapper = await mountLoaded()
+
+      expect(wrapper.findComponent({ name: 'ThreeViewport' }).exists()).toBe(true)
+      expect(wrapper.findComponent({ name: 'EditorToolbar' }).exists()).toBe(true)
+      expect(wrapper.findComponent({ name: 'TextureCanvas' }).exists()).toBe(false)
+    })
+
+    it('cambiar a la tab Textura (evento de EditorHeader) monta TextureCanvas con el draft real y oculta el editor de modelo', async () => {
+      const wrapper = await mountLoaded()
+
+      await wrapper.findComponent({ name: 'EditorHeader' }).vm.$emit('update:activeTab', 'textura')
+
+      const textureCanvas = wrapper.findComponent({ name: 'TextureCanvas' })
+      expect(textureCanvas.exists()).toBe(true)
+      expect(textureCanvas.props('model')).toMatchObject({ mobId: 'mob-1', name: 'Carcomido' })
+      expect(wrapper.findComponent({ name: 'ThreeViewport' }).exists()).toBe(false)
+      expect(wrapper.findComponent({ name: 'EditorToolbar' }).exists()).toBe(false)
+      expect(wrapper.findComponent({ name: 'HierarchyPanel' }).exists()).toBe(false)
+      expect(wrapper.findComponent({ name: 'InspectorPanel' }).exists()).toBe(false)
+    })
+
+    it('volver a la tab Modelo restaura ThreeViewport/EditorToolbar y desmonta TextureCanvas', async () => {
+      const wrapper = await mountLoaded()
+      const header = wrapper.findComponent({ name: 'EditorHeader' })
+
+      await header.vm.$emit('update:activeTab', 'textura')
+      await header.vm.$emit('update:activeTab', 'modelo')
+
+      expect(wrapper.findComponent({ name: 'TextureCanvas' }).exists()).toBe(false)
+      expect(wrapper.findComponent({ name: 'ThreeViewport' }).exists()).toBe(true)
+      expect(wrapper.findComponent({ name: 'EditorToolbar' }).exists()).toBe(true)
+    })
+  })
 })
