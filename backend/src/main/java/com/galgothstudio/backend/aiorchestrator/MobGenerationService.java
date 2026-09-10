@@ -96,7 +96,20 @@ public class MobGenerationService {
 	/** `provider`/`model`/`prompt_version`/`schema_version` son `NOT NULL` (003) pero todavía no hay ninguna {@link AiProviderResponse} real cuando se crea la fila -- se sobreescribe en cuanto la primera respuesta llega, ver {@link #updateJobProviderInfo}. */
 	private static final String PENDING_PLACEHOLDER = "pending";
 
-	/** Ver la nota equivalente del ticket 028: 128x128 es la resolución recomendada por defecto del wizard (027) -- deja margen real para que un rig humanoide completo nunca dispare `UvAtlasOverflowException`. */
+	/**
+	 * Placeholder de arranque de {@link #emptyModelFor} -- SOLO usado antes
+	 * de que exista ningún cuboid real (preview de streaming/heartbeat vía
+	 * {@code GeometryEngine.apply(model, ops)}, la sobrecarga de 2
+	 * argumentos que nunca calcula UV). Ticket 042, Diseño técnico §7 de
+	 * `docs/definiciones/galgoth-studio-fase3-textura.md`: el atlas real
+	 * del mob YA NO es este valor fijo -- {@code GeometryPlannerService
+	 * #applyOperations} lo recalcula desde cero (footprint empaquetado de
+	 * los cuboids reales a densidad {@code X1}, potencia de 2 inmediatamente
+	 * contenedora) antes de la aplicación final con UV, así que estas
+	 * dimensiones nunca llegan a ser el atlas final de ningún mob generado
+	 * -- antes del ticket 042 sí lo eran (128×128 hardcodeado), de ahí que
+	 * el valor se conserve solo como scratch/placeholder transitorio.
+	 */
 	private static final TextureDocument DEFAULT_TEXTURE = new TextureDocument(128, 128, null);
 
 	private final MobRepository mobRepository;
