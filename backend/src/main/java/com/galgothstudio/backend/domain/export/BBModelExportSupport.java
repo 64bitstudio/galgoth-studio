@@ -25,7 +25,13 @@ final class BBModelExportSupport {
 	// mientras el exportador recomputaba UV en cada export (ningún test
 	// dependía de bytes estables), pero incompatible con la nueva garantía
 	// de determinismo de `export(model)` al ser ahora el único overload.
-	private static final String PLACEHOLDER_TEXTURE_UUID = "00000000-0000-4000-8000-000000000001";
+	//
+	// Ticket 056: el MISMO UUID/slot se reutiliza tanto para la textura
+	// placeholder como para la textura real -- ambas ocupan el ÚNICO
+	// índice de textura (0) que `Face.texture` referencia (ver docstring
+	// de `BBTexture`: la POSICIÓN en el array es lo que importa, nunca el
+	// campo `id`), así que no hace falta un UUID distinto por caso.
+	private static final String TEXTURE_UUID = "00000000-0000-4000-8000-000000000001";
 
 	private BBModelExportSupport() {
 	}
@@ -42,18 +48,28 @@ final class BBModelExportSupport {
 	}
 
 	/**
-	 * Textura placeholder embebida en cualquier export -- ticket 011, sin cambios
-	 * de fondo en el ticket 044 (la reversión de ese ticket es sobre EL
-	 * CÁLCULO DE LA UV, no sobre este mecanismo, ortogonal: dimensiones
-	 * tomadas tal cual de {@code MobProjectModel.texture()}, nunca
-	 * recalculadas). Necesaria para que Blockbench/`FmmCompatibilityValidator`
+	 * Textura embebida en cualquier export -- ticket 011 (placeholder),
+	 * ampliado en el ticket 056 (HU-43) para embeber la textura REAL
+	 * cuando existe: {@code realPngBytes} llega ya resuelto por el CALLER
+	 * (`MobExportService`, vía `AssetStorageService`) -- el exportador
+	 * sigue sin ninguna dependencia de infraestructura/I/O (garantía ya
+	 * defendida por el PO, "Hallazgo A revertido" del Diseño técnico §3 de
+	 * `docs/definiciones/galgoth-studio-fase3-textura.md"): recibe bytes ya
+	 * en memoria, nunca una `AssetStorageService`/key que resolver él
+	 * mismo. `null` (mob sin ninguna región pintada, o legacy sin
+	 * `storageKey`) preserva el comportamiento de siempre: checkerboard
+	 * auto-generado, dimensiones EXACTAS al atlas del modelo.
+	 *
+	 * <p>Necesaria en ambos casos para que Blockbench/`FmmCompatibilityValidator`
 	 * resuelvan el índice de textura que ya trae cada `Face` cuando la UV
 	 * fue asignada (por los llamadores de motor, nunca por el exportador).
 	 */
-	static BBTexture buildPlaceholderTexture(int width, int height) {
-		byte[] png = PlaceholderTexture.generatePng(width, height);
+	static BBTexture buildTexture(int width, int height, byte[] realPngBytes) {
+		boolean hasRealTexture = realPngBytes != null;
+		byte[] png = hasRealTexture ? realPngBytes : PlaceholderTexture.generatePng(width, height);
 		String dataUri = "data:image/png;base64," + Base64.getEncoder().encodeToString(png);
-		return new BBTexture(PLACEHOLDER_TEXTURE_UUID, "placeholder", "0", false, width, height, dataUri);
+		String name = hasRealTexture ? "texture" : "placeholder";
+		return new BBTexture(TEXTURE_UUID, name, "0", false, width, height, dataUri);
 	}
 
 	static String serialize(Object document) {

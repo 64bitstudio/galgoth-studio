@@ -66,11 +66,13 @@ public final class BBModelExporterV5 {
 	 * de geometría, nunca en este punto. Determinista: el mismo modelo
 	 * exportado dos veces produce bytes idénticos.
 	 *
-	 * <p>Sigue embebiendo una textura placeholder con las MISMAS dimensiones
-	 * que el atlas (`MobProjectModel.texture`, ticket 011) -- mecanismo
-	 * ortogonal a la UV en sí (Blockbench/`FmmCompatibilityValidator`
-	 * necesitan poder resolver el índice de textura que ya trae cada
-	 * {@code Face} cuando la UV fue asignada, sin importar quién la asignó).
+	 * <p>Embebe la textura PLACEHOLDER (dimensiones EXACTAS al atlas,
+	 * `MobProjectModel.texture`, ticket 011) -- mecanismo ortogonal a la UV
+	 * en sí (Blockbench/`FmmCompatibilityValidator` necesitan poder
+	 * resolver el índice de textura que ya trae cada {@code Face} cuando la
+	 * UV fue asignada, sin importar quién la asignó). Overload de
+	 * conveniencia -- ver {@link #export(MobProjectModel, byte[])} (ticket
+	 * 056, HU-43) para embeber la textura REAL en vez del placeholder.
 	 *
 	 * <p>Para revisiones legacy de Fase 1+2 que necesiten normalizar su UV
 	 * antes de este punto, ver {@code LegacyUvNormalizationService}
@@ -78,9 +80,26 @@ public final class BBModelExporterV5 {
 	 * dentro de él.
 	 */
 	public static String export(MobProjectModel model) {
-		BBTexture placeholder =
-				BBModelExportSupport.buildPlaceholderTexture(model.texture().width(), model.texture().height());
-		return BBModelExportSupport.serialize(buildDocument(model, List.of(placeholder)));
+		return export(model, null);
+	}
+
+	/**
+	 * Ticket 056 (HU-43) -- variante que embebe la textura REAL pintada/
+	 * generada en vez del checkerboard placeholder, cuando {@code
+	 * realTexturePngBytes} no es {@code null}. El exportador SIGUE siendo
+	 * un serializador puro (garantía ya defendida por el PO, "Hallazgo A
+	 * revertido", Diseño técnico §3 de
+	 * `docs/definiciones/galgoth-studio-fase3-textura.md`): nunca resuelve
+	 * él mismo un {@code storageKey} ni conoce `AssetStorageService` -- el
+	 * CALLER (`MobExportService`) ya resolvió los bytes reales (o decidió
+	 * pasar {@code null}) antes de invocar este método, mismo patrón que
+	 * `LegacyUvNormalizationService` para la UV legacy. {@code null}
+	 * preserva EXACTAMENTE el comportamiento de siempre (placeholder).
+	 */
+	public static String export(MobProjectModel model, byte[] realTexturePngBytes) {
+		BBTexture texture =
+				BBModelExportSupport.buildTexture(model.texture().width(), model.texture().height(), realTexturePngBytes);
+		return BBModelExportSupport.serialize(buildDocument(model, List.of(texture)));
 	}
 
 	private static BBModelDocument buildDocument(MobProjectModel model, List<BBTexture> textures) {

@@ -2,11 +2,13 @@ package com.galgothstudio.backend.project.export;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.galgothstudio.backend.asset.AssetStorageService;
 import com.galgothstudio.backend.domain.export.BBModelExporterV5;
 import com.galgothstudio.backend.domain.export.validation.FmmCompatibilityValidator;
 import com.galgothstudio.backend.domain.export.validation.ValidationIssue;
 import com.galgothstudio.backend.domain.export.validation.ValidationResult;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
+import com.galgothstudio.backend.domain.model.TextureDocument;
 import com.galgothstudio.backend.domain.uv.LegacyUvNormalizationService;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
 import com.galgothstudio.backend.project.persistence.MobDraftEntity;
@@ -19,6 +21,8 @@ import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,14 +38,29 @@ import org.springframework.transaction.annotation.Transactional;
  * (decisión confirmada explícitamente con el PO): describe un artefacto
  * real ya exportable, nunca un estado hipotético que podría no
  * corresponder a lo que "Exportar última versión guardada" produciría.
+ *
+ * <p>Ticket 056 (HU-43) -- segundo gap real detectado y cerrado con VoBo
+ * explícito del PO: `BBModelExporterV5`/`V4` nunca leían
+ * `model.texture().storageKey()`, así que TODO export embebía siempre el
+ * checkerboard placeholder (011), incluso con textura real ya persistida
+ * (045/046-054). Este servicio es ahora el ÚNICO punto que resuelve esos
+ * bytes reales vía {@link AssetStorageService#get}, y se los pasa al
+ * exportador como parámetro -- el exportador SIGUE sin ninguna
+ * dependencia de infraestructura (garantía ya defendida por el PO,
+ * "Hallazgo A revertido", Diseño técnico §3), mismo patrón que
+ * {@link LegacyUvNormalizationService}: resolución explícita del CALLER,
+ * nunca dentro del exportador.
  */
 @Service
 public class MobExportService {
+
+	private static final Logger log = LoggerFactory.getLogger(MobExportService.class);
 
 	private final MobRepository mobRepository;
 	private final MobRevisionRepository revisionRepository;
 	private final MobDraftRepository draftRepository;
 	private final LegacyUvNormalizationService legacyUvNormalizationService;
+	private final AssetStorageService assetStorageService;
 	private final ObjectMapper objectMapper;
 
 	public MobExportService(
@@ -54,11 +73,13 @@ public class MobExportService {
 			// llamar al exportador, que desde este ticket ya no acepta ningún
 			// UvLayoutStrategy (ni lo necesita: nunca recomputa nada).
 			LegacyUvNormalizationService legacyUvNormalizationService,
+			AssetStorageService assetStorageService,
 			ObjectMapper objectMapper) {
 		this.mobRepository = mobRepository;
 		this.revisionRepository = revisionRepository;
 		this.draftRepository = draftRepository;
 		this.legacyUvNormalizationService = legacyUvNormalizationService;
+		this.assetStorageService = assetStorageService;
 		this.objectMapper = objectMapper;
 	}
 
@@ -73,7 +94,7 @@ public class MobExportService {
 		if (hasSavedRevision) {
 			latestRevisionModel = loadRevisionModel(mob);
 			MobProjectModel normalized = legacyUvNormalizationService.normalizeIfSafe(latestRevisionModel);
-			String bbmodelJson = BBModelExporterV5.export(normalized);
+			String bbmodelJson = BBModelExporterV5.export(normalized, resolveRealTextureBytes(normalized));
 			ValidationResult validation = FmmCompatibilityValidator.validate(bbmodelJson);
 			fmmCompatible = validation.pass();
 			fmmIssues = validation.issues();
@@ -92,8 +113,36 @@ public class MobExportService {
 		}
 		MobProjectModel model = loadRevisionModel(mob);
 		MobProjectModel normalized = legacyUvNormalizationService.normalizeIfSafe(model);
-		String bbmodelJson = BBModelExporterV5.export(normalized);
+		String bbmodelJson = BBModelExporterV5.export(normalized, resolveRealTextureBytes(normalized));
 		return new ExportedFile(safeFilename(mob.getName()), bbmodelJson);
+	}
+
+	/**
+	 * Ticket 056 (HU-43) -- `null` (nunca lanza) si el mob no tiene textura
+	 * real todavía (`storageKey == null`, el caso de siempre para un mob
+	 * sin ninguna región pintada -- AC #2 exige que ESE caso siga usando el
+	 * placeholder tal cual). También `null` si `storageKey` está seteado
+	 * pero los bytes ya no existen en el storage: invariante roto en teoría
+	 * (`DraftPersistenceService.saveRevision` ya verifica esto en
+	 * profundidad ANTES de escribir la Revision, ticket 045), pero el
+	 * export nunca debe romperse en caliente por eso -- se loguea como
+	 * WARN (nunca silencioso) y se cae al placeholder en vez de fallar
+	 * un export que de otro modo sería válido.
+	 */
+	private byte[] resolveRealTextureBytes(MobProjectModel model) {
+		TextureDocument texture = model.texture();
+		String storageKey = texture != null ? texture.storageKey() : null;
+		if (storageKey == null) {
+			return null;
+		}
+		Optional<byte[]> bytes = assetStorageService.get(storageKey);
+		if (bytes.isEmpty()) {
+			log.warn(
+					"Revision referencia storageKey '{}' que ya no existe en el storage -- exportando con placeholder en su lugar (invariante roto: DraftPersistenceService.saveRevision debería haber impedido esto).",
+					storageKey);
+			return null;
+		}
+		return bytes.get();
 	}
 
 	private boolean computeHasUnsavedChanges(UUID mobId, boolean hasSavedRevision, MobProjectModel latestRevisionModel) {

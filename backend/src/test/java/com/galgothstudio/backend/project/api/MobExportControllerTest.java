@@ -7,6 +7,7 @@ import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -14,7 +15,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.galgothstudio.backend.TestcontainersConfiguration;
+import com.galgothstudio.backend.asset.AssetStorageService;
 import jakarta.persistence.EntityManager;
+import java.util.Base64;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,6 +54,13 @@ class MobExportControllerTest {
 	@Autowired
 	private EntityManager entityManager;
 
+	@Autowired
+	private AssetStorageService assetStorageService;
+
+	// PNG 1x1 real (mismo fixture que `MobTextureControllerTest`) -- válido de verdad, mínimo posible.
+	private static final byte[] TINY_PNG =
+			Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+
 	private UUID aProjectAndMob(String name) {
 		UUID projectId = UUID.randomUUID();
 		jdbc.update("insert into projects (id, name) values (?, ?)", projectId, "Galgoth");
@@ -62,6 +72,12 @@ class MobExportControllerTest {
 	}
 
 	private String model(UUID mobId, UUID projectId, int cuboidSize) {
+		return modelWithTexture(mobId, projectId, cuboidSize, null);
+	}
+
+	/** Ticket 056 (HU-43) -- variante con `texture.storageKey` seteado, para probar el export con textura real. */
+	private String modelWithTexture(UUID mobId, UUID projectId, int cuboidSize, String storageKey) {
+		String storageKeyJson = storageKey == null ? "null" : "\"" + storageKey + "\"";
 		return """
 				{
 				  "mobId": "%s", "projectId": "%s", "name": "Carcomido", "baseType": "humanoid", "units": "minecraft_pixels",
@@ -70,12 +86,12 @@ class MobExportControllerTest {
 				    {"id":"torso","name":"torso","boneId":"body","from":[0,0,0],"to":[%d,%d,%d],"origin":[0,0,0],"rotation":[0,0,0],
 				     "faces":{"north":{"uv":[0,0,0,0],"texture":null},"south":{"uv":[0,0,0,0],"texture":null},"east":{"uv":[0,0,0,0],"texture":null},"west":{"uv":[0,0,0,0],"texture":null},"up":{"uv":[0,0,0,0],"texture":null},"down":{"uv":[0,0,0,0],"texture":null}}}
 				  ],
-				  "texture": {"width":64,"height":64,"storageKey":null},
+				  "texture": {"width":64,"height":64,"storageKey":%s},
 				  "uv": {"textureWidth":64,"textureHeight":64,"regions":[]},
 				  "animations": [], "exportSettings": {"preferredFormatVersion":"v5"}, "referenceImages": []
 				}
 				"""
-				.formatted(mobId, projectId, cuboidSize, cuboidSize, cuboidSize);
+				.formatted(mobId, projectId, cuboidSize, cuboidSize, cuboidSize, storageKeyJson);
 	}
 
 	private UUID projectIdOf(UUID mobId) {
@@ -194,6 +210,42 @@ class MobExportControllerTest {
 		entityManager.flush();
 		Integer draftVersionAfter = jdbc.queryForObject("select draft_version from mob_drafts where mob_id = ?", Integer.class, mobId);
 		assertThat(draftVersionAfter).isEqualTo(draftVersionBefore); // exportar NUNCA toca mob_drafts
+	}
+
+	@Test
+	void exportar_bbmodel_con_textura_real_persistida_la_embebe_en_vez_del_placeholder_AC2_ticket_056() throws Exception {
+		UUID mobId = aProjectAndMob("Con textura real");
+		UUID projectId = projectIdOf(mobId);
+
+		MvcResult uploadResult = mockMvc.perform(put("/api/mobs/{mobId}/texture", mobId).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
+				.andExpect(status().isOk())
+				.andReturn();
+		String storageKey = objectMapper.readTree(uploadResult.getResponse().getContentAsByteArray()).get("storageKey").asText();
+
+		String modelJson = modelWithTexture(mobId, projectId, 4, storageKey);
+		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).contentType(MediaType.APPLICATION_JSON).content("{\"model\":" + modelJson + "}"))
+				.andExpect(status().isOk());
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).contentType(MediaType.APPLICATION_JSON).content("{\"model\":" + modelJson + "}"))
+				.andExpect(status().isCreated());
+
+		// AC HU-20 (056): la validación FMM sigue sin errores pendientes, ahora con contenido de textura real.
+		mockMvc.perform(get("/api/mobs/{mobId}/export/status", mobId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.fmmCompatible", is(true)))
+				.andExpect(jsonPath("$.fmmIssues", hasSize(0)));
+
+		MvcResult exportResult = mockMvc.perform(get("/api/mobs/{mobId}/export/bbmodel", mobId))
+				.andExpect(status().isOk())
+				.andReturn();
+		JsonNode bbmodel = objectMapper.readTree(exportResult.getResponse().getContentAsByteArray());
+		JsonNode texture = bbmodel.get("textures").get(0);
+		assertThat(texture.get("name").asText()).isEqualTo("texture"); // nunca "placeholder" con storageKey real
+		String dataUri = texture.get("source").asText();
+		byte[] embeddedBytes = Base64.getDecoder().decode(dataUri.substring(dataUri.indexOf(',') + 1));
+		// El backend re-codifica canónicamente el PNG antes de persistirlo
+		// (`TextureService.decodeAndReencode`) -- se compara contra esos
+		// MISMOS bytes ya persistidos en el storage, no contra `TINY_PNG` crudo.
+		assertThat(embeddedBytes).isEqualTo(assetStorageService.get(storageKey).orElseThrow());
 	}
 
 	@Test
