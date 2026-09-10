@@ -30,10 +30,17 @@
  * necesita reaccionar a la escritura de UN píxel individual, solo saber
  * que "el atlas cambió" (recarga/undo/redo), por eso se llama
  * `triggerRef` explícitamente después de mutar el buffer en el lugar.
+ *
+ * Ticket 047: el slicing 2D de un `rect` sobre el buffer plano RGBA se
+ * extrajo a `textureRectBuffer.ts` (`writeRectInto`/`readRectFrom`) para
+ * que la Cubeta (flood-fill real, `pixelTools.ts`) lo reutilice sin
+ * duplicar la misma mecánica -- comportamiento idéntico al que este
+ * archivo tenía inline, cero cambio de API pública ni de tests.
  */
 import { defineStore } from 'pinia'
 import { computed, shallowRef, triggerRef } from 'vue'
 import type { TexturePatchCommand, TextureRect } from './TexturePatchCommand'
+import { readRectFrom, writeRectInto } from './textureRectBuffer'
 
 export interface TextureAtlas {
   width: number
@@ -44,27 +51,6 @@ export interface TextureAtlas {
 
 function createBlankAtlas(width: number, height: number): TextureAtlas {
   return { width, height, pixels: new Uint8ClampedArray(width * height * 4) }
-}
-
-/** Escribe `patch` (buffer RGBA de `rect.width * rect.height * 4`) dentro de `atlas.pixels`, fila por fila -- O(área de `rect`), nunca O(atlas completo). */
-function writeRect(atlas: TextureAtlas, rect: TextureRect, patch: Uint8ClampedArray): void {
-  const rowBytes = rect.width * 4
-  for (let row = 0; row < rect.height; row += 1) {
-    const srcStart = row * rowBytes
-    const destStart = ((rect.y + row) * atlas.width + rect.x) * 4
-    atlas.pixels.set(patch.subarray(srcStart, srcStart + rowBytes), destStart)
-  }
-}
-
-/** Lee `rect` desde `atlas.pixels` a un buffer RGBA nuevo de `rect.width * rect.height * 4` -- O(área de `rect`). */
-function readRect(atlas: TextureAtlas, rect: TextureRect): Uint8ClampedArray {
-  const rowBytes = rect.width * 4
-  const out = new Uint8ClampedArray(rect.width * rect.height * 4)
-  for (let row = 0; row < rect.height; row += 1) {
-    const srcStart = ((rect.y + row) * atlas.width + rect.x) * 4
-    out.set(atlas.pixels.subarray(srcStart, srcStart + rowBytes), row * rowBytes)
-  }
-  return out
 }
 
 export const useTextureEditorStore = defineStore('textureEditor', () => {
@@ -89,7 +75,7 @@ export const useTextureEditorStore = defineStore('textureEditor', () => {
 
   /** Copia de los píxeles vigentes de `rect` -- para que el caller capture `beforePixels` antes de pintar (el canvas real llega en el ticket 047). `null` si no hay atlas cargado. */
   function readRegion(rect: TextureRect): Uint8ClampedArray | null {
-    return atlas.value ? readRect(atlas.value, rect) : null
+    return atlas.value ? readRectFrom(atlas.value.pixels, atlas.value.width, rect) : null
   }
 
   /**
@@ -104,7 +90,7 @@ export const useTextureEditorStore = defineStore('textureEditor', () => {
     if (!atlas.value) {
       return
     }
-    writeRect(atlas.value, rect, afterPixels)
+    writeRectInto(atlas.value.pixels, atlas.value.width, rect, afterPixels)
     triggerRef(atlas)
     undoStack.value = [...undoStack.value, { rect, beforePixels, afterPixels }]
     redoStack.value = []
@@ -117,7 +103,7 @@ export const useTextureEditorStore = defineStore('textureEditor', () => {
     }
     const command = undoStack.value.at(-1)!
     undoStack.value = undoStack.value.slice(0, -1)
-    writeRect(atlas.value, command.rect, command.beforePixels)
+    writeRectInto(atlas.value.pixels, atlas.value.width, command.rect, command.beforePixels)
     triggerRef(atlas)
     redoStack.value = [...redoStack.value, command]
   }
@@ -129,7 +115,7 @@ export const useTextureEditorStore = defineStore('textureEditor', () => {
     }
     const command = redoStack.value.at(-1)!
     redoStack.value = redoStack.value.slice(0, -1)
-    writeRect(atlas.value, command.rect, command.afterPixels)
+    writeRectInto(atlas.value.pixels, atlas.value.width, command.rect, command.afterPixels)
     triggerRef(atlas)
     undoStack.value = [...undoStack.value, command]
   }

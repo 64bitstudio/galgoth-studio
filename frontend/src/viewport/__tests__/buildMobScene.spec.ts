@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { Mesh } from 'three'
+import { DataTexture, Mesh, MeshStandardMaterial } from 'three'
 import { describe, expect, it } from 'vitest'
 import { applyPivotRotation } from '../../domain/coordinateSystem'
 import type { Bone, Cuboid, MobProjectModel, Vec3 } from '../../domain/MobProjectModel'
@@ -124,6 +124,27 @@ describe('buildMobGroup', () => {
 
     const meshA = meshNamed(group, 'a')
     expect(meshA.children.some((c) => c.name === SELECTION_OUTLINE_NAME)).toBe(false)
+  })
+
+  it('ticket 047: sin atlasTexture, el material sigue siendo el gris plano de siempre (cero cambio de comportamiento para callers existentes)', () => {
+    const root = bone('root', null, [0, 0, 0], [0, 0, 0])
+    const box = cuboid('box', 'root', [0, 0, 0], [1, 1, 1], [0, 0, 0], [0, 0, 0])
+    const group = buildMobGroup(modelWith([root], [box]))
+
+    const material = meshNamed(group, 'box').material as MeshStandardMaterial
+    expect(material.map).toBeNull()
+  })
+
+  it('ticket 047 (HU-26): con atlasTexture, el cuboid usa esa textura como map (blanco, sin tinte) en vez del gris plano', () => {
+    const root = bone('root', null, [0, 0, 0], [0, 0, 0])
+    const box = cuboid('box', 'root', [0, 0, 0], [1, 1, 1], [0, 0, 0], [0, 0, 0])
+    const atlasTexture = new DataTexture(new Uint8ClampedArray(64 * 64 * 4), 64, 64)
+
+    const group = buildMobGroup(modelWith([root], [box]), null, atlasTexture)
+
+    const material = meshNamed(group, 'box').material as MeshStandardMaterial
+    expect(material.map).toBe(atlasTexture)
+    expect(material.color.getHex()).toBe(0xffffff)
   })
 
   it('la fixture real Carcomido produce un mesh por cuboid y un marcador por bone (end-to-end)', () => {

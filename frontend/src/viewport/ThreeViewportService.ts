@@ -18,6 +18,12 @@
  * `setModel` reatachea `transformControls` al mesh NUEVO que corresponda
  * al cuboid seleccionado -- si se dejara el mesh viejo, el gizmo quedaría
  * apuntando a un objeto huérfano ya removido de la escena.
+ *
+ * Ticket 047: `setModel` gana un 3er parámetro opcional `atlasTexture`
+ * (HU-26) -- forwardeado tal cual a `buildMobGroup`. Los callers que no
+ * lo pasan (`ThreeViewport.vue`/`GenerationPreviewViewport.vue`, tab
+ * Modelo) siguen viendo el gris plano de siempre, cero cambio de
+ * comportamiento.
  */
 import {
   AmbientLight,
@@ -28,6 +34,7 @@ import {
   PerspectiveCamera,
   Raycaster,
   Scene,
+  type Texture,
   Vector2,
   Vector3,
   WebGLRenderer,
@@ -124,11 +131,11 @@ export class ThreeViewportService {
    * seleccionado (o lo desatachea si no hay selección) -- ver docstring
    * de la clase sobre por qué esto es necesario en cada llamada.
    */
-  setModel(model: MobProjectModel, selectedCuboidId?: string | null): void {
+  setModel(model: MobProjectModel, selectedCuboidId?: string | null, atlasTexture?: Texture | null): void {
     if (this.currentMobGroup) {
       this.scene.remove(this.currentMobGroup)
     }
-    this.currentMobGroup = buildMobGroup(model, selectedCuboidId)
+    this.currentMobGroup = buildMobGroup(model, selectedCuboidId, atlasTexture)
     this.scene.add(this.currentMobGroup)
 
     const selectedMesh = selectedCuboidId ? this.findCuboidMesh(selectedCuboidId) : undefined

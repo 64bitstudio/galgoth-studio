@@ -16,9 +16,18 @@
  * la rotación propia del cuboid sobre su origen, y sobre ESE resultado
  * aplica cada bone ancestro, de más cercano a más lejano, sobre su
  * propio pivote -- nunca sobre las coordenadas originales sin acumular).
+ *
+ * Ticket 047 (HU-26): `atlasTexture` opcional -- si se pasa, cada cuboid
+ * se pinta con la textura del atlas real (UV mapeada cara por cara vía
+ * `applyCuboidFaceUvs`, `textureUvMapping.ts`) en vez del gris plano
+ * (`CUBOID_COLOR`). Sin este parámetro (todos los callers existentes:
+ * `ThreeViewport.vue`/`GenerationPreviewViewport.vue`, tab Modelo) el
+ * comportamiento es EXACTAMENTE el mismo de antes -- aditivo, no rompe
+ * ningún caller ya mergeado.
  */
 import {
   BoxGeometry,
+  type BufferAttribute,
   EdgesGeometry,
   Group,
   LineBasicMaterial,
@@ -27,11 +36,16 @@ import {
   MeshStandardMaterial,
   Quaternion,
   SphereGeometry,
+  type Texture,
 } from 'three'
 import { applyPivotRotation, rotationMatrixFromEulerXYZDeg } from '../domain/coordinateSystem'
 import type { Bone, Cuboid, MobProjectModel, Vec3 } from '../domain/MobProjectModel'
+import { applyCuboidFaceUvs } from './textureUvMapping'
 
 const CUBOID_COLOR = 0x8a8f98
+// Blanco -- con `map` seteado, el color del material TIÑE la textura;
+// blanco puro deja pasar los colores reales del atlas sin alterarlos.
+const TEXTURED_CUBOID_COLOR = 0xffffff
 const BONE_PIVOT_COLOR = 0xe0574c
 const BONE_PIVOT_RADIUS = 0.5
 const SELECTION_OUTLINE_COLOR = 0xffb020
@@ -57,7 +71,13 @@ function midpoint(from: Vec3, to: Vec3): Vec3 {
   return [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2, (from[2] + to[2]) / 2]
 }
 
-function buildCuboidMesh(cuboid: Cuboid, chain: Bone[], isSelected: boolean): Mesh {
+interface AtlasTextureInfo {
+  texture: Texture
+  width: number
+  height: number
+}
+
+function buildCuboidMesh(cuboid: Cuboid, chain: Bone[], isSelected: boolean, atlas: AtlasTextureInfo | null): Mesh {
   const size: Vec3 = [
     Math.abs(cuboid.to[0] - cuboid.from[0]),
     Math.abs(cuboid.to[1] - cuboid.from[1]),
@@ -66,7 +86,13 @@ function buildCuboidMesh(cuboid: Cuboid, chain: Bone[], isSelected: boolean): Me
   const localCenter = midpoint(cuboid.from, cuboid.to)
 
   const geometry = new BoxGeometry(size[0], size[1], size[2])
-  const mesh = new Mesh(geometry, new MeshStandardMaterial({ color: CUBOID_COLOR }))
+  if (atlas) {
+    applyCuboidFaceUvs(geometry.getAttribute('uv') as BufferAttribute, cuboid.faces, atlas.width, atlas.height)
+  }
+  const material = atlas
+    ? new MeshStandardMaterial({ color: TEXTURED_CUBOID_COLOR, map: atlas.texture })
+    : new MeshStandardMaterial({ color: CUBOID_COLOR })
+  const mesh = new Mesh(geometry, material)
   mesh.name = cuboid.name
   // El nombre puede repetirse entre cuboids -- el picking (ticket 017) usa
   // este id real, nunca el nombre, para identificar qué se clickeó.
@@ -119,15 +145,23 @@ function buildBonePivotMarker(bone: Bone, bonesById: Map<string, Bone>): Mesh {
  * (AC #2 del ticket 016). La sincronización real de selección con la
  * jerarquía llega en el ticket 017 -- este parámetro es la superficie que
  * ese ticket conectará a un store compartido.
+ *
+ * `atlasTexture` (ticket 047, HU-26): si se pasa, cada cuboid se pinta
+ * con este mapa usando `model.uv.textureWidth/textureHeight` como
+ * dimensiones de referencia para normalizar `Cuboid.faces[x].uv`
+ * (píxeles del atlas) a UV 0..1 -- ver `textureUvMapping.ts`.
  */
-export function buildMobGroup(model: MobProjectModel, selectedCuboidId?: string | null): Group {
+export function buildMobGroup(model: MobProjectModel, selectedCuboidId?: string | null, atlasTexture?: Texture | null): Group {
   const bonesById = new Map(model.bones.map((bone) => [bone.id, bone]))
   const group = new Group()
   group.name = model.name
+  const atlas: AtlasTextureInfo | null = atlasTexture
+    ? { texture: atlasTexture, width: model.uv.textureWidth, height: model.uv.textureHeight }
+    : null
 
   for (const cuboid of model.cuboids) {
     const chain = ancestorChain(cuboid.boneId, bonesById)
-    group.add(buildCuboidMesh(cuboid, chain, cuboid.id === selectedCuboidId))
+    group.add(buildCuboidMesh(cuboid, chain, cuboid.id === selectedCuboidId, atlas))
   }
   for (const bone of model.bones) {
     group.add(buildBonePivotMarker(bone, bonesById))
