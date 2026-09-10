@@ -17,7 +17,10 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -217,12 +220,14 @@ class MobGeometryControllerTest {
 	}
 
 	// -- Whitelist cerrada: moveCuboid/rotateCuboid/pivot NUNCA pasan por este endpoint --
+	// (S5976: mismas 3 pruebas de antes, unificadas en un solo parametrizado)
 
-	@Test
-	void moveCuboid_esRechazadoExplicitamenteConUnErrorClaro() throws Exception {
+	@ParameterizedTest
+	@MethodSource("nonWhitelistedOperations")
+	void operacionFueraDeLaWhitelist_esRechazadaExplicitamenteConUnErrorClaro(String operationJson) throws Exception {
 		UUID mobId = aMob(aProject());
 		seedDraft(mobId, fixtureJson());
-		String operations = "[{\"op\":\"moveCuboid\",\"target\":\"head_main\",\"delta\":[1,0,0]}]";
+		String operations = "[" + operationJson + "]";
 
 		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId)
 						.contentType(MediaType.APPLICATION_JSON)
@@ -231,30 +236,11 @@ class MobGeometryControllerTest {
 				.andExpect(jsonPath("$.error", is("UNSUPPORTED_GEOMETRY_OPERATION")));
 	}
 
-	@Test
-	void rotateCuboid_esRechazadoExplicitamenteConUnErrorClaro() throws Exception {
-		UUID mobId = aMob(aProject());
-		seedDraft(mobId, fixtureJson());
-		String operations = "[{\"op\":\"rotateCuboid\",\"target\":\"head_main\",\"rotationDeg\":[0,15,0]}]";
-
-		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content(applyRequestBody(operations, false)))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.error", is("UNSUPPORTED_GEOMETRY_OPERATION")));
-	}
-
-	@Test
-	void setBonePivot_pivotEsRechazadoExplicitamenteConUnErrorClaro() throws Exception {
-		UUID mobId = aMob(aProject());
-		seedDraft(mobId, fixtureJson());
-		String operations = "[{\"op\":\"setBonePivot\",\"target\":\"head\",\"pivot\":[0,25,0]}]";
-
-		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content(applyRequestBody(operations, false)))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.error", is("UNSUPPORTED_GEOMETRY_OPERATION")));
+	private static Stream<String> nonWhitelistedOperations() {
+		return Stream.of(
+				"{\"op\":\"moveCuboid\",\"target\":\"head_main\",\"delta\":[1,0,0]}",
+				"{\"op\":\"rotateCuboid\",\"target\":\"head_main\",\"rotationDeg\":[0,15,0]}",
+				"{\"op\":\"setBonePivot\",\"target\":\"head\",\"pivot\":[0,25,0]}");
 	}
 
 	// -- Mob/draft inexistentes: mismos códigos ya establecidos por 020 --
