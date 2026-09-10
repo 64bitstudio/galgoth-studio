@@ -35,7 +35,11 @@ class AiProviderConfigTest {
 
 	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
 			.withUserConfiguration(MinimalInfrastructureBeans.class, AiProviderConfig.class)
-			.withPropertyValues("ai.claude.base-url=https://api.anthropic.com", "ai.claude.model=claude-sonnet-5");
+			.withPropertyValues(
+					"ai.claude.base-url=https://api.anthropic.com",
+					"ai.claude.model=claude-sonnet-5",
+					"ai.openai.base-url=https://api.openai.com",
+					"ai.openai.image-model=gpt-image-2.5-sunburst-2026-09-08");
 
 	@Test
 	void sin_configurar_nada_el_default_es_Claude_para_vision_y_reasoning() {
@@ -69,6 +73,25 @@ class AiProviderConfigTest {
 		contextRunner.withPropertyValues("ai.vision-provider=mock", "ai.reasoning-provider=mock").run(context -> {
 			assertThat(context.getBean(VisionModelProvider.class)).isInstanceOf(MockVisionProvider.class);
 			assertThat(context.getBean(StructuredReasoningProvider.class)).isInstanceOf(MockReasoningProvider.class);
+		});
+	}
+
+	/** Ticket 051 -- mismo AC de selección por variable de entorno que vision/reasoning, ahora para `ImageGenerationProvider`. */
+	@Test
+	void sin_configurar_nada_el_default_de_imagen_es_OpenAi() {
+		contextRunner.run(context -> {
+			assertThat(context).hasSingleBean(ImageGenerationProvider.class);
+			assertThat(context.getBean(ImageGenerationProvider.class)).isInstanceOf(OpenAiImageProvider.class);
+		});
+	}
+
+	@Test
+	void ai_image_provider_mock_expone_MockImageProvider_como_ImageGenerationProvider() {
+		contextRunner.withPropertyValues("ai.image-provider=mock").run(context -> {
+			assertThat(context.getBean(ImageGenerationProvider.class)).isInstanceOf(MockImageProvider.class);
+			// AC #3 (mismo criterio que vision/reasoning): cambiar SOLO el proveedor de imagen no afecta los otros dos.
+			assertThat(context.getBean(VisionModelProvider.class)).isInstanceOf(ClaudeVisionProvider.class);
+			assertThat(context.getBean(StructuredReasoningProvider.class)).isInstanceOf(ClaudeReasoningProvider.class);
 		});
 	}
 
