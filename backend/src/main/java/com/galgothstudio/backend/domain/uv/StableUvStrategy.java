@@ -89,18 +89,30 @@ public final class StableUvStrategy implements UvLayoutStrategy {
 		List<UvRegion> regions = new ArrayList<>();
 		List<UvReservation> reservations = new ArrayList<>(previousLayout.reservations());
 		List<Cuboid> outputCuboids = new ArrayList<>(cuboids.size());
+		AtlasContext context = new AtlasContext(textureWidth, textureHeight, occupied, regions, reservations);
 
 		markDeletedAsOrphan(oldByCuboid, currentIds, regions);
 
 		for (Cuboid cuboid : cuboids) {
 			Map<FaceName, UvRegion> oldFaces = oldByCuboid.get(cuboid.id());
 			Cuboid placed = oldFaces == null
-					? handleAdd(cuboid, textureWidth, textureHeight, occupied, regions)
-					: handleExisting(cuboid, oldFaces, textureWidth, textureHeight, occupied, regions, reservations, confirmPaintLoss);
+					? handleAdd(cuboid, context)
+					: handleExisting(cuboid, oldFaces, context, confirmPaintLoss);
 			outputCuboids.add(placed);
 		}
 
 		return new Result(outputCuboids, regions, reservations);
+	}
+
+	/**
+	 * Agrupa los 3 acumuladores mutables de una corrida de {@link #layout}
+	 * junto con las dimensiones del atlas -- reduce el conteo de
+	 * parámetros de los métodos privados de abajo (S107) sin cambiar la
+	 * semántica: siguen siendo las mismas listas mutadas por referencia.
+	 */
+	private record AtlasContext(
+			int textureWidth, int textureHeight, List<Vec4> occupied, List<UvRegion> regions,
+			List<UvReservation> reservations) {
 	}
 
 	/** Delete: cuboid vivo en el layout anterior, ausente de la lista actual -- sus 6 filas pasan a ORPHAN en el sitio. */
@@ -116,16 +128,15 @@ public final class StableUvStrategy implements UvLayoutStrategy {
 	}
 
 	/** Add: cuboid nuevo, no está en el layout anterior -- busca hueco en espacio verdaderamente libre. */
-	private static Cuboid handleAdd(
-			Cuboid cuboid, int textureWidth, int textureHeight, List<Vec4> occupied, List<UvRegion> regions) {
+	private static Cuboid handleAdd(Cuboid cuboid, AtlasContext context) {
 		BoxUvMath.Footprint footprint = BoxUvMath.footprintOf(cuboid);
-		Vec4 spot = findFreeSpot(footprint, textureWidth, textureHeight, occupied)
-				.orElseThrow(() -> overflowFor(footprint, textureWidth, textureHeight));
+		Vec4 spot = findFreeSpot(footprint, context.textureWidth(), context.textureHeight(), context.occupied())
+				.orElseThrow(() -> overflowFor(footprint, context.textureWidth(), context.textureHeight()));
 		CuboidFaces faces = BoxUvMath.boxUnwrapFaces(cuboid, (int) spot.a(), (int) spot.b());
 		for (FaceName faceName : FaceName.values()) {
 			Vec4 rect = BoxUvMath.faceOf(faces, faceName).uv();
-			regions.add(new UvRegion(cuboid.id(), faceName, rect, UvRegionStatus.UNPAINTED));
-			occupied.add(rect);
+			context.regions().add(new UvRegion(cuboid.id(), faceName, rect, UvRegionStatus.UNPAINTED));
+			context.occupied().add(rect);
 		}
 		return withFaces(cuboid, faces);
 	}
@@ -138,8 +149,7 @@ public final class StableUvStrategy implements UvLayoutStrategy {
 	 * cambió, delega en {@link #handleResize}.
 	 */
 	private static Cuboid handleExisting(
-			Cuboid cuboid, Map<FaceName, UvRegion> oldFaces, int textureWidth, int textureHeight,
-			List<Vec4> occupied, List<UvRegion> regions, List<UvReservation> reservations, boolean confirmPaintLoss) {
+			Cuboid cuboid, Map<FaceName, UvRegion> oldFaces, AtlasContext context, boolean confirmPaintLoss) {
 		int offsetX = (int) Math.round(oldFaces.get(FaceName.WEST).rect().a());
 		int offsetY = (int) Math.round(oldFaces.get(FaceName.UP).rect().b());
 		CuboidFaces recomputed = BoxUvMath.boxUnwrapFaces(cuboid, offsetX, offsetY);
@@ -155,12 +165,12 @@ public final class StableUvStrategy implements UvLayoutStrategy {
 		if (!footprintChanged) {
 			// -- Sin cambio de footprint: se preserva tal cual, incluido el status --
 			for (FaceName faceName : FaceName.values()) {
-				regions.add(oldFaces.get(faceName));
+				context.regions().add(oldFaces.get(faceName));
 			}
 			return withFaces(cuboid, recomputed);
 		}
 
-		return handleResize(cuboid, oldFaces, textureWidth, textureHeight, occupied, regions, reservations, confirmPaintLoss);
+		return handleResize(cuboid, oldFaces, context, confirmPaintLoss);
 	}
 
 	/**
@@ -170,8 +180,7 @@ public final class StableUvStrategy implements UvLayoutStrategy {
 	 * las PAINTED del cuboid, no solo el subconjunto que cambió de rect.
 	 */
 	private static Cuboid handleResize(
-			Cuboid cuboid, Map<FaceName, UvRegion> oldFaces, int textureWidth, int textureHeight,
-			List<Vec4> occupied, List<UvRegion> regions, List<UvReservation> reservations, boolean confirmPaintLoss) {
+			Cuboid cuboid, Map<FaceName, UvRegion> oldFaces, AtlasContext context, boolean confirmPaintLoss) {
 		List<PaintedRegionResizeConfirmationRequiredException.AffectedFace> paintedAffected = new ArrayList<>();
 		for (FaceName faceName : FaceName.values()) {
 			if (oldFaces.get(faceName).status() == UvRegionStatus.PAINTED) {
@@ -184,8 +193,8 @@ public final class StableUvStrategy implements UvLayoutStrategy {
 		}
 
 		BoxUvMath.Footprint footprint = BoxUvMath.footprintOf(cuboid);
-		Vec4 spot = findFreeSpot(footprint, textureWidth, textureHeight, occupied)
-				.orElseThrow(() -> overflowFor(footprint, textureWidth, textureHeight));
+		Vec4 spot = findFreeSpot(footprint, context.textureWidth(), context.textureHeight(), context.occupied())
+				.orElseThrow(() -> overflowFor(footprint, context.textureWidth(), context.textureHeight()));
 		CuboidFaces newFaces = BoxUvMath.boxUnwrapFaces(cuboid, (int) spot.a(), (int) spot.b());
 
 		Set<FaceName> paintedAffectedNames = new LinkedHashSet<>();
@@ -195,13 +204,13 @@ public final class StableUvStrategy implements UvLayoutStrategy {
 		for (FaceName faceName : FaceName.values()) {
 			Vec4 newRect = BoxUvMath.faceOf(newFaces, faceName).uv();
 			if (paintedAffectedNames.contains(faceName)) {
-				reservations.add(
+				context.reservations().add(
 						new UvReservation(
 								UUID.randomUUID().toString(), oldFaces.get(faceName).rect(),
 								UvReservationReason.RESIZE_ABANDONED, cuboid.id(), faceName));
 			}
-			regions.add(new UvRegion(cuboid.id(), faceName, newRect, UvRegionStatus.UNPAINTED));
-			occupied.add(newRect);
+			context.regions().add(new UvRegion(cuboid.id(), faceName, newRect, UvRegionStatus.UNPAINTED));
+			context.occupied().add(newRect);
 		}
 		return withFaces(cuboid, newFaces);
 	}
