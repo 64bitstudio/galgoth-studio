@@ -19,6 +19,7 @@ import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,7 +49,13 @@ public class MobExportService {
 			MobRepository mobRepository,
 			MobRevisionRepository revisionRepository,
 			MobDraftRepository draftRepository,
-			UvLayoutStrategy uvLayoutStrategy,
+			// Ticket 041: el exportador queda deliberadamente fuera de
+			// UvLayoutSelector (@Primary desde este ticket) -- ver Diseño
+			// técnico §2/§3 de `docs/definiciones/galgoth-studio-fase3-textura.md`
+			// (Hallazgo A, revertido por el PO) y el ticket 044, que le
+			// quitará este parámetro por completo. Qualifier explícito para
+			// no heredar el nuevo @Primary por accidente vía autowire-by-type.
+			@Qualifier("alphaAutoPackStrategy") UvLayoutStrategy uvLayoutStrategy,
 			ObjectMapper objectMapper) {
 		this.mobRepository = mobRepository;
 		this.revisionRepository = revisionRepository;

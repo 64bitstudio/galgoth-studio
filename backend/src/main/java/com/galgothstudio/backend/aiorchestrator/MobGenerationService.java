@@ -127,7 +127,13 @@ public class MobGenerationService {
 			GenerationCancellationRegistry cancellationRegistry,
 			ObjectMapper objectMapper,
 			@Qualifier("generationExecutor") Executor generationExecutor,
-			UvLayoutStrategy uvLayoutStrategy,
+			// Ticket 041: este uso es de EXPORTACIÓN (BBModelExporterV5, línea
+			// ~396) -- el exportador queda deliberadamente fuera de
+			// UvLayoutSelector (@Primary desde este ticket, ver Diseño técnico
+			// §2/§3 de `docs/definiciones/galgoth-studio-fase3-textura.md` y
+			// el ticket 044). Qualifier explícito para no heredarlo por
+			// accidente vía autowire-by-type.
+			@Qualifier("alphaAutoPackStrategy") UvLayoutStrategy uvLayoutStrategy,
 			@Value("${ai.geometry-streaming-enabled}") boolean geometryStreamingEnabled,
 			// Ticket 038 -- cadencia del ping de "sigue vivo" en modo heartbeat:
 			// configurable (no una constante hardcodeada) para que los tests
