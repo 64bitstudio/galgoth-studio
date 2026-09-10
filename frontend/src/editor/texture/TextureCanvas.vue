@@ -800,11 +800,11 @@ function showEyedropperToast(hex: string): void {
 }
 
 .texture-canvas__tb-group--region {
-  min-width: 168px;
+  min-width: 140px;
 }
 
 .texture-canvas__tb-group--brush {
-  width: 104px;
+  width: 76px;
 }
 
 .texture-canvas__tb-sep {
