@@ -1,0 +1,19 @@
+{
+  "boneLabels": [
+    { "boneId": "b-root-torso", "boneName": "body", "semanticLabel": "torso" },
+    { "boneId": "b-head", "boneName": "head", "semanticLabel": "cabeza" },
+    { "boneId": "b-left-arm", "boneName": "left_arm", "semanticLabel": "brazo izquierdo" },
+    { "boneId": "b-right-arm", "boneName": "right_arm", "semanticLabel": "brazo derecho" }
+  ],
+  "palette": {
+    "dominantColorHex": "#4A5238",
+    "accentColorHex": "#8B2E2E"
+  },
+  "materialNotes": [
+    { "boneId": "b-root-torso", "boneName": "body", "face": "north", "note": "cuero desgastado con parches y costuras visibles" },
+    { "boneId": "b-root-torso", "boneName": "body", "face": "south", "note": "tela remendada, más lisa que el frente" },
+    { "boneId": "b-head", "boneName": "head", "face": "north", "note": "piel grisácea agrietada, sin rasgos faciales detallados" },
+    { "boneId": "b-left-arm", "boneName": "left_arm", "face": "west", "note": "manga rasgada, tela oscura" },
+    { "boneId": "b-right-arm", "boneName": "right_arm", "face": "east", "note": "manga rasgada, tela oscura, ligera asimetría respecto al brazo izquierdo" }
+  ]
+}
