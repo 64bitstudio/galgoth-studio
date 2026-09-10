@@ -20,7 +20,7 @@
  * Alineación elegida: esquina superior izquierda (0,0) fija -- el
  * excedente se recorta por la derecha/abajo, el margen se agrega por la
  * derecha/abajo. Es la alineación más predecible para un atlas (que ya
- * usa origen superior-izquierdo en todo el resto del editor -- ver
+ * usa origen superior-izquierdo en el resto completo del editor -- ver
  * `flipY = false` en `TextureCanvas.vue`) y evita introducir un segundo
  * eje de decisión (¿centrado? ¿por eje?) que el ticket no especifica.
  * Documentado explícitamente en el ticket 048 como una decisión de
