@@ -3,6 +3,7 @@ package com.galgothstudio.backend.project.api;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -135,6 +136,29 @@ class MobControllerTest {
 		mockMvc.perform(get("/api/projects/{projectId}/mobs", UUID.randomUUID()))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.error", is("PROJECT_NOT_FOUND")));
+	}
+
+	@Test
+	void un_mob_eliminado_ticket_039_ya_no_aparece_en_el_listado_del_proyecto() throws Exception {
+		UUID projectId = aProject();
+		mockMvc.perform(post("/api/projects/{projectId}/mobs", projectId)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(createBody("Carcomido", "humanoid")));
+		String secondBody = mockMvc
+				.perform(post("/api/projects/{projectId}/mobs", projectId)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Augur", "flying")))
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+		String augurId = objectMapper.readTree(secondBody).get("id").asText();
+
+		mockMvc.perform(delete("/api/mobs/{mobId}", augurId));
+
+		mockMvc.perform(get("/api/projects/{projectId}/mobs", projectId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$", hasSize(1)))
+				.andExpect(jsonPath("$[0].name", is("Carcomido")));
 	}
 
 }

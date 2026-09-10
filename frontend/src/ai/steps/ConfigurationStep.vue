@@ -16,6 +16,7 @@
  */
 import { ref } from 'vue'
 import GButton from '../../design-system/components/GButton.vue'
+import IconSparkle from '../../design-system/icons/IconSparkle.vue'
 import type { BaseType } from '../../projects/mobsApi'
 
 const BASE_TYPE_OPTIONS: Array<{ value: BaseType; label: string }> = [
@@ -96,6 +97,7 @@ function confirm(): void {
 
       <div class="configuration-step__actions">
         <GButton variant="primary" :disabled="props.submitting" @click="confirm">
+          <template #icon><IconSparkle :size="16" /></template>
           {{ props.submitting ? 'Creando…' : 'Generar con IA →' }}
         </GButton>
       </div>

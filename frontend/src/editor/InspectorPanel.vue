@@ -87,7 +87,7 @@ function updatePivot(newPivot: Vec3): void {
 </script>
 
 <template>
-  <aside class="inspector-panel">
+  <aside class="inspector-panel app-scroll">
     <h2 class="inspector-panel__title">Propiedades</h2>
     <template v-if="selectedCuboid">
       <p class="inspector-panel__selection">{{ selectedCuboid.name }}</p>

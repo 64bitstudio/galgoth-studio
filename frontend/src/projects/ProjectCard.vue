@@ -28,10 +28,10 @@ defineProps<{ project: ProjectSummary }>()
 const emit = defineEmits<{ open: [string]; action: [string, string] }>()
 
 const MENU_ITEMS: GMenuItem[] = [
-  { key: 'rename', label: 'Rename' },
-  { key: 'duplicate', label: 'Duplicate' },
-  { key: 'export', label: 'Export', disabled: true, disabledReason: 'Disponible cuando el proyecto tenga mobs exportables' },
-  { key: 'delete', label: 'Delete', danger: true },
+  { key: 'rename', label: 'Renombrar' },
+  { key: 'duplicate', label: 'Duplicar' },
+  { key: 'export', label: 'Exportar', disabled: true, disabledReason: 'Disponible cuando el proyecto tenga mobs exportables' },
+  { key: 'delete', label: 'Eliminar', danger: true },
 ]
 
 function handleAction(projectId: string, actionKey: string): void {

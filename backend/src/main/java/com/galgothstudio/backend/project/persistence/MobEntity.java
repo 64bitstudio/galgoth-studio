@@ -45,6 +45,10 @@ public class MobEntity {
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
 
+	/** `deletedAt` no nulo == soft-delete (ticket 039, `V2__mobs_soft_delete.sql`) -- mismo criterio que `ProjectEntity.deletedAt` (ticket 021). */
+	@Column(name = "deleted_at")
+	private Instant deletedAt;
+
 	/**
 	 * Sin constructor de todos los campos a propósito (Sonar S107: más de
 	 * 7 parámetros) -- estilo JavaBean (constructor vacío + setters), más
@@ -125,6 +129,14 @@ public class MobEntity {
 
 	public void setUpdatedAt(Instant updatedAt) {
 		this.updatedAt = updatedAt;
+	}
+
+	public Instant getDeletedAt() {
+		return deletedAt;
+	}
+
+	public void setDeletedAt(Instant deletedAt) {
+		this.deletedAt = deletedAt;
 	}
 
 }

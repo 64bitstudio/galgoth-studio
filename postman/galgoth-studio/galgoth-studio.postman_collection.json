@@ -129,6 +129,25 @@
             },
             "description": "200 con el MobSummary -- sin projectId en el path (el mob ya se identifica solo por su id). 404 (MOB_NOT_FOUND) si el mob no existe. Usado por MobEditor.vue para saber name/baseType reales cuando el mob todavía no tiene ningún draft."
           }
+        },
+        {
+          "name": "Renombrar mob (ticket 039)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Nombre nuevo\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/mobs/{{mobId}}", "host": ["{{baseUrl}}"], "path": ["api", "mobs", "{{mobId}}"] },
+            "description": "200 con el MobSummary actualizado. 400 (INVALID_MOB_REQUEST) si el nombre queda vacío. 404 (MOB_NOT_FOUND) si el mob no existe."
+          }
+        },
+        {
+          "name": "Eliminar mob (soft-delete, ticket 039)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/mobs/{{mobId}}", "host": ["{{baseUrl}}"], "path": ["api", "mobs", "{{mobId}}"] },
+            "description": "204. Marca mobs.deleted_at -- mismo criterio que projects.deleted_at (ticket 021): ningún FK hacia mobs tiene ON DELETE CASCADE, por eso es soft-delete y no hard-delete."
+          }
         }
       ]
     },

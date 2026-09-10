@@ -33,6 +33,7 @@ function testRouter(): Router {
     routes: [
       { path: '/', component: { template: '<div />' } },
       { path: '/projects/:id', component: { template: '<div />' } },
+      { path: '/projects/:projectId/mobs/new-ai', component: { template: '<div />' } },
     ],
   })
 }
@@ -66,13 +67,58 @@ describe('ProjectsDashboard.vue', () => {
     expect(wrapper.text()).toContain('Servidor caído')
   })
 
-  it('el CTA "Crear un mob con IA" está deshabilitado', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
-    const wrapper = mount(ProjectsDashboard, { global: { plugins: [testRouter()] } })
-    await flushPromises()
+  describe('ticket 039 -- "Crear un mob con IA" es la CTA principal', () => {
+    it('está habilitado y ya no muestra "Disponible en una fase futura"', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
+      const wrapper = mount(ProjectsDashboard, { global: { plugins: [testRouter()] } })
+      await flushPromises()
 
-    const aiCta = wrapper.findAll('button').find((b) => b.text().includes('Crear un mob con IA'))!
-    expect(aiCta.attributes('disabled')).toBeDefined()
+      const aiCta = wrapper.findAll('button').find((b) => b.text().includes('Crear un mob con IA'))!
+      expect(aiCta.attributes('disabled')).toBeUndefined()
+      expect(aiCta.classes()).toContain('projects-dashboard__cta--primary')
+      expect(wrapper.text()).not.toContain('Disponible en una fase futura')
+    })
+
+    it('sin proyectos todavía, pide el nombre del proyecto nuevo y navega al wizard tras crearlo', async () => {
+      const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          return jsonResponse({ id: 'new-id', name: 'Carcomido', mobCount: 0, createdAt: '', updatedAt: '' }, 201)
+        }
+        return jsonResponse([])
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const router = testRouter()
+      const pushSpy = vi.spyOn(router, 'push')
+      const wrapper = mount(ProjectsDashboard, { global: { plugins: [router] } })
+      await flushPromises()
+
+      await wrapper.findAll('button').find((b) => b.text().includes('Crear un mob con IA'))!.trigger('click')
+      await wrapper.find('input').setValue('Carcomido')
+      await wrapper.findAll('button').find((b) => b.text() === 'Continuar')!.trigger('click')
+      await flushPromises()
+
+      expect(pushSpy).toHaveBeenCalledWith('/projects/new-id/mobs/new-ai')
+    })
+
+    it('con proyectos existentes, permite elegir uno y navega al wizard sin crear ninguno nuevo', async () => {
+      const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          throw new Error('no debería crear ningún proyecto -- se eligió uno existente')
+        }
+        return jsonResponse([summary({ id: 'p1', name: 'Galgoth' })])
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const router = testRouter()
+      const pushSpy = vi.spyOn(router, 'push')
+      const wrapper = mount(ProjectsDashboard, { global: { plugins: [router] } })
+      await flushPromises()
+
+      await wrapper.findAll('button').find((b) => b.text().includes('Crear un mob con IA'))!.trigger('click')
+      await wrapper.findAll('button').find((b) => b.text() === 'Continuar')!.trigger('click')
+      await flushPromises()
+
+      expect(pushSpy).toHaveBeenCalledWith('/projects/p1/mobs/new-ai')
+    })
   })
 
   describe('crear proyecto (HU-01)', () => {
@@ -89,7 +135,7 @@ describe('ProjectsDashboard.vue', () => {
       const wrapper = mount(ProjectsDashboard, { global: { plugins: [router] } })
       await flushPromises()
 
-      await wrapper.findAll('button').find((b) => b.text().includes('Proyecto vacío'))!.trigger('click')
+      await wrapper.findAll('button').find((b) => b.text().includes('Crear nuevo proyecto'))!.trigger('click')
       await wrapper.find('input').setValue('Tejedora')
       await wrapper.findAll('button').find((b) => b.text() === 'Crear proyecto')!.trigger('click')
       await flushPromises()
@@ -108,7 +154,7 @@ describe('ProjectsDashboard.vue', () => {
       const wrapper = mount(ProjectsDashboard, { global: { plugins: [testRouter()] } })
       await flushPromises()
 
-      await wrapper.findAll('button').find((b) => b.text().includes('Proyecto vacío'))!.trigger('click')
+      await wrapper.findAll('button').find((b) => b.text().includes('Crear nuevo proyecto'))!.trigger('click')
       await wrapper.find('input').setValue('x') // el frontend valida vacío; forzamos el rechazo del backend igual
       await wrapper.findAll('button').find((b) => b.text() === 'Crear proyecto')!.trigger('click')
       await flushPromises()
@@ -136,7 +182,7 @@ describe('ProjectsDashboard.vue', () => {
       await flushPromises()
 
       await wrapper.find('.g-menu__trigger').trigger('click')
-      const renameItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Rename'))!
+      const renameItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Renombrar'))!
       await renameItem.trigger('click')
 
       expect((wrapper.find('input').element as HTMLInputElement).value).toBe('Galgoth')
@@ -161,7 +207,7 @@ describe('ProjectsDashboard.vue', () => {
       await flushPromises()
 
       await wrapper.find('.g-menu__trigger').trigger('click')
-      const duplicateItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Duplicate'))!
+      const duplicateItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Duplicar'))!
       await duplicateItem.trigger('click')
       await flushPromises()
 
@@ -175,7 +221,7 @@ describe('ProjectsDashboard.vue', () => {
       await flushPromises()
 
       await wrapper.find('.g-menu__trigger').trigger('click')
-      const deleteItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Delete'))!
+      const deleteItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Eliminar'))!
       await deleteItem.trigger('click')
 
       expect(wrapper.text()).toContain('¿Eliminar el proyecto "Galgoth"?')
@@ -197,7 +243,7 @@ describe('ProjectsDashboard.vue', () => {
       await flushPromises()
 
       await wrapper.find('.g-menu__trigger').trigger('click')
-      const deleteItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Delete'))!
+      const deleteItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Eliminar'))!
       await deleteItem.trigger('click')
       await wrapper.findAll('button').find((b) => b.text() === 'Eliminar')!.trigger('click')
       await flushPromises()

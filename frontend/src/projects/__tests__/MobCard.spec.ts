@@ -45,4 +45,32 @@ describe('MobCard.vue', () => {
 
     expect(wrapper.text()).toContain('Ready')
   })
+
+  describe('ticket 039 -- menú de acciones ⋮', () => {
+    it('click en abrir emite open con el id real del mob', async () => {
+      const wrapper = mount(MobCard, { props: { mob: mob({ id: 'm9' }) } })
+
+      await wrapper.find('.mob-card__open').trigger('click')
+
+      expect(wrapper.emitted('open')).toEqual([['m9']])
+    })
+
+    it('el menú incluye Renombrar/Exportar/Eliminar, funcional (no decorativo)', async () => {
+      const wrapper = mount(MobCard, { props: { mob: mob({ id: 'm9' }) } })
+
+      await wrapper.find('.g-menu__trigger').trigger('click')
+      const items = wrapper.findAll('[role="menuitem"]').map((i) => i.text())
+
+      expect(items).toEqual(['Renombrar', 'Exportar', 'Eliminar'])
+    })
+
+    it('elegir "Eliminar" del menú emite action con la key real y el id del mob', async () => {
+      const wrapper = mount(MobCard, { props: { mob: mob({ id: 'm9' }) } })
+
+      await wrapper.find('.g-menu__trigger').trigger('click')
+      await wrapper.findAll('[role="menuitem"]').find((i) => i.text() === 'Eliminar')!.trigger('click')
+
+      expect(wrapper.emitted('action')).toEqual([['delete', 'm9']])
+    })
+  })
 })

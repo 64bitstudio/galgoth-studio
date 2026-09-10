@@ -87,14 +87,14 @@ describe('EditorToolbar.vue', () => {
     const setModeSpy = vi.spyOn(threeViewportService, 'setTransformMode')
     const wrapper = mount(EditorToolbar)
 
-    await findButton(wrapper, 'Scale').trigger('click')
+    await findButton(wrapper, 'Escalar').trigger('click')
     expect(setModeSpy).toHaveBeenCalledWith('scale')
-    expect(findButton(wrapper, 'Scale').classes()).toContain('icon-button--active')
+    expect(findButton(wrapper, 'Escalar').classes()).toContain('icon-button--active')
 
-    await findButton(wrapper, 'Rotate').trigger('click')
+    await findButton(wrapper, 'Rotar').trigger('click')
     expect(setModeSpy).toHaveBeenCalledWith('rotate')
-    expect(findButton(wrapper, 'Rotate').classes()).toContain('icon-button--active')
-    expect(findButton(wrapper, 'Scale').classes()).not.toContain('icon-button--active')
+    expect(findButton(wrapper, 'Rotar').classes()).toContain('icon-button--active')
+    expect(findButton(wrapper, 'Escalar').classes()).not.toContain('icon-button--active')
   })
 
   it('Add cuboid usa el bone del cuboid seleccionado como destino y selecciona el nuevo cuboid', async () => {
@@ -104,7 +104,7 @@ describe('EditorToolbar.vue', () => {
     selection.select('c1')
     const wrapper = mount(EditorToolbar)
 
-    await findButton(wrapper, 'Add cuboid').trigger('click')
+    await findButton(wrapper, 'Agregar cuboide').trigger('click')
 
     const created = draft.model!.cuboids.find((c) => c.id !== 'c1')
     expect(created?.boneId).toBe('b2') // bone del cuboid seleccionado, no el primero del modelo
@@ -116,7 +116,7 @@ describe('EditorToolbar.vue', () => {
     draft.load(modelWith([bone('unico', null)], []))
     const wrapper = mount(EditorToolbar)
 
-    await findButton(wrapper, 'Add cuboid').trigger('click')
+    await findButton(wrapper, 'Agregar cuboide').trigger('click')
 
     expect(draft.model!.cuboids).toHaveLength(1)
     expect(draft.model!.cuboids[0]!.boneId).toBe('unico')
@@ -127,7 +127,7 @@ describe('EditorToolbar.vue', () => {
     draft.load(modelWith([], []))
     const wrapper = mount(EditorToolbar)
 
-    await findButton(wrapper, 'Add cuboid').trigger('click')
+    await findButton(wrapper, 'Agregar cuboide').trigger('click')
 
     expect(draft.model!.cuboids).toHaveLength(0)
   })
@@ -139,7 +139,7 @@ describe('EditorToolbar.vue', () => {
     const wrapper = mount(EditorToolbar)
     selection.select(null)
 
-    await findButton(wrapper, 'Add bone').trigger('click')
+    await findButton(wrapper, 'Agregar bone').trigger('click')
 
     expect(draft.model!.bones).toHaveLength(2)
     const created = draft.model!.bones.find((b) => b.id !== 'padre')
@@ -151,8 +151,8 @@ describe('EditorToolbar.vue', () => {
     draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
     const wrapper = mount(EditorToolbar)
 
-    const duplicateBtn = findButton(wrapper, 'Duplicate')
-    const deleteBtn = findButton(wrapper, 'Delete')
+    const duplicateBtn = findButton(wrapper, 'Duplicar')
+    const deleteBtn = findButton(wrapper, 'Eliminar')
     expect(duplicateBtn.attributes('disabled')).toBeDefined()
     expect(deleteBtn.attributes('disabled')).toBeDefined()
 
@@ -169,7 +169,7 @@ describe('EditorToolbar.vue', () => {
     selection.select('c1')
     const wrapper = mount(EditorToolbar)
 
-    await findButton(wrapper, 'Duplicate').trigger('click')
+    await findButton(wrapper, 'Duplicar').trigger('click')
 
     expect(draft.model!.cuboids).toHaveLength(2)
     expect(selection.selectedCuboidId).not.toBe('c1')
@@ -183,7 +183,7 @@ describe('EditorToolbar.vue', () => {
     selection.select('c1')
     const wrapper = mount(EditorToolbar)
 
-    await findButton(wrapper, 'Delete').trigger('click')
+    await findButton(wrapper, 'Eliminar').trigger('click')
 
     expect(draft.model!.cuboids).toHaveLength(0)
     expect(selection.selectedCuboidId).toBeNull()
@@ -210,13 +210,13 @@ describe('EditorToolbar.vue', () => {
       selection.select('c1')
       const wrapper = mount(EditorToolbar)
 
-      expect(findButton(wrapper, 'Undo').attributes('disabled')).toBeDefined()
-      expect(findButton(wrapper, 'Redo').attributes('disabled')).toBeDefined()
+      expect(findButton(wrapper, 'Deshacer').attributes('disabled')).toBeDefined()
+      expect(findButton(wrapper, 'Rehacer').attributes('disabled')).toBeDefined()
 
-      await findButton(wrapper, 'Duplicate').trigger('click')
+      await findButton(wrapper, 'Duplicar').trigger('click')
 
-      expect(findButton(wrapper, 'Undo').attributes('disabled')).toBeUndefined()
-      expect(findButton(wrapper, 'Redo').attributes('disabled')).toBeDefined()
+      expect(findButton(wrapper, 'Deshacer').attributes('disabled')).toBeUndefined()
+      expect(findButton(wrapper, 'Rehacer').attributes('disabled')).toBeDefined()
     })
 
     it('el botón Undo deshace el último Command, y Redo lo rehace', async () => {
@@ -226,13 +226,13 @@ describe('EditorToolbar.vue', () => {
       selection.select('c1')
       const wrapper = mount(EditorToolbar)
 
-      await findButton(wrapper, 'Delete').trigger('click')
+      await findButton(wrapper, 'Eliminar').trigger('click')
       expect(draft.model!.cuboids).toHaveLength(0)
 
-      await findButton(wrapper, 'Undo').trigger('click')
+      await findButton(wrapper, 'Deshacer').trigger('click')
       expect(draft.model!.cuboids).toHaveLength(1)
 
-      await findButton(wrapper, 'Redo').trigger('click')
+      await findButton(wrapper, 'Rehacer').trigger('click')
       expect(draft.model!.cuboids).toHaveLength(0)
     })
 

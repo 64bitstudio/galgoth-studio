@@ -51,6 +51,41 @@ textarea {
   border-radius: var(--radius-sm);
 }
 
+/**
+ * Scrollbar custom (ticket 039) -- utilidad global aplicada a mano en
+ * cada zona scrollable PROPIA de la aplicación (jerarquía, inspector,
+ * panel de IA, modales largos, paneles del editor) -- deliberadamente
+ * NO un selector universal (`*`), para no adivinar sobre contenido que
+ * no controlamos. `scrollbar-width`/`scrollbar-color` cubren
+ * Firefox; `::-webkit-scrollbar*` cubre Chrome/Edge/Safari (los 2
+ * navegadores reales de este ciclo, ver docs/README.md).
+ */
+.app-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.app-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.app-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-scroll::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.app-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

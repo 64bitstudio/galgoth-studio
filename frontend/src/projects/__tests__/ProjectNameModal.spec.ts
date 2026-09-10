@@ -72,7 +72,7 @@ describe('ProjectNameModal.vue', () => {
   it('clic en el propio <dialog> (el ::backdrop nativo aterriza ahí) emite cancel', async () => {
     const wrapper = mount(ProjectNameModal, { props: { mode: 'create' } })
 
-    await wrapper.find('.project-name-modal').trigger('click')
+    await wrapper.find('.app-dialog').trigger('click')
 
     expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
@@ -80,7 +80,7 @@ describe('ProjectNameModal.vue', () => {
   it('clic dentro del contenido del modal (ej. el título) NO emite cancel', async () => {
     const wrapper = mount(ProjectNameModal, { props: { mode: 'create' } })
 
-    await wrapper.find('.project-name-modal__title').trigger('click')
+    await wrapper.find('.app-dialog__title').trigger('click')
 
     expect(wrapper.emitted('cancel')).toBeUndefined()
   })

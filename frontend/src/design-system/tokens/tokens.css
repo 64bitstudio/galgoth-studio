@@ -73,4 +73,11 @@
   --hit-target-min: 40px;
 
   --transition-fast: 120ms ease;
+
+  /* Scrollbar custom (ticket 039) -- la scrollbar blanca/gris nativa del
+     navegador rompía visualmente la interfaz (más notorio en el panel de
+     jerarquía). Tono azulado consistente con --border/--surface-2, un
+     poco más claro para que el thumb se distinga sobre paneles oscuros. */
+  --scrollbar-thumb: #33404d;
+  --scrollbar-thumb-hover: #465564;
 }

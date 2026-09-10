@@ -80,7 +80,7 @@ describe('ProjectCard.vue', () => {
     const wrapper = mount(ProjectCard, { props: { project: project({ id: 'p42' }) } })
 
     await wrapper.find('.g-menu__trigger').trigger('click')
-    const renameItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Rename'))!
+    const renameItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Renombrar'))!
     await renameItem.trigger('click')
 
     expect(wrapper.emitted('action')).toEqual([['rename', 'p42']])
@@ -90,7 +90,7 @@ describe('ProjectCard.vue', () => {
     const wrapper = mount(ProjectCard, { props: { project: project() } })
 
     await wrapper.find('.g-menu__trigger').trigger('click')
-    const exportItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Export'))!
+    const exportItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Exportar'))!
 
     expect(exportItem.attributes('disabled')).toBeDefined()
     expect(exportItem.text()).toContain('Disponible cuando el proyecto tenga mobs exportables')

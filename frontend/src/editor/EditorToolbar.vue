@@ -39,6 +39,11 @@ import IconRedo from '../design-system/icons/IconRedo.vue'
 
 type TransformMode = 'translate' | 'scale' | 'rotate'
 
+/** Ticket 039 -- el tooltip de Undo/Redo muestra el atajo REAL ya cableado en `handleKeydown` (nunca uno inventado): `metaKey` en Mac, `ctrlKey` en el resto. */
+const MODIFIER_KEY = /mac/i.test(navigator.platform || navigator.userAgent) ? 'Cmd' : 'Ctrl'
+const UNDO_SHORTCUT = `${MODIFIER_KEY}+Z`
+const REDO_SHORTCUT = `${MODIFIER_KEY}+Shift+Z`
+
 const draft = useDraftModelStore()
 const selection = useSelectionStore()
 const mode = ref<TransformMode>('translate')
@@ -141,24 +146,24 @@ async function handleSave(): Promise<void> {
 <template>
   <div class="editor-toolbar">
     <fieldset class="editor-toolbar__group" aria-label="Modo de transformación">
-      <IconButton label="Move" :active="mode === 'translate'" @click="setMode('translate')"><IconMove :size="18" /></IconButton>
-      <IconButton label="Scale" :active="mode === 'scale'" @click="setMode('scale')"><IconScale :size="18" /></IconButton>
-      <IconButton label="Rotate" :active="mode === 'rotate'" @click="setMode('rotate')"><IconRotate :size="18" /></IconButton>
+      <IconButton label="Mover" :active="mode === 'translate'" @click="setMode('translate')"><IconMove :size="18" /></IconButton>
+      <IconButton label="Escalar" :active="mode === 'scale'" @click="setMode('scale')"><IconScale :size="18" /></IconButton>
+      <IconButton label="Rotar" :active="mode === 'rotate'" @click="setMode('rotate')"><IconRotate :size="18" /></IconButton>
     </fieldset>
     <span class="editor-toolbar__separator" />
     <fieldset class="editor-toolbar__group" aria-label="Agregar elementos">
-      <IconButton label="Add cuboid" @click="addCuboid"><IconCuboid :size="18" /></IconButton>
-      <IconButton label="Add bone" @click="addBone"><IconBoneJoint :size="18" /></IconButton>
+      <IconButton label="Agregar cuboide" @click="addCuboid"><IconCuboid :size="18" /></IconButton>
+      <IconButton label="Agregar bone" @click="addBone"><IconBoneJoint :size="18" /></IconButton>
     </fieldset>
     <span class="editor-toolbar__separator" />
     <fieldset class="editor-toolbar__group" aria-label="Duplicar y eliminar">
-      <IconButton label="Duplicate" :disabled="!selection.selectedCuboidId" @click="duplicateSelected"><IconDuplicate :size="18" /></IconButton>
-      <IconButton label="Delete" :disabled="!selection.selectedCuboidId" @click="deleteSelected"><IconTrash :size="18" /></IconButton>
+      <IconButton label="Duplicar" :disabled="!selection.selectedCuboidId" @click="duplicateSelected"><IconDuplicate :size="18" /></IconButton>
+      <IconButton label="Eliminar" :disabled="!selection.selectedCuboidId" @click="deleteSelected"><IconTrash :size="18" /></IconButton>
     </fieldset>
     <span class="editor-toolbar__separator" />
     <fieldset class="editor-toolbar__group" aria-label="Undo y redo">
-      <IconButton label="Undo" :disabled="!draft.canUndo" @click="draft.undo()"><IconUndo :size="18" /></IconButton>
-      <IconButton label="Redo" :disabled="!draft.canRedo" @click="draft.redo()"><IconRedo :size="18" /></IconButton>
+      <IconButton label="Deshacer" :shortcut="UNDO_SHORTCUT" :disabled="!draft.canUndo" @click="draft.undo()"><IconUndo :size="18" /></IconButton>
+      <IconButton label="Rehacer" :shortcut="REDO_SHORTCUT" :disabled="!draft.canRedo" @click="draft.redo()"><IconRedo :size="18" /></IconButton>
     </fieldset>
     <div class="editor-toolbar__spacer" />
     <span v-if="draft.lastError" class="editor-toolbar__error">{{ draft.lastError }}</span>
