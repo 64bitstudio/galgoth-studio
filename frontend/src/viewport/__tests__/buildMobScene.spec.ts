@@ -4,7 +4,7 @@ import { DataTexture, Mesh, MeshStandardMaterial } from 'three'
 import { describe, expect, it } from 'vitest'
 import { applyPivotRotation } from '../../domain/coordinateSystem'
 import type { Bone, Cuboid, MobProjectModel, Vec3 } from '../../domain/MobProjectModel'
-import { buildMobGroup, SELECTION_OUTLINE_NAME } from '../buildMobScene'
+import { buildMobGroup, FACE_HIGHLIGHT_NAME, SELECTION_OUTLINE_NAME } from '../buildMobScene'
 
 // Ver nota en schema.spec.ts: process.cwd() en vez de import.meta.url.
 const REPO_ROOT = resolve(process.cwd(), '..')
@@ -131,7 +131,10 @@ describe('buildMobGroup', () => {
     const box = cuboid('box', 'root', [0, 0, 0], [1, 1, 1], [0, 0, 0], [0, 0, 0])
     const group = buildMobGroup(modelWith([root], [box]))
 
-    const material = meshNamed(group, 'box').material as MeshStandardMaterial
+    // Ticket 049: `mesh.material` es un array de 6 slots (misma instancia
+    // repetida) -- ver docstring de `buildMobScene.ts` sobre por qué es
+    // necesario para el picking determinista por cara.
+    const material = (meshNamed(group, 'box').material as MeshStandardMaterial[])[0]!
     expect(material.map).toBeNull()
   })
 
@@ -142,9 +145,43 @@ describe('buildMobGroup', () => {
 
     const group = buildMobGroup(modelWith([root], [box]), null, atlasTexture)
 
-    const material = meshNamed(group, 'box').material as MeshStandardMaterial
+    const material = (meshNamed(group, 'box').material as MeshStandardMaterial[])[0]!
     expect(material.map).toBe(atlasTexture)
     expect(material.color.getHex()).toBe(0xffffff)
+  })
+
+  it('ticket 049: `mesh.material` es un array de 6 slots (misma instancia repetida en cada uno) -- requerido para que Three.js resuelva materialIndex real durante el raycasting', () => {
+    const root = bone('root', null, [0, 0, 0], [0, 0, 0])
+    const box = cuboid('box', 'root', [0, 0, 0], [1, 1, 1], [0, 0, 0], [0, 0, 0])
+    const group = buildMobGroup(modelWith([root], [box]))
+
+    const material = meshNamed(group, 'box').material
+    expect(Array.isArray(material)).toBe(true)
+    const materials = material as MeshStandardMaterial[]
+    expect(materials).toHaveLength(6)
+    expect(new Set(materials)).toEqual(new Set([materials[0]])) // misma instancia repetida 6 veces
+  })
+
+  it('ticket 049 (HU-25): mesh.userData.faceNamesByGroup queda etiquetado con el orden fijo de BoxGeometry (BOX_GEOMETRY_FACE_ORDER)', () => {
+    const root = bone('root', null, [0, 0, 0], [0, 0, 0])
+    const box = cuboid('box', 'root', [0, 0, 0], [1, 1, 1], [0, 0, 0], [0, 0, 0])
+    const group = buildMobGroup(modelWith([root], [box]))
+
+    expect(meshNamed(group, 'box').userData.faceNamesByGroup).toEqual(['east', 'west', 'up', 'down', 'south', 'north'])
+  })
+
+  it('ticket 049 (HU-25): con selectedFace apuntando a este cuboid, el mesh recibe un highlight de esa cara (FACE_HIGHLIGHT_NAME); sin selectedFace, ningún cuboid lo tiene', () => {
+    const root = bone('root', null, [0, 0, 0], [0, 0, 0])
+    const a = cuboid('a', 'root', [-1, -1, -1], [1, 1, 1], [0, 0, 0], [0, 0, 0])
+    const b = cuboid('b', 'root', [-1, -1, -1], [1, 1, 1], [0, 0, 0], [0, 0, 0])
+
+    const withoutSelection = buildMobGroup(modelWith([root], [a, b]))
+    expect(meshNamed(withoutSelection, 'a').children.some((c) => c.name === FACE_HIGHLIGHT_NAME)).toBe(false)
+    expect(meshNamed(withoutSelection, 'b').children.some((c) => c.name === FACE_HIGHLIGHT_NAME)).toBe(false)
+
+    const withSelection = buildMobGroup(modelWith([root], [a, b]), null, null, { cuboidId: 'a', face: 'up' })
+    expect(meshNamed(withSelection, 'a').children.some((c) => c.name === FACE_HIGHLIGHT_NAME)).toBe(true)
+    expect(meshNamed(withSelection, 'b').children.some((c) => c.name === FACE_HIGHLIGHT_NAME)).toBe(false)
   })
 
   it('la fixture real Carcomido produce un mesh por cuboid y un marcador por bone (end-to-end)', () => {

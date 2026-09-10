@@ -4,7 +4,10 @@ import type { Mesh, MeshStandardMaterial } from 'three'
 import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Cuboid, MobProjectModel, UvRegion } from '../../../domain/MobProjectModel'
+import { FACE_HIGHLIGHT_NAME } from '../../../viewport/buildMobScene'
+import { ALL_REGIONS_VALUE } from '../regionLabels'
 import { useTextureEditorStore } from '../textureEditorStore'
+import { useTextureSelectionStore } from '../textureSelectionStore'
 
 // Ver ThreeViewportService.spec.ts -- jsdom no tiene WebGL real. Este
 // componente adjunta el canvas singleton compartido para el preview 3D
@@ -270,7 +273,8 @@ describe('TextureCanvas.vue', () => {
 
     const mobGroup = threeViewportService.scene.children.find((c) => c.name === model.name)!
     const mesh = mobGroup.children.find((c) => c.userData.cuboidId === 'c1') as Mesh
-    const material = mesh.material as MeshStandardMaterial
+    // Ticket 049: `mesh.material` es un array de 6 slots (misma instancia repetida).
+    const material = (mesh.material as MeshStandardMaterial[])[0]!
     const textureBefore = material.map!
     const versionBefore = textureBefore.version
 
@@ -295,6 +299,82 @@ describe('TextureCanvas.vue', () => {
 
     store.undo()
     expect(pixelAt(store.atlas!.pixels, 8, 2, 2)).toEqual([0, 0, 0, 0])
+  })
+
+  it('ticket 049 (HU-25): clic en el preview 3D resuelve la cara vía pickCuboidFaceAt y resalta la región UV correspondiente en el editor 2D', async () => {
+    const region: UvRegion = { cuboidId: 'c1', face: 'north', rect: [0, 0, 4, 4], status: 'unpainted' }
+    const model = modelWith({ cuboids: [cuboid('c1', 'Cabeza')], regions: [region] })
+    const w = mountCanvas(model)
+    vi.spyOn(threeViewportService, 'pickCuboidFaceAt').mockReturnValue({ cuboidId: 'c1', face: 'north' })
+
+    const preview = w.get('.texture-canvas__preview').element
+    dispatchPointer(preview, 'pointerdown', 5, 5)
+    preview.dispatchEvent(new MouseEvent('click', { clientX: 5, clientY: 5, bubbles: true }))
+    await nextTick()
+
+    expect((w.get('select[aria-label="Región UV a enfocar"]').element as HTMLSelectElement).value).toBe('c1:north')
+    expect(w.get('rect.texture-canvas__region').classes()).toContain('texture-canvas__region--selected')
+  })
+
+  it('ticket 049 (HU-25): un clic que no resuelve ninguna cara (pickCuboidFaceAt -> null) deselecciona la región enfocada', async () => {
+    const region: UvRegion = { cuboidId: 'c1', face: 'north', rect: [0, 0, 4, 4], status: 'unpainted' }
+    const model = modelWith({ cuboids: [cuboid('c1', 'Cabeza')], regions: [region] })
+    const w = mountCanvas(model)
+    await w.get('select[aria-label="Región UV a enfocar"]').setValue('c1:north')
+    vi.spyOn(threeViewportService, 'pickCuboidFaceAt').mockReturnValue(null)
+
+    const preview = w.get('.texture-canvas__preview').element
+    dispatchPointer(preview, 'pointerdown', 5, 5)
+    preview.dispatchEvent(new MouseEvent('click', { clientX: 5, clientY: 5, bubbles: true }))
+    await nextTick()
+
+    expect((w.get('select[aria-label="Región UV a enfocar"]').element as HTMLSelectElement).value).toBe(ALL_REGIONS_VALUE)
+  })
+
+  it('ticket 049: un arrastre de órbita (drag > umbral) en el preview 3D nunca dispara la selección de cara -- mismo criterio click-vs-drag que ThreeViewport.vue', () => {
+    const model = modelWith({ cuboids: [cuboid('c1', 'Cabeza')] })
+    const w = mountCanvas(model)
+    const pickSpy = vi.spyOn(threeViewportService, 'pickCuboidFaceAt')
+
+    const preview = w.get('.texture-canvas__preview').element
+    dispatchPointer(preview, 'pointerdown', 5, 5)
+    preview.dispatchEvent(new MouseEvent('click', { clientX: 50, clientY: 50, bubbles: true }))
+
+    expect(pickSpy).not.toHaveBeenCalled()
+  })
+
+  it('ticket 049 (HU-25/HU-26): elegir una región UV en el dropdown del editor 2D resalta la cara correspondiente en el preview 3D (FACE_HIGHLIGHT_NAME)', async () => {
+    const region: UvRegion = { cuboidId: 'c1', face: 'north', rect: [0, 0, 4, 4], status: 'unpainted' }
+    const model = modelWith({ cuboids: [cuboid('c1', 'Cabeza')], regions: [region] })
+    const w = mountCanvas(model)
+
+    await w.get('select[aria-label="Región UV a enfocar"]').setValue('c1:north')
+
+    const mobGroup = threeViewportService.scene.children.find((c) => c.name === model.name)!
+    const mesh = mobGroup.children.find((c) => c.userData.cuboidId === 'c1')!
+    expect(mesh.children.some((c) => c.name === FACE_HIGHLIGHT_NAME)).toBe(true)
+  })
+
+  it('ticket 049: volver a "Todas las caras" quita el highlight de la cara en el preview 3D', async () => {
+    const region: UvRegion = { cuboidId: 'c1', face: 'north', rect: [0, 0, 4, 4], status: 'unpainted' }
+    const model = modelWith({ cuboids: [cuboid('c1', 'Cabeza')], regions: [region] })
+    const w = mountCanvas(model)
+    await w.get('select[aria-label="Región UV a enfocar"]').setValue('c1:north')
+
+    await w.get('select[aria-label="Región UV a enfocar"]').setValue(ALL_REGIONS_VALUE)
+
+    const mobGroup = threeViewportService.scene.children.find((c) => c.name === model.name)!
+    const mesh = mobGroup.children.find((c) => c.userData.cuboidId === 'c1')!
+    expect(mesh.children.some((c) => c.name === FACE_HIGHLIGHT_NAME)).toBe(false)
+  })
+
+  it('ticket 049: textureSelectionStore.ts es un store separado -- NO expone selectedCuboidId/select() del selectionStore.ts (017/031/036)', () => {
+    mountCanvas(modelWith())
+    const store = useTextureSelectionStore()
+
+    expect(store.selectedFace).toBeNull()
+    expect('selectedCuboidId' in store).toBe(false)
+    expect('select' in store).toBe(false)
   })
 
   it('a11y: todos los controles de herramientas tienen aria-label, y el canvas del atlas tiene un nombre accesible', () => {

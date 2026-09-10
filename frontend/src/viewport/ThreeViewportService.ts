@@ -24,12 +24,22 @@
  * lo pasan (`ThreeViewport.vue`/`GenerationPreviewViewport.vue`, tab
  * Modelo) siguen viendo el gris plano de siempre, cero cambio de
  * comportamiento.
+ *
+ * Ticket 049 (HU-25, Diseño técnico §14): `setModel` gana un 4to
+ * parámetro opcional `selectedFace`, forwardeado a `buildMobGroup` (ver
+ * su docstring). Además, `pickCuboidFaceAt(clientX, clientY)` resuelve
+ * `{cuboidId, face}` de forma DETERMINISTA a partir de
+ * `intersection.face.materialIndex` (nunca de la normal) -- comparte el
+ * raycasting NDC con `pickCuboidIdAt` (ticket 017, sin cambios de
+ * comportamiento) vía `raycastMobChildren`.
  */
 import {
   AmbientLight,
   DirectionalLight,
+  type Face,
   GridHelper,
   Group,
+  type Intersection,
   Object3D,
   PerspectiveCamera,
   Raycaster,
@@ -42,12 +52,39 @@ import {
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js'
 import { buildMobGroup } from './buildMobScene'
-import type { MobProjectModel } from '../domain/MobProjectModel'
+import type { FaceName, MobProjectModel } from '../domain/MobProjectModel'
+import { type CuboidFaceRef, FACE_LOCAL_NORMALS } from './textureUvMapping'
 
 const DEFAULT_CAMERA_POSITION = new Vector3(40, 40, 40)
 const DEFAULT_CAMERA_TARGET = new Vector3(0, 16, 0)
 const GRID_SIZE = 64
 const GRID_DIVISIONS = 16
+// Umbral de similitud (dot product de vectores unitarios) para la
+// validación dev-only de la normal -- 1.0 es "idéntica"; un valor alto
+// pero no exigente asegura que solo se avisa ante una discrepancia real,
+// nunca por el margen de precisión de punto flotante de una intersección
+// real (ver `validateFaceNormalMatchesResolvedFace`).
+const FACE_NORMAL_VALIDATION_DOT_THRESHOLD = 0.9
+
+/**
+ * Ticket 049: valida en modo desarrollo que la normal LOCAL reportada por
+ * Three.js (`intersection.face.normal`, espacio de OBJETO -- ver
+ * `FACE_LOCAL_NORMALS` en `textureUvMapping.ts`) coincide aproximadamente
+ * con la normal esperada del `FaceName` YA resuelto por `materialIndex`.
+ * Deliberadamente solo un `console.warn` -- nunca cambia ni descarta el
+ * resultado de `pickCuboidFaceAt` (AC del ticket: la normal es
+ * fallback/validación, jamás el mecanismo primario que decide la cara).
+ */
+function validateFaceNormalMatchesResolvedFace(face: FaceName, reportedFace: Face): void {
+  const [ex, ey, ez] = FACE_LOCAL_NORMALS[face]
+  const expected = new Vector3(ex, ey, ez)
+  const dot = expected.dot(reportedFace.normal)
+  if (dot < FACE_NORMAL_VALIDATION_DOT_THRESHOLD) {
+    console.warn(
+      `pickCuboidFaceAt: la normal reportada por Three.js no coincide con la cara '${face}' resuelta por materialIndex (dot=${dot.toFixed(3)}) -- validación dev-only, el resultado devuelto NO cambia.`,
+    )
+  }
+}
 
 export class ThreeViewportService {
   readonly renderer: WebGLRenderer
@@ -131,11 +168,16 @@ export class ThreeViewportService {
    * seleccionado (o lo desatachea si no hay selección) -- ver docstring
    * de la clase sobre por qué esto es necesario en cada llamada.
    */
-  setModel(model: MobProjectModel, selectedCuboidId?: string | null, atlasTexture?: Texture | null): void {
+  setModel(
+    model: MobProjectModel,
+    selectedCuboidId?: string | null,
+    atlasTexture?: Texture | null,
+    selectedFace?: CuboidFaceRef | null,
+  ): void {
     if (this.currentMobGroup) {
       this.scene.remove(this.currentMobGroup)
     }
-    this.currentMobGroup = buildMobGroup(model, selectedCuboidId, atlasTexture)
+    this.currentMobGroup = buildMobGroup(model, selectedCuboidId, atlasTexture, selectedFace)
     this.scene.add(this.currentMobGroup)
 
     const selectedMesh = selectedCuboidId ? this.findCuboidMesh(selectedCuboidId) : undefined
@@ -161,8 +203,44 @@ export class ThreeViewportService {
    * tienen `userData.cuboidId`, se descartan aunque el rayo los toque.
    */
   pickCuboidIdAt(clientX: number, clientY: number): string | null {
-    if (!this.currentMobGroup) {
+    const hit = this.raycastMobChildren(clientX, clientY).find(
+      (intersection) => typeof intersection.object.userData.cuboidId === 'string',
+    )
+    return hit ? (hit.object.userData.cuboidId as string) : null
+  }
+
+  /**
+   * Ticket 049 (HU-25, Diseño técnico §14): resuelve `{cuboidId, face}` de
+   * forma DETERMINISTA usando `intersection.face.materialIndex` (índice de
+   * grupo nativo de Three.js -- ver `mesh.userData.faceNamesByGroup`,
+   * `buildMobScene.ts`) para indexar el `FaceName` correspondiente. Jamás
+   * calcula nada a partir de `intersection.face.normal` -- esa normal solo
+   * se usa como assert/validación en modo desarrollo
+   * (`validateFaceNormalMatchesResolvedFace`), nunca decide el resultado.
+   */
+  pickCuboidFaceAt(clientX: number, clientY: number): CuboidFaceRef | null {
+    const hit = this.raycastMobChildren(clientX, clientY).find(
+      (intersection) => typeof intersection.object.userData.cuboidId === 'string',
+    )
+    if (!hit) {
       return null
+    }
+    const faceNamesByGroup = hit.object.userData.faceNamesByGroup as FaceName[] | undefined
+    const materialIndex = hit.face?.materialIndex
+    const face = faceNamesByGroup && materialIndex !== undefined ? faceNamesByGroup[materialIndex] : undefined
+    if (!face) {
+      return null
+    }
+    if (import.meta.env.DEV && hit.face) {
+      validateFaceNormalMatchesResolvedFace(face, hit.face)
+    }
+    return { cuboidId: hit.object.userData.cuboidId as string, face }
+  }
+
+  /** Raycasting NDC compartido por `pickCuboidIdAt`/`pickCuboidFaceAt` -- mismo cálculo de coordenadas de pantalla a NDC, mismo alcance (hijos directos del grupo del mob, no recursivo). */
+  private raycastMobChildren(clientX: number, clientY: number): Intersection[] {
+    if (!this.currentMobGroup) {
+      return []
     }
     const rect = this.canvas.getBoundingClientRect()
     const ndc = new Vector2(
@@ -170,10 +248,7 @@ export class ThreeViewportService {
       -((clientY - rect.top) / rect.height) * 2 + 1,
     )
     this.raycaster.setFromCamera(ndc, this.camera)
-    const hit = this.raycaster
-      .intersectObjects(this.currentMobGroup.children, false)
-      .find((intersection) => typeof intersection.object.userData.cuboidId === 'string')
-    return hit ? (hit.object.userData.cuboidId as string) : null
+    return this.raycaster.intersectObjects(this.currentMobGroup.children, false)
   }
 
   startRenderLoop(): void {
