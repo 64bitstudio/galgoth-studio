@@ -59,6 +59,7 @@ beforeEach(() => {
   vi.stubGlobal('EventSource', FakeEventSource)
   startGeneration.mockReset().mockResolvedValue({ jobId: 'job-1' })
   cancelGeneration.mockReset().mockResolvedValue(undefined)
+  sessionStorage.clear() // ticket 038 -- GenerationStep persiste el jobId en sessionStorage (recuperación tras refresh); sin esto, un test "ve" el jobId que dejó el anterior.
 })
 
 afterEach(() => {
@@ -174,5 +175,74 @@ describe('GenerationStep.vue', () => {
 
     expect(wrapper.text()).toContain('No se pudo iniciar la generación.')
     expect(wrapper.findAll('button').find((b) => b.text() === 'Ir al proyecto')).toBeDefined()
+  })
+
+  it('ticket 038: las 2 etapas nuevas (preparando_resultado/validando_geometria) se muestran igual que las demás', async () => {
+    const wrapper = mount(GenerationStep, { props: PROPS })
+    await flushPromises()
+
+    FakeEventSource.instances[0]!.emit('progress', progressEvent({ stage: 'preparando_resultado', message: 'Aplicando UV…', progressPct: 90 }))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Preparando resultado…')
+    expect(wrapper.text()).toContain('Validando geometría…')
+    expect(wrapper.find('.generation-step__stage--current').text()).toContain('Preparando resultado')
+  })
+
+  it('ticket 038: un error de conexión del EventSource muestra "Reconectando" mientras el job sigue corriendo, y desaparece al llegar el próximo evento real', async () => {
+    const wrapper = mount(GenerationStep, { props: PROPS })
+    await flushPromises()
+
+    FakeEventSource.instances[0]!.onerror?.()
+    await flushPromises()
+    expect(wrapper.text()).toContain('Reconectando al proceso')
+
+    FakeEventSource.instances[0]!.emit('progress', progressEvent({ seq: 2, stage: 'creando_rig' }))
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Reconectando al proceso')
+  })
+
+  it('ticket 038: "Reintentar" tras un fallo dispara una generación nueva, con su propio jobId y stream', async () => {
+    const wrapper = mount(GenerationStep, { props: PROPS })
+    await flushPromises()
+
+    FakeEventSource.instances[0]!.emit('progress', progressEvent({ stage: 'fallido', message: 'El proveedor falló.', progressPct: null }))
+    await flushPromises()
+    expect(wrapper.text()).toContain('La generación falló: El proveedor falló.')
+
+    startGeneration.mockResolvedValueOnce({ jobId: 'job-2' })
+    await wrapper.findAll('button').find((b) => b.text() === 'Reintentar')!.trigger('click')
+    await flushPromises()
+
+    expect(startGeneration).toHaveBeenCalledTimes(2)
+    expect(FakeEventSource.instances).toHaveLength(2)
+    expect(FakeEventSource.instances[1]!.url).toContain('job-2')
+    expect(wrapper.text()).not.toContain('La generación falló')
+  })
+
+  it('ticket 038: con un jobId ya persistido para este mob (refresh de página), reconecta en vez de arrancar un POST /generate nuevo', async () => {
+    sessionStorage.setItem('galgoth:ai-job:mob-1', 'job-resumido')
+
+    const wrapper = mount(GenerationStep, { props: PROPS })
+    await flushPromises()
+
+    expect(startGeneration).not.toHaveBeenCalled()
+    expect(FakeEventSource.instances).toHaveLength(1)
+    expect(FakeEventSource.instances[0]!.url).toContain('job-resumido')
+
+    // El backlog completo llega igual por la reconexión -- el componente reconstruye el estado real (no arranca en 0% a la fuerza).
+    FakeEventSource.instances[0]!.emit('progress', progressEvent({ seq: 1, stage: 'creando_rig', progressPct: 45 }))
+    await flushPromises()
+    expect(wrapper.find('progress.generation-step__progress').attributes('value')).toBe('45')
+  })
+
+  it('ticket 038: al llegar a un estado terminal, se limpia el jobId persistido (no queda un resume fantasma para la próxima generación)', async () => {
+    mount(GenerationStep, { props: PROPS })
+    await flushPromises()
+
+    FakeEventSource.instances[0]!.emit('progress', progressEvent({ stage: 'completado', progressPct: 100 }))
+    await flushPromises()
+
+    expect(sessionStorage.getItem('galgoth:ai-job:mob-1')).toBeNull()
   })
 })

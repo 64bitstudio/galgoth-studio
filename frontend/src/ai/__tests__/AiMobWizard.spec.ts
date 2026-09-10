@@ -81,6 +81,7 @@ describe('AiMobWizard.vue', () => {
   beforeEach(() => {
     FakeEventSource.instances = []
     vi.stubGlobal('EventSource', FakeEventSource)
+    sessionStorage.clear() // ticket 038 -- AiMobWizard/GenerationStep persisten estado de recuperación en sessionStorage; sin esto, un test "ve" lo que dejó el anterior.
   })
 
   afterEach(() => {

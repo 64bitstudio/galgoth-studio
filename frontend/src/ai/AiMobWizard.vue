@@ -18,6 +18,15 @@
  * todavía (el editor manual, 016-018, solo se ejerció vía el harness de
  * desarrollo `/dev/viewport-harness`). Cerrar esa ruta es alcance de un
  * ticket futuro.
+ *
+ * Ticket 038 (recuperación tras refresh de página): `step`/`createdMob`
+ * se persisten en `sessionStorage` apenas el mob real existe (recién ahí
+ * hay algo real que recuperar -- antes de eso, perder la imagen elegida
+ * en un refresh es aceptable, nunca hubo nada persistido en el backend).
+ * `GenerationStep.vue` maneja su PROPIA recuperación del `jobId` (ver su
+ * propio comentario) -- acá solo se recupera lo necesario para volver a
+ * MONTARLO con el mismo mob real, sin lo cual nunca llegaría a
+ * ejecutarse esa lógica.
  */
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -38,12 +47,64 @@ const route = useRoute()
 const router = useRouter()
 const projectId = route.params.projectId as string
 
-const step = ref<WizardStepKey>('reference')
+/** Ticket 038 -- una entrada por proyecto alcanza (un wizard activo por pestaña de navegador). */
+const RESUME_STORAGE_KEY = `galgoth:ai-wizard-resume:${projectId}`
+
+interface ResumableWizardState {
+  step: Extract<WizardStepKey, 'generation'>
+  mob: MobSummary
+}
+
+/**
+ * Solo `'generation'` es recuperable de verdad: es el único paso cuyo
+ * estado completo (el `jobId`, manejado por `GenerationStep.vue` mismo)
+ * se puede reconstruir 100% desde el backend (backlog de `ai_job_events`
+ * vía SSE). `'result'` necesitaría persistir también el `jobId` acá y
+ * volver a pedir `GET /result` -- фuera de alcance de este ticket
+ * (el bug reportado es específicamente el de "Generación"); tras un
+ * refresh en "Resultado" el wizard vuelve a "Referencia" como hoy, sin
+ * cambio de comportamiento respecto a antes de este ticket.
+ */
+function readResumableState(): ResumableWizardState | null {
+  try {
+    const raw = sessionStorage.getItem(RESUME_STORAGE_KEY)
+    if (!raw) {
+      return null
+    }
+    const parsed = JSON.parse(raw) as ResumableWizardState
+    if (parsed.step === 'generation' && parsed.mob?.id) {
+      return parsed
+    }
+    return null
+  } catch {
+    return null // sessionStorage corrupto/inaccesible (modo privado, cuota) -- nunca bloquea el wizard, solo se pierde la recuperación.
+  }
+}
+
+function persistResumableState(mob: MobSummary): void {
+  try {
+    sessionStorage.setItem(RESUME_STORAGE_KEY, JSON.stringify({step: 'generation', mob}))
+  } catch {
+    // Ver readResumableState -- mismo criterio, nunca bloquea el wizard.
+  }
+}
+
+function clearResumableState(): void {
+  try {
+    sessionStorage.removeItem(RESUME_STORAGE_KEY)
+  } catch {
+    // Ver readResumableState.
+  }
+}
+
+const resumed = readResumableState()
+
+const step = ref<WizardStepKey>(resumed?.step ?? 'reference')
 const referenceFile = ref<File | null>(null)
 const referencePreviewUrl = ref<string | null>(null)
 const submitting = ref(false)
 const submitError = ref<string | null>(null)
-const createdMob = ref<MobSummary | null>(null)
+const createdMob = ref<MobSummary | null>(resumed?.mob ?? null)
 
 const activeJobId = ref<string | null>(null)
 const finalPreviewModel = ref<MobProjectModel | null>(null)
@@ -78,6 +139,7 @@ async function handleConfigurationConfirm(data: { name: string; baseType: BaseTy
     await uploadReferenceImage(mob.id, file)
     createdMob.value = mob
     step.value = 'generation'
+    persistResumableState(mob)
   } catch (error) {
     submitError.value = error instanceof ApiError ? error.message : 'No se pudo crear el mob con esta referencia.'
   } finally {
@@ -86,6 +148,7 @@ async function handleConfigurationConfirm(data: { name: string; baseType: BaseTy
 }
 
 function backToProject(): void {
+  clearResumableState()
   router.push(`/projects/${projectId}`)
 }
 
@@ -105,6 +168,7 @@ async function handleGenerationCompleted(jobId: string, finalModel: MobProjectMo
   activeJobId.value = jobId
   finalPreviewModel.value = finalModel
   step.value = 'result'
+  clearResumableState() // "Generación" ya terminó -- un refresh a partir de acá vuelve a "Referencia", igual que antes de este ticket.
   await fetchResult(jobId)
 }
 
@@ -131,6 +195,9 @@ function handleRegenerate(): void {
   // POST /generate nuevo, reutilizando la misma imagen de referencia ya
   // subida en el paso 2.
   step.value = 'generation'
+  if (createdMob.value) {
+    persistResumableState(createdMob.value)
+  }
 }
 
 async function handleApply(): Promise<void> {

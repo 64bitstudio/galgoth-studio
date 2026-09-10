@@ -29,25 +29,36 @@ import com.galgothstudio.backend.domain.geometry.ResizeCuboid;
 import com.galgothstudio.backend.domain.geometry.RotateCuboid;
 import com.galgothstudio.backend.domain.geometry.SetBonePivot;
 import com.galgothstudio.backend.domain.geometry.SetBoneRotation;
+import com.galgothstudio.backend.domain.export.BBModelExporterV5;
+import com.galgothstudio.backend.domain.export.validation.FmmCompatibilityValidator;
+import com.galgothstudio.backend.domain.export.validation.ValidationResult;
 import com.galgothstudio.backend.domain.model.BaseType;
 import com.galgothstudio.backend.domain.model.ExportSettings;
 import com.galgothstudio.backend.domain.model.FormatVersion;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
+import com.galgothstudio.backend.domain.model.ModelIntent;
 import com.galgothstudio.backend.domain.model.TextureDocument;
 import com.galgothstudio.backend.domain.model.UvLayout;
+import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
 import com.galgothstudio.backend.project.persistence.MobEntity;
 import com.galgothstudio.backend.project.persistence.MobRepository;
 import com.galgothstudio.backend.project.persistence.ReferenceImageEntity;
 import com.galgothstudio.backend.project.persistence.ReferenceImageRepository;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -98,6 +109,10 @@ public class MobGenerationService {
 	private final GenerationCancellationRegistry cancellationRegistry;
 	private final ObjectMapper objectMapper;
 	private final Executor generationExecutor;
+	private final UvLayoutStrategy uvLayoutStrategy;
+	private final boolean geometryStreamingEnabled;
+	private final long heartbeatInitialDelaySeconds;
+	private final long heartbeatPeriodSeconds;
 
 	public MobGenerationService(
 			MobRepository mobRepository,
@@ -110,7 +125,17 @@ public class MobGenerationService {
 			GenerationEventBroadcaster eventBroadcaster,
 			GenerationCancellationRegistry cancellationRegistry,
 			ObjectMapper objectMapper,
-			@Qualifier("generationExecutor") Executor generationExecutor) {
+			@Qualifier("generationExecutor") Executor generationExecutor,
+			UvLayoutStrategy uvLayoutStrategy,
+			@Value("${ai.geometry-streaming-enabled}") boolean geometryStreamingEnabled,
+			// Ticket 038 -- cadencia del ping de "sigue vivo" en modo heartbeat:
+			// configurable (no una constante hardcodeada) para que los tests
+			// puedan ejercitar el heartbeat real sin esperar los 8s de
+			// producción. Defaults reales: ni tan seguido que sature
+			// `ai_job_events`/el broadcaster, ni tan espaciado que el usuario
+			// dude si el proceso murió durante los 70-90s reales de espera.
+			@Value("${ai.geometry-heartbeat-initial-delay-seconds:8}") long heartbeatInitialDelaySeconds,
+			@Value("${ai.geometry-heartbeat-period-seconds:8}") long heartbeatPeriodSeconds) {
 		this.mobRepository = mobRepository;
 		this.referenceImageRepository = referenceImageRepository;
 		this.assetStorageService = assetStorageService;
@@ -120,6 +145,10 @@ public class MobGenerationService {
 		this.aiJobEventRepository = aiJobEventRepository;
 		this.eventBroadcaster = eventBroadcaster;
 		this.cancellationRegistry = cancellationRegistry;
+		this.uvLayoutStrategy = uvLayoutStrategy;
+		this.geometryStreamingEnabled = geometryStreamingEnabled;
+		this.heartbeatInitialDelaySeconds = heartbeatInitialDelaySeconds;
+		this.heartbeatPeriodSeconds = heartbeatPeriodSeconds;
 		this.objectMapper = objectMapper;
 		this.generationExecutor = generationExecutor;
 	}
@@ -165,12 +194,24 @@ public class MobGenerationService {
 			checkCancellation(jobId);
 			emit(jobId, seq, GenerationStage.DETECTANDO_SILUETA, "Silueta detectada: " + visionResult.modelIntent().silhouette(), 25, null);
 
-			RawOperationsResult raw = geometryPlannerService.requestOperations(visionResult.modelIntent());
-			updateJobProviderInfo(jobId, raw.providerResponse());
+			// Ticket 038 -- hallazgo real (ver ai_job_events de jobs reales en
+			// dev, 2026-09-09): esta era la llamada que dejaba la UI "pegada"
+			// 70-90s sin ningún evento. Con streaming=true, cada operación
+			// real dispara su propio evento acá abajo (via applyStepAndEmit),
+			// en vez de un replay post-hoc instantáneo.
+			MobProjectModel emptyModel = emptyModelFor(context);
+			GeometryPlanExecution planExecution = geometryStreamingEnabled
+					? planWithStreaming(jobId, seq, visionResult.modelIntent(), emptyModel)
+					: planWithHeartbeat(jobId, seq, visionResult.modelIntent(), emptyModel);
+			updateJobProviderInfo(jobId, planExecution.providerResponse());
 			checkCancellation(jobId);
 
-			MobProjectModel emptyModel = emptyModelFor(context);
-			MobProjectModel finalModel = replayOperationsWithPreview(jobId, seq, raw, emptyModel);
+			emit(jobId, seq, GenerationStage.PREPARANDO_RESULTADO, "Preparando resultado…", 90, null);
+			MobProjectModel finalModel = geometryPlannerService.applyOperations(planExecution.operations(), planExecution.providerResponse(), emptyModel);
+			checkCancellation(jobId);
+
+			emit(jobId, seq, GenerationStage.VALIDANDO_GEOMETRIA, "Validando compatibilidad con Blockbench/FMM…", 95, null);
+			validateFmmCompatibilityInformational(jobId, finalModel);
 
 			completeJob(jobId, finalModel);
 			emit(jobId, seq, GenerationStage.COMPLETADO, "Generación completada.", 100, previewSnapshotPayload(finalModel));
@@ -195,31 +236,140 @@ public class MobGenerationService {
 		}
 	}
 
+	/** Resultado de la fase de planeamiento geométrico (streaming o heartbeat, ticket 038) -- las mismas 2 cosas que antes devolvía {@code requestOperations} (lista cruda + `AiProviderResponse`), ahora sin acoplar la aplicación final de UV a este paso. */
+	private record GeometryPlanExecution(List<GeometryOperation> operations, AiProviderResponse providerResponse) {
+	}
+
+	/**
+	 * Ticket 038 -- modo streaming (switch encendido, default): consume la
+	 * respuesta del Geometry Planner incrementalmente y aplica/emite cada
+	 * operación real EN CUANTO el modelo la termina de emitir -- a
+	 * diferencia del modo heartbeat, acá no hay ningún replay post-hoc,
+	 * el usuario ve el modelo crecer en tiempo real mientras la IA todavía
+	 * está generando. Como bonus real (no buscado a propósito): la
+	 * cancelación deja de estar limitada a "recién en el próximo punto de
+	 * control" (ver `GenerationCancellationRegistry`) durante ESTA fase --
+	 * cada operación parseada es un punto de control nuevo.
+	 */
+	private GeometryPlanExecution planWithStreaming(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel emptyModel) {
+		List<GeometryOperation> collected = new ArrayList<>();
+		MobProjectModel[] previewBox = {emptyModel};
+		RawOperationsResult raw = geometryPlannerService.planStreaming(modelIntent, op -> {
+			checkCancellation(jobId);
+			collected.add(op);
+			// Progreso honesto basado en operaciones REALES ya vistas -- no
+			// se conoce el total hasta que el stream termina (a diferencia
+			// del modo heartbeat, que sí conoce `operations.size()` de
+			// entrada), así que se acerca asintóticamente a 89% en vez de
+			// una fracción exacta de un total desconocido.
+			int progressPct = Math.min(89, 40 + collected.size());
+			previewBox[0] = applyStepAndEmit(jobId, seq, emptyModel, collected, previewBox[0], op, progressPct);
+		});
+		return new GeometryPlanExecution(raw.operations(), raw.providerResponse());
+	}
+
+	/**
+	 * Ticket 038 -- modo heartbeat (switch operativo apagado,
+	 * `AI_GEOMETRY_STREAMING_ENABLED=false`): la misma llamada bloqueante
+	 * de siempre, pero con un ping periódico HONESTO mientras espera
+	 * (mismo stage/% ya emitido, `detectando_silueta`/25% -- nunca inventa
+	 * avance de etapa ni de porcentaje, solo informa cuánto tiempo real
+	 * lleva corriendo). Al volver la respuesta completa, reproduce el
+	 * batch de una vez (mismo comportamiento instantáneo de siempre en
+	 * este modo -- es exactamente lo que hacía el pipeline antes de este
+	 * ticket).
+	 */
+	private GeometryPlanExecution planWithHeartbeat(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel emptyModel) {
+		ScheduledExecutorService heartbeatScheduler = Executors.newSingleThreadScheduledExecutor();
+		long startNanos = System.nanoTime();
+		ScheduledFuture<?> heartbeat = heartbeatScheduler.scheduleAtFixedRate(
+				() -> {
+					long elapsedSeconds = (System.nanoTime() - startNanos) / 1_000_000_000L;
+					emit(
+							jobId, seq, GenerationStage.DETECTANDO_SILUETA,
+							"Generando geometría… llevamos " + elapsedSeconds + "s, puede tardar hasta un minuto.", 25, null);
+				},
+				heartbeatInitialDelaySeconds, heartbeatPeriodSeconds, TimeUnit.SECONDS);
+
+		RawOperationsResult raw;
+		try {
+			raw = geometryPlannerService.requestOperations(modelIntent);
+		} finally {
+			heartbeat.cancel(true);
+			heartbeatScheduler.shutdownNow();
+		}
+
+		checkCancellation(jobId);
+		replayOperationsWithPreview(jobId, seq, raw.operations(), emptyModel);
+		return new GeometryPlanExecution(raw.operations(), raw.providerResponse());
+	}
+
 	/**
 	 * Reproduce el batch de operaciones YA obtenido (nunca vuelve a
 	 * llamar al proveedor) de a una operación por vez, emitiendo un
-	 * evento `preview_operations` por cada cambio real -- el mismo
-	 * `GeometryEngine` (005) es la única autoridad, tanto para el
-	 * preview incremental (sin UV, más barato) como para el resultado
-	 * final (con UV, vía {@link GeometryPlannerService#applyOperations}).
+	 * evento `preview_operations` por cada cambio real -- usado solo en
+	 * modo heartbeat (ticket 038); en modo streaming, {@link #applyStepAndEmit}
+	 * se llama directo desde el callback de {@link #planWithStreaming} a
+	 * medida que cada operación llega de verdad, sin este replay.
 	 */
-	private MobProjectModel replayOperationsWithPreview(UUID jobId, AtomicInteger seq, RawOperationsResult raw, MobProjectModel emptyModel) {
-		List<GeometryOperation> operations = raw.operations();
+	private MobProjectModel replayOperationsWithPreview(UUID jobId, AtomicInteger seq, List<GeometryOperation> operations, MobProjectModel emptyModel) {
 		MobProjectModel previous = emptyModel;
 		for (int i = 0; i < operations.size(); i++) {
 			checkCancellation(jobId);
-			MobProjectModel current = GeometryEngine.apply(emptyModel, operations.subList(0, i + 1));
-			PreviewDelta delta = GenerationPreviewDiff.diff(previous, current);
-			if (!delta.isEmpty()) {
-				GeometryOperation op = operations.get(i);
-				String stage = isBoneOnlyOp(op) ? GenerationStage.CREANDO_RIG : GenerationStage.GENERANDO_CUBOIDES;
-				int progressPct = Math.min(89, 40 + (int) Math.round(45.0 * (i + 1) / operations.size()));
-				emit(jobId, seq, stage, describeOperation(op), progressPct, previewOperationsPayload(delta));
-			}
-			previous = current;
+			int progressPct = Math.min(89, 40 + (int) Math.round(45.0 * (i + 1) / operations.size()));
+			previous = applyStepAndEmit(jobId, seq, emptyModel, operations.subList(0, i + 1), previous, operations.get(i), progressPct);
 		}
-		checkCancellation(jobId);
-		return geometryPlannerService.applyOperations(operations, raw.providerResponse(), emptyModel);
+		return previous;
+	}
+
+	/**
+	 * Aplica el batch completo visto HASTA AHORA (siempre desde
+	 * `emptyModel`) y diferencia contra el preview anterior -- mecanismo
+	 * compartido entre el replay post-hoc (heartbeat) y el streaming real:
+	 * `GeometryEngine.apply` asigna ids reales nuevos (`UUID.randomUUID()`)
+	 * en cada llamada, así que no soporta "aplicar una operación más"
+	 * incrementalmente sobre un modelo ya construido con ids estables --
+	 * hay que re-aplicar desde cero cada vez y dejar que
+	 * {@link GenerationPreviewDiff} calcule qué cambió de verdad. Costo
+	 * ínfimo (operaciones en memoria, sin I/O) incluso para el tamaño de
+	 * batch real de este proyecto.
+	 */
+	private MobProjectModel applyStepAndEmit(
+			UUID jobId, AtomicInteger seq, MobProjectModel emptyModel, List<GeometryOperation> allOpsSoFar,
+			MobProjectModel previousPreview, GeometryOperation justAdded, int progressPct) {
+		MobProjectModel current = GeometryEngine.apply(emptyModel, allOpsSoFar);
+		PreviewDelta delta = GenerationPreviewDiff.diff(previousPreview, current);
+		if (!delta.isEmpty()) {
+			String stage = isBoneOnlyOp(justAdded) ? GenerationStage.CREANDO_RIG : GenerationStage.GENERANDO_CUBOIDES;
+			emit(jobId, seq, stage, describeOperation(justAdded), progressPct, previewOperationsPayload(delta));
+		}
+		return current;
+	}
+
+	/**
+	 * FMM (013) informativo dentro del pipeline (ticket 038, decisión con
+	 * VoBo del PO): un job con hallazgos FMM sigue llegando a `completado`
+	 * igual que hoy -- {@code GenerationResultService#getResult} sigue
+	 * siendo quien de verdad expone `fmmCompatible`/`fmmIssues` al
+	 * frontend. Acá solo se hace VISIBLE la etapa real (antes corría en
+	 * silencio recién en el `GET /result` posterior); un fallo AL CORRER
+	 * la validación (no un resultado inválido, eso lo maneja
+	 * `GenerationResultService` normalmente) no debe tumbar un job que
+	 * por lo demás generó geometría válida.
+	 */
+	private void validateFmmCompatibilityInformational(UUID jobId, MobProjectModel finalModel) {
+		try {
+			String bbmodelJson = BBModelExporterV5.export(finalModel, uvLayoutStrategy);
+			ValidationResult validation = FmmCompatibilityValidator.validate(bbmodelJson);
+			if (!validation.pass()) {
+				log.info("Job {} generó un modelo con hallazgos de compatibilidad FMM (informativo, no falla el job): {}", jobId, validation.issues());
+			}
+		} catch (RuntimeException e) {
+			log.warn(
+					"No se pudo correr la validación FMM informativa del job {} durante el pipeline -- se ignora, "
+							+ "GenerationResultService la reintenta al servir GET /result.",
+					jobId, e);
+		}
 	}
 
 	private static boolean isBoneOnlyOp(GeometryOperation op) {
