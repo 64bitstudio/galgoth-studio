@@ -49,6 +49,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import GButton from '../../design-system/components/GButton.vue'
+import IconUpload from '../../design-system/icons/IconUpload.vue'
 import { decodePngFileToAtlasBuffer, PngDecodeError } from './pngImportDecode'
 import { cropOrPad, describeImportAdjustment, type ImportAdjustment } from './textureImportTools'
 import type { TextureRect } from './TexturePatchCommand'
@@ -163,7 +164,7 @@ watch([pending, showingAfter], redrawPreview, { flush: 'post' }) // 'post': corr
   <fieldset class="texture-import-panel">
     <legend class="texture-import-panel__sr-only">Importar imagen PNG sobre {{ targetLabel }}</legend>
 
-    <GButton type="button" variant="secondary" @click="triggerFileDialog">Importar PNG ({{ targetLabel }})</GButton>
+    <GButton type="button" variant="secondary" :title="`Importar PNG sobre ${targetLabel}`" @click="triggerFileDialog"><template #icon><IconUpload :size="16" /></template>Importar PNG</GButton>
     <input ref="fileInputRef" type="file" accept="image/png" aria-label="Archivo PNG a importar" class="texture-import-panel__file-input" @change="onFileChange" />
 
     <p v-if="error" class="texture-import-panel__error">{{ error }}</p>

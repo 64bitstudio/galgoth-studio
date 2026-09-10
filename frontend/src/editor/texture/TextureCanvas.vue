@@ -673,7 +673,7 @@ function showEyedropperToast(hex: string): void {
 
       <span class="texture-canvas__tb-sep" aria-hidden="true"></span>
 
-      <fieldset class="texture-canvas__tb-group" aria-label="Herramientas de pintado">
+      <fieldset class="texture-canvas__tb-group texture-canvas__tb-group--tools" aria-label="Herramientas de pintado">
         <legend class="texture-canvas__sr-only">Herramientas de pintado</legend>
         <IconButton label="Pincel" :active="activeTool === 'brush'" @click="activeTool = 'brush'"><IconBrush /></IconButton>
         <IconButton label="Borrador" :active="activeTool === 'eraser'" @click="activeTool = 'eraser'"><IconEraser /></IconButton>
@@ -693,7 +693,7 @@ function showEyedropperToast(hex: string): void {
 
       <span class="texture-canvas__tb-sep" aria-hidden="true"></span>
 
-      <div class="texture-canvas__tb-group texture-canvas__zoomctl">
+      <div class="texture-canvas__zoomctl">
         <IconButton label="Alejar zoom" shortcut="-" @click="zoomOut"><IconZoomOut /></IconButton>
         <GSelect :model-value="String(zoomPercent)" :options="zoomOptions" :placeholder="`${zoomPercent}%`" label="Nivel de zoom del lienzo" @update:model-value="handleZoomSelect" />
         <IconButton label="Acercar zoom" shortcut="+" @click="zoomIn"><IconZoomIn /></IconButton>
@@ -706,7 +706,7 @@ function showEyedropperToast(hex: string): void {
         <TextureImportPanel :target-label="importTargetLabel" :resolve-target="resolveImportTarget" @imported="handleImported" />
       </div>
 
-      <GButton variant="ghost" @click="openAiGenerator"><template #icon><IconSparkle :size="16" /></template>Generar con IA</GButton>
+      <GButton variant="accent" @click="openAiGenerator"><template #icon><IconSparkle :size="16" /></template>Generar con IA</GButton>
 
       <div class="texture-canvas__tb-grow"></div>
 
@@ -799,12 +799,33 @@ function showEyedropperToast(hex: string): void {
   min-width: 0;
 }
 
+/* Corrección visual post-058: en el mockup validado (`.tb-group` de
+   docs/definiciones/mockups/058-texture-editor-redesign-reference.html)
+   la "card" (fondo/borde/radio) de `.texture-canvas__tb-group` SOLO
+   queda para agrupar botones-ícono sin estilo propio (ej. el toggle de
+   cuadrícula, más abajo) -- los grupos que envuelven un `GSelect`
+   (región/tamaño de pincel) o el fieldset de herramientas de pintado
+   quedan a propósito SIN esa card en el mockup (`style="border:none"`
+   inline sobre esos mismos elementos): el `GSelect` ya trae su propio
+   fondo/borde en `.g-select__trigger`, así que envolverlo además en la
+   card duplicaba el borde (una "card dentro de otra card", el hallazgo
+   reportado). Estos 3 modificadores anulan la card base por eso mismo. */
+.texture-canvas__tb-group--region,
+.texture-canvas__tb-group--tools {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
 .texture-canvas__tb-group--region {
   min-width: 140px;
 }
 
 .texture-canvas__tb-group--brush {
   width: 76px;
+  background: transparent;
+  border: none;
+  padding: 0;
 }
 
 .texture-canvas__tb-sep {

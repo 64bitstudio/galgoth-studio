@@ -80,6 +80,7 @@ const swatches = [
           <GButton variant="secondary">Editar modelo</GButton>
           <GButton variant="danger">Eliminar</GButton>
           <GButton variant="ghost">Cancelar</GButton>
+          <GButton variant="accent">Generar con IA</GButton>
           <GButton variant="primary" disabled>Deshabilitado</GButton>
         </div>
       </section>
