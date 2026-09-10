@@ -1,0 +1,1161 @@
+<title>Fase 3: Textura por IA</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #f5f7f4;
+    --panel: #ffffff;
+    --surface: #eef1ee;
+    --surface-2: #e4e9e4;
+    --border: #dbe2de;
+    --text: #10151a;
+    --muted: #5b6a70;
+    --accent: #17935f;
+    --accent-ink: #ffffff;
+    --decision: #96660a;
+    --decision-bg: #fbf1de;
+    --risk: #b23b3b;
+    --risk-bg: #fbeaea;
+    --finding: #1f6f8b;
+    --finding-bg: #e9f3f6;
+    --code-bg: #eef1ee;
+    --shadow: 0 1px 2px rgba(16, 21, 26, 0.06);
+    --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+    --font-body: 'Work Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b0f14;
+      --panel: #111820;
+      --surface: #171f29;
+      --surface-2: #1c2631;
+      --border: #26323d;
+      --text: #f3f6f8;
+      --muted: #93a0aa;
+      --accent: #48e5a0;
+      --accent-ink: #04140d;
+      --decision: #f2c66d;
+      --decision-bg: #2a220f;
+      --risk: #f46b6b;
+      --risk-bg: #2a1414;
+      --finding: #6fc6e6;
+      --finding-bg: #10222b;
+      --code-bg: #0e151c;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0b0f14;
+    --panel: #111820;
+    --surface: #171f29;
+    --surface-2: #1c2631;
+    --border: #26323d;
+    --text: #f3f6f8;
+    --muted: #93a0aa;
+    --accent: #48e5a0;
+    --accent-ink: #04140d;
+    --decision: #f2c66d;
+    --decision-bg: #2a220f;
+    --risk: #f46b6b;
+    --risk-bg: #2a1414;
+    --finding: #6fc6e6;
+    --finding-bg: #10222b;
+    --code-bg: #0e151c;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    line-height: 1.6;
+    font-size: 16px;
+  }
+
+  ::selection { background: var(--accent); color: var(--accent-ink); }
+
+  a { color: var(--accent); }
+
+  code, pre, kbd, .mono {
+    font-family: var(--font-mono);
+    font-feature-settings: "tnum" 1;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* ---------- Header ---------- */
+
+  .doc-header {
+    padding: 3.5rem clamp(1.25rem, 5vw, 3rem) 2.75rem;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, var(--surface), var(--bg) 140%);
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .eyebrow .sep { opacity: 0.5; }
+
+  .doc-header h1 {
+    font-size: clamp(2rem, 4vw, 2.9rem);
+    margin: 0.5rem 0 0.9rem;
+    max-width: 20ch;
+  }
+
+  .doc-header .lede {
+    max-width: 68ch;
+    color: var(--muted);
+    font-size: 1.05rem;
+    margin: 0 0 1.5rem;
+  }
+
+  .status-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+
+  .chip--done { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+  .chip--done .dot { background: var(--accent); }
+  .chip--pending { color: var(--decision); border-color: color-mix(in srgb, var(--decision) 40%, var(--border)); }
+  .chip--pending .dot { background: var(--decision); }
+
+  .dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex: none; }
+
+  /* ---------- Layout: TOC + content ---------- */
+
+  .layout {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: 0;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .toc { position: static; border-right: none; border-bottom: 1px solid var(--border); }
+    .toc nav { display: flex; overflow-x: auto; gap: 0.25rem; padding-bottom: 0.75rem; }
+    .toc nav a { white-space: nowrap; }
+  }
+
+  .toc {
+    border-right: 1px solid var(--border);
+    padding: 2rem 1rem 2rem 1.5rem;
+  }
+
+  .toc-inner { position: sticky; top: 1.5rem; }
+
+  .toc nav { display: flex; flex-direction: column; gap: 0.15rem; }
+
+  .toc a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.86rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 6px;
+    border-left: 2px solid transparent;
+  }
+
+  .toc a:hover { color: var(--text); background: var(--surface); }
+
+  .toc .toc-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 1.1rem 0 0.35rem;
+    padding-left: 0.6rem;
+  }
+  .toc .toc-label:first-child { margin-top: 0; }
+
+  main {
+    padding: 2.5rem clamp(1.25rem, 4vw, 3rem) 5rem;
+    min-width: 0;
+  }
+
+  .prose { max-width: 72ch; }
+
+  section { margin-bottom: 3.25rem; scroll-margin-top: 1.5rem; }
+
+  section > h2 {
+    font-size: 1.6rem;
+    margin: 0 0 0.3rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+  }
+
+  section > h2 .num {
+    font-family: var(--font-mono);
+    color: var(--muted);
+    font-size: 1rem;
+    font-weight: 500;
+  }
+
+  section > .section-kicker {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin: 0 0 1.5rem;
+    max-width: 68ch;
+  }
+
+  h3.epic {
+    font-size: 1.2rem;
+    margin: 2.4rem 0 1rem;
+    padding-top: 1.6rem;
+    border-top: 1px solid var(--border);
+  }
+  section > h3.epic:first-of-type { border-top: none; padding-top: 0; }
+
+  h4 { font-size: 1.05rem; margin: 1.8rem 0 0.6rem; }
+
+  p { max-width: 72ch; }
+  ul, ol { max-width: 72ch; padding-left: 1.3rem; }
+  li { margin: 0.3rem 0; }
+
+  strong { font-weight: 600; }
+
+  /* ---------- Callouts ---------- */
+
+  .callout {
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--muted);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 0.9rem 1.1rem;
+    margin: 1.1rem 0;
+    max-width: 72ch;
+  }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout .callout-label {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    display: block;
+    margin-bottom: 0.35rem;
+  }
+
+  .callout--decision { border-left-color: var(--decision); background: var(--decision-bg); }
+  .callout--decision .callout-label { color: var(--decision); }
+  .callout--risk { border-left-color: var(--risk); background: var(--risk-bg); }
+  .callout--risk .callout-label { color: var(--risk); }
+  .callout--finding { border-left-color: var(--finding); background: var(--finding-bg); }
+  .callout--finding .callout-label { color: var(--finding); }
+
+  /* ---------- HU cards ---------- */
+
+  .hu-card {
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+    padding: 1.25rem 1.4rem;
+    margin: 1.1rem 0 1.6rem;
+    max-width: 76ch;
+  }
+
+  .hu-card .hu-tag {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--accent);
+    font-weight: 600;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+
+  .hu-card .hu-story {
+    color: var(--muted);
+    font-style: italic;
+    margin: 0.2rem 0 0.9rem;
+    font-size: 0.97rem;
+  }
+
+  .hu-card .ac-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 0.4rem;
+  }
+
+  .hu-card ul { margin: 0; padding-left: 1.1rem; max-width: none; }
+  .hu-card li { font-size: 0.95rem; margin: 0.45rem 0; }
+  .hu-card li::marker { color: var(--accent); }
+
+  /* ---------- Tables ---------- */
+
+  .table-wrap { overflow-x: auto; margin: 1.1rem 0; border: 1px solid var(--border); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.92rem; min-width: 480px; }
+  th, td { text-align: left; padding: 0.65rem 0.9rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  thead th { background: var(--surface); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--surface); }
+  td .mono, th .mono { font-size: 0.88em; }
+
+  /* ---------- Code blocks ---------- */
+
+  pre.code-block {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.1rem;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.55;
+    max-width: 100%;
+  }
+  pre.code-block code { color: var(--text); }
+  .code-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin: 0 0 0.35rem;
+    letter-spacing: 0.04em;
+  }
+
+  /* ---------- Diagrams ---------- */
+
+  .diagram-panel {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 1.4rem;
+    margin: 1.2rem 0 0.6rem;
+    box-shadow: var(--shadow);
+    overflow-x: auto;
+  }
+  .diagram-caption {
+    color: var(--muted);
+    font-size: 0.92rem;
+    max-width: 72ch;
+    margin: 0 0 2rem;
+  }
+  pre.mermaid { background: transparent; }
+
+  /* ---------- Impacto list ---------- */
+
+  .impact-list { list-style: none; padding: 0; max-width: 76ch; counter-reset: impact; }
+  .impact-list li {
+    counter-increment: impact;
+    display: flex;
+    gap: 0.9rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .impact-list li:last-child { border-bottom: none; }
+  .impact-list li::before {
+    content: counter(impact);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--accent);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    width: 1.6rem;
+    height: 1.6rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+
+  /* ---------- Risk list ---------- */
+
+  .risk-list { list-style: none; padding: 0; max-width: 76ch; }
+  .risk-list li {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.7rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .risk-list li:last-child { border-bottom: none; }
+  .risk-list li::before {
+    content: "?";
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--risk);
+    background: var(--risk-bg);
+    border-radius: 6px;
+    width: 1.5rem;
+    height: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    font-size: 0.85rem;
+  }
+
+  hr.divider { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; max-width: 72ch; }
+
+  footer.doc-footer {
+    border-top: 1px solid var(--border);
+    padding: 2rem clamp(1.25rem, 4vw, 3rem);
+    color: var(--muted);
+    font-size: 0.85rem;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .doc-header, section { animation: rise 0.5s ease-out both; }
+    section:nth-of-type(n) { animation-delay: 0s; }
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<header class="doc-header">
+  <div class="eyebrow">Galgoth Studio <span class="sep">·</span> Documento de definición <span class="sep">·</span> continúa galgoth-studio-mvp.md</div>
+  <h1>Fase 3 — Editor de textura/UV y generación de textura por IA</h1>
+  <p class="lede">Reemplaza la textura placeholder del Technical Alpha por arte real: pintado a mano sobre el atlas, generación por IA con OpenAI, y una estrategia de UV estable que protege el trabajo pintado de cambios posteriores de geometría.</p>
+  <div class="status-row">
+    <span class="chip chip--done"><span class="dot"></span> Fase 1 + Fase 2 (Technical Alpha) — cerradas, 9 sep 2026</span>
+    <span class="chip chip--pending"><span class="dot"></span> Fase 3 — pendiente de VoBo del equipo y el PO</span>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-inner">
+      <p class="toc-label">Documento</p>
+      <nav>
+        <a href="#resumen">Resumen ejecutivo</a>
+        <a href="#objetivo">Objetivo de negocio</a>
+        <a href="#alcance">Alcance</a>
+        <a href="#historias">Historias de usuario</a>
+        <a href="#diseno-tecnico">Diseño técnico</a>
+        <a href="#diagramas">Diagramas</a>
+        <a href="#riesgos">Riesgos abiertos</a>
+        <a href="#impacto">Impacto estimado</a>
+      </nav>
+      <p class="toc-label">Épicas (HU)</p>
+      <nav>
+        <a href="#epica-j">J · Editor manual</a>
+        <a href="#epica-k">K · Persistencia</a>
+        <a href="#epica-l">L · StableUvStrategy</a>
+        <a href="#epica-m">M · Generación IA</a>
+        <a href="#epica-n">N · Pantallas 07/08</a>
+        <a href="#epica-o">O · E2E de aceptación</a>
+      </nav>
+    </div>
+  </aside>
+
+  <main>
+
+    <section id="resumen" class="prose">
+      <h2><span class="num">01</span> Resumen ejecutivo</h2>
+      <p>Fase 3 agrega al Technical Alpha ya aprobado la capacidad de <strong>pintar y generar por IA la textura real de un mob</strong>, reemplazando la textura placeholder checkerboard que hoy garantiza únicamente que el export sea válido. Cubre: un editor de textura/UV manual tipo pixel-art sobre el atlas ya calculado por AutoUv, con selección cruzada cuboid↔UV y preview 3D en vivo; la integración de ese trabajo con el sistema ya existente de Draft/Command/Revision sin duplicar bitmaps completos por trazo; la resolución del riesgo abierto heredado de Fase 1+2 sobre una UV que ya no puede reempaquetarse libremente porque tiene textura pintada encima (vía una <code class="mono">StableUvStrategy</code> nueva); y un pipeline de generación de textura por IA usando <strong>OpenAI (<code class="mono">gpt-image-1</code>)</strong> como <code class="mono">ImageGenerationProvider</code>, con el mismo patrón «IA propone, la app valida y aplica con diff» ya probado en geometría (ticket 031).</p>
+    </section>
+
+    <section id="objetivo" class="prose">
+      <h2><span class="num">02</span> Objetivo de negocio</h2>
+      <p>El Technical Alpha entrega geometría editable con textura placeholder — suficiente para validar el pipeline determinista de modelo 3D, pero insuficiente como producto usable: un mob sin textura real no es un mob terminado para un servidor de Minecraft. Fase 3 cierra esa brecha, permitiendo que el flujo completo (referencia → geometría por IA → textura por IA/manual → export) produzca un <code class="mono">.bbmodel</code> con arte real, listo para usarse, sin salir de Galgoth Studio ni depender de Blockbench para la parte de pintado.</p>
+      <h4>Usuarios / roles involucrados</h4>
+      <p>Sin cambios respecto a Fase 1+2: <strong>creador de contenido para Minecraft</strong> (usuario principal) y <strong>usuario avanzado/editor manual</strong> — la misma persona, ahora también pintando/generando textura. Sigue sin roles de colaboración, permisos ni autenticación.</p>
+    </section>
+
+    <section id="alcance">
+      <h2><span class="num">03</span> Alcance</h2>
+      <p class="section-kicker">Qué construye esta fase y qué queda explícitamente fuera — incluye 6 decisiones que ya tomó el Product Owner el 9 sep 2026.</p>
+
+      <div class="prose">
+        <h4>Incluye</h4>
+        <ul>
+          <li><strong>Editor de textura/UV manual</strong>: pixel editor sobre el atlas, regiones UV etiquetadas por parte del cuerpo/cara, selección cruzada cuboid↔UV, preview 3D en vivo, herramientas estándar (color picker/paleta, brush, eraser, fill bucket, eyedropper, selection, copy/paste con crop/fit, undo/redo, grid toggle).</li>
+          <li><strong>Persistencia y revisiones de textura</strong>: integrada con el Draft/Revision ya existente; bitmap persistido content-addressed en MinIO, nunca embebido inline en el JSON del modelo.</li>
+          <li><strong><code class="mono">StableUvStrategy</code></strong>: protege regiones UV ya pintadas frente a resize/add/delete de cuboids.</li>
+          <li><strong>Generación de textura por IA</strong>: pipeline completo con OpenAI (<code class="mono">gpt-image-1</code>), 4 estilos, regeneración por bone, diff Antes/Después obligatorio.</li>
+          <li><strong>Pantallas 07 y 08</strong> (editor de textura, generador IA de textura) fieles al Visual Contract ya vigente.</li>
+          <li><strong>Flujo end-to-end</strong>: pintar/generar → ver en 3D → Guardar → exportar con textura real → abre en Blockbench sin reparación.</li>
+        </ul>
+
+        <h4>No incluye</h4>
+        <ul>
+          <li>Sistema de capas tipo Photoshop — una sola superficie editable por mob.</li>
+          <li>Generación en batch para múltiples mobs, o selección múltiple de partes simultáneas.</li>
+          <li>Importador de <code class="mono">.bbmodel</code> externos, sistema de animación, checkpoints nombrados, autenticación/multi-tenencia, responsive completo del editor, helpers de autoría FMM guiados — todo sigue fuera, mismo criterio de Fase 1+2.</li>
+          <li><code class="mono">RunPodProvider</code> o motor de imagen local/self-hosted — descartado explícitamente para <code class="mono">ImageGenerationProvider</code> este ciclo.</li>
+          <li>Exportación de la textura como asset independiente fuera del paquete ya definido en Fase 1+2.</li>
+          <li>GC de bitmaps huérfanos en MinIO — sin política de poda este ciclo.</li>
+        </ul>
+      </div>
+
+      <div class="callout callout--decision">
+        <span class="callout-label">6 decisiones del Product Owner · 9 sep 2026</span>
+        <ul style="margin:0.4rem 0 0; padding-left:1.1rem; max-width:none;">
+          <li><strong>Resize con textura pintada</strong> → avisar y pedir confirmación explícita, nunca silencioso ni automático.</li>
+          <li><strong>Atlas lleno + regiones pintadas</strong> → rechazar la creación con error explícito, nunca crecer el atlas.</li>
+          <li><strong>Delete de cuboid pintado</strong> → la región queda huérfana, reservada, no reutilizable este ciclo.</li>
+          <li><strong>Imagen de OpenAI fuera de límite</strong> → recorte/escala automático, sin reintento ni error.</li>
+          <li><strong>Estilos de generación</strong> → 4 opciones, fiel al mockup 08 (incluye «Realista»).</li>
+          <li><strong>Granularidad de regeneración</strong> → por bone completo, no por cara individual.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="historias">
+      <h2><span class="num">04</span> Historias de usuario</h2>
+      <p class="section-kicker">Continúan la numeración de Fase 1+2 desde HU-24. Cada criterio de aceptación refleja ya las decisiones del PO — nada queda planteado como pregunta dentro de una HU salvo que se remita explícitamente a la sección de Riesgos.</p>
+
+      <h3 class="epic" id="epica-j">Épica J — Editor de textura/UV manual</h3>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-24</span>
+        <p class="hu-story">Como creador de contenido para Minecraft, quiero ver el atlas de textura de mi mob dividido en regiones UV etiquetadas por parte del cuerpo/cara, para ubicar rápido qué región pintar sin adivinar coordenadas UV.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>Con geometría ya usable (revisión ≥ 1), el tab Textura carga el atlas completo con el layout UV de AutoUv/UvLayoutSelector superpuesto como guía.</li>
+          <li>Cada cara de cada cuboid muestra una etiqueta identificable.</li>
+          <li>Un selector de región (dropdown, mockup 07) resalta/enfoca la región elegida.</li>
+          <li>Un mob sin ninguna revisión guardada (draft en memoria) sigue el mismo criterio de acceso ya resuelto para el editor de modelo (ticket 034) — el tab carga sobre el draft vacío, nunca bloqueado.</li>
+        </ul>
+      </div>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-25</span>
+        <p class="hu-story">Como creador de contenido, quiero que seleccionar una cara en el viewport 3D resalte su región UV, y viceversa, para ubicar visualmente la correspondencia entre textura y modelo.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>Clic en una cara del viewport resalta la región UV correspondiente en el editor 2D.</li>
+          <li>Seleccionar una región UV resalta la cara correspondiente en el preview 3D.</li>
+          <li>Se implementa extendiendo el raycast ya existente (017) con la normal del triángulo intersectado, en un store nuevo y separado del de selección de cuboid completo.</li>
+        </ul>
+      </div>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-26</span>
+        <p class="hu-story">Como creador de contenido, quiero ver la textura actualizarse en tiempo real sobre el modelo 3D mientras pinto, para juzgar el resultado sin exportar.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>Cada trazo completado se refleja de inmediato en el preview 3D (mismo viewport singleton reutilizado).</li>
+          <li>Rotar/hacer zoom del preview responde igual que el viewport del editor de modelo.</li>
+        </ul>
+      </div>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-27</span>
+        <p class="hu-story">Como creador de contenido, quiero herramientas estándar de edición de píxeles, para pintar la textura sin depender de un editor externo.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>Pincel con color exacto, sin antialiasing que degrade el pixel-art.</li>
+          <li>Cubeta: flood-fill estándar sobre la región de color contiguo.</li>
+          <li>Eyedropper: adopta el color del píxel clickeado.</li>
+          <li>Tamaño de pincel en píxeles del atlas, no de pantalla.</li>
+          <li>Grid toggle puramente visual, nunca se guarda en la textura.</li>
+          <li>Undo/Redo opera sobre una pila <strong>independiente</strong> de la del editor de geometría.</li>
+        </ul>
+      </div>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-28</span>
+        <p class="hu-story">Como creador de contenido, quiero copiar/pegar una imagen y ajustarla (crop/fit) a la región UV seleccionada, para reutilizar arte externo sin redibujar a mano.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>Pegar una imagen de tamaño distinto ofrece ajustarla (recorte o escala) a la región antes de confirmar.</li>
+          <li>Confirmar reemplaza la región y registra una operación de Undo.</li>
+          <li>Este ciclo cubre solo pegado acotado a una región — pegar un PNG sobre el atlas completo queda como pregunta de ticket (ver Riesgos).</li>
+        </ul>
+      </div>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-29</span>
+        <p class="hu-story">Como creador de contenido, quiero que el editor de textura respete la resolución real del atlas de mi mob, para no calcularla yo mismo.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>El canvas usa exactamente las dimensiones ya fijadas por AutoUv/UvLayoutSelector.</li>
+          <li>El campo «Resolución de textura» del wizard (hoy un <code class="mono">&lt;select&gt;</code> sin efecto real) deja de ser vinculante — el atlas sigue el default de 128×128 y crece/rechaza según la geometría real.</li>
+        </ul>
+      </div>
+
+      <h3 class="epic" id="epica-k">Épica K — Persistencia y revisiones de textura</h3>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-30</span>
+        <p class="hu-story">Como creador de contenido, quiero que mis cambios de textura se autoguarden en el draft igual que los de geometría, para no perder trabajo.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>El autosave del draft incluye texture/uv con el mismo dirty-check «solo en cambio material» ya usado para geometría — sin crear una revisión.</li>
+          <li>El dirty-check compara el <code class="mono">storageKey</code> (hash de contenido) en vez del bitmap completo — O(1), sin cambios al mecanismo existente.</li>
+        </ul>
+      </div>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-31</span>
+        <p class="hu-story">Como creador de contenido, quiero que «Guardar» persista geometría y textura en la misma revisión, para tener un único punto de retorno confiable.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>«Guardar» crea una <code class="mono">mob_revision</code> cuyo snapshot incluye texture/uv junto con bones/cuboids.</li>
+          <li>Sin cambios pendientes, «Guardar» sigue deshabilitado.</li>
+          <li>El bitmap se persiste content-addressed en MinIO — nunca embebido inline; revisiones sin cambio de bitmap comparten la misma clave automáticamente.</li>
+        </ul>
+      </div>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-32</span>
+        <p class="hu-story">Como sistema, quiero que el Command stack de textura tenga un alcance claro respecto al de geometría, para que el usuario entienda qué deshace cada Ctrl+Z.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>Pila de Undo/Redo independiente por tab (Modelo vs. Textura) — snapshotear el bitmap completo en la misma pila que geometría sería órdenes de magnitud más pesado.</li>
+        </ul>
+      </div>
+
+      <h3 class="epic" id="epica-l">Épica L — <code class="mono">StableUvStrategy</code> / integridad de UV pintada</h3>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-33</span>
+        <p class="hu-story">Como creador de contenido, quiero que redimensionar un cuboid con textura pintada no destruya ese trabajo sin avisarme.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>Un resize que cambia el footprint de una cara <code class="mono">PAINTED</code> detiene la operación y muestra un aviso explícito de qué caras se verían afectadas, pidiendo confirmación.</li>
+          <li>Confirmado: las caras afectadas se reempaquetan en espacio libre y quedan <code class="mono">UNPAINTED</code> en su nueva ubicación — el bitmap anterior permanece como espacio de atlas no reutilizado.</li>
+          <li>Cancelado: el resize no se aplica.</li>
+          <li>Si el mismo caso lo origina una edición conversacional por IA (HU-17/HU-18), el diff Antes/Después ya muestra qué caras perderían su ubicación — el botón «Aplicar cambios» sirve como la confirmación, sin un segundo diálogo.</li>
+        </ul>
+      </div>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-34</span>
+        <p class="hu-story">Como creador de contenido, quiero que agregar un cuboid nuevo siga asignando UV automáticamente sin afectar regiones ya pintadas de otros cuboids.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>Un cuboid nuevo recibe espacio verdaderamente libre (nunca <code class="mono">PAINTED</code>/<code class="mono">ORPHAN</code>), sin mover regiones existentes.</li>
+          <li>Sin espacio libre suficiente, la creación se rechaza con error explícito (mismo tipo que <code class="mono">UvAtlasOverflowException</code>) — el atlas nunca crece automáticamente.</li>
+        </ul>
+      </div>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-35</span>
+        <p class="hu-story">Como creador de contenido, quiero saber qué pasa con la textura de un cuboid que elimino, para no sorprenderme.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>Eliminar un cuboid con ≥1 cara <code class="mono">PAINTED</code> marca sus 6 caras como <code class="mono">ORPHAN</code> (bloque completo) — reservadas, no reutilizables este ciclo.</li>
+          <li>Un Undo inmediato restaura el cuboid y su textura exactamente, sin riesgo de que otro contenido haya ocupado esa región.</li>
+        </ul>
+      </div>
+
+      <h3 class="epic" id="epica-m">Épica M — Generación de textura por IA</h3>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-36</span>
+        <p class="hu-story">Como creador de contenido, quiero generar la textura completa por IA a partir de la misma imagen de referencia, eligiendo estilo y nivel de detalle.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>4 opciones de estilo (Fiel a la referencia / Minecraft Vanilla / Pixel Art / Realista) y control de detalle, siguiendo el mockup 08.</li>
+          <li>Reutiliza la imagen de referencia ya subida en Fase 2 — no se pide subir una nueva.</li>
+          <li>El progreso sigue el mismo patrón por etapas vía SSE ya usado en geometría (HU-11).</li>
+        </ul>
+      </div>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-37</span>
+        <p class="hu-story">Como creador de contenido, quiero regenerar por IA solo la textura de un bone completo seleccionado, para corregir una parte sin perder el resto.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>El selector «Parte a generar» agrupa por bone completo (todas las caras de todos sus cuboids) — solo esas regiones se reemplazan.</li>
+          <li>Si el bone tenía contenido pintado a mano, el diff Antes/Después lo señala explícitamente antes de aplicarse.</li>
+          <li>Varios cuboids del mismo bone se generan con una llamada por cuboid, agrupadas bajo un único paso de progreso y una única unidad de Undo.</li>
+        </ul>
+      </div>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-38</span>
+        <p class="hu-story">Como creador de contenido, quiero ver un diff Antes/Después antes de que la generación de textura se aplique, para decidir con confianza.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>Resultado siempre presentado como Antes/Después con Apply/Reject explícitos — Reject no modifica nada.</li>
+          <li>Apply verifica que ningún avance del draft compartido (geometría <em>o</em> textura) haya ocurrido desde que se generó la propuesta — 409 y descarte si avanzó (mismo mecanismo de HU-18).</li>
+        </ul>
+      </div>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-39</span>
+        <p class="hu-story">Como equipo de ingeniería, quiero que cada generación de textura registre proveedor/modelo/versión de prompt/esquema/IDs de referencia, para auditar y reproducir cualquier resultado.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li><code class="mono">ai_jobs</code> guarda <code class="mono">provider=openai</code>, modelo (<code class="mono">gpt-image-1</code>), versión de prompt/esquema, IDs de referencia — nuevos <code class="mono">job_type</code> (<code class="mono">generate_texture</code>, <code class="mono">edit_texture</code>) + columna <code class="mono">target_bone_id</code>.</li>
+          <li><code class="mono">ImageGenerationProvider</code> se extiende de forma aditiva con <code class="mono">generateTextureRegion(...)</code>, sin romper el método existente.</li>
+          <li><code class="mono">MockImageProvider</code> pasa de placeholder de interfaz a doble determinista real, utilizable en tests.</li>
+        </ul>
+      </div>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-40</span>
+        <p class="hu-story">Como sistema, quiero recortar/escalar automáticamente una imagen de OpenAI fuera de los límites de la región objetivo, para no corromper el atlas.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>Dimensiones que no coinciden se recortan/escalan automáticamente antes de componer — sin reintento, sin error al usuario.</li>
+          <li>Un fallo técnico real de decodificación lanza <code class="mono">TextureGenerationFailedException</code> — nunca se compone un atlas parcialmente corrupto.</li>
+        </ul>
+      </div>
+
+      <h3 class="epic" id="epica-n">Épica N — Pantallas 07 y 08</h3>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-41</span>
+        <p class="hu-story">Como creador de contenido, quiero que el editor de textura respete el Visual Contract y el mockup 07.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>El tab «Textura» pasa de «Próximamente» a funcional, con el layout del mockup 07.</li>
+          <li>Respeta el Visual Contract vigente sin reinterpretar la estructura sin aprobación explícita del PO.</li>
+          <li>«Animación» permanece «Próximamente» — fuera de alcance de esta fase.</li>
+        </ul>
+      </div>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-42</span>
+        <p class="hu-story">Como creador de contenido, quiero que el generador IA de textura respete el mockup 08.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>Referencia + resultado/preview, selector de Estilo (4 opciones), control de Detalle, y selector «Parte a generar» (granularidad de bone), siguiendo el mockup 08.</li>
+        </ul>
+      </div>
+
+      <h3 class="epic" id="epica-o">Épica O — Flujo de aceptación end-to-end</h3>
+
+      <div class="hu-card">
+        <span class="hu-tag">HU-43</span>
+        <p class="hu-story">Como creador de contenido, quiero completar el flujo de textura de punta a punta y confirmar que el .bbmodel final ya no usa la textura placeholder.</p>
+        <p class="ac-label">Criterios de aceptación</p>
+        <ul>
+          <li>Pintar/generar y «Guardar» crea una revisión con textura real, no placeholder.</li>
+          <li>El <code class="mono">.bbmodel</code> exportado incluye la textura real — el checkerboard queda reservado solo para mobs sin ninguna región pintada.</li>
+          <li>Abre en Blockbench sin diálogos de reparación (el exportador ya no recomputa UV cuando hay regiones pintadas).</li>
+          <li>La validación sigue sin errores pendientes, ahora con contenido real.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="diseno-tecnico">
+      <h2><span class="num">05</span> Diseño técnico</h2>
+      <p class="section-kicker">Decisiones de <code class="mono">architect</code>, con tradeoffs explícitos donde hubo más de una opción razonable.</p>
+
+      <div class="callout callout--finding">
+        <span class="callout-label">Hallazgo A — exportador recomputaba UV siempre</span>
+        <p><code class="mono">BBModelExporterV5.export(model, uvLayoutStrategy)</code> siempre recomputa la UV desde cero vía <code class="mono">AlphaAutoPackStrategy</code> antes de exportar. Correcto en Fase 1+2 (sin textura pintada, recomputar es determinista); destructivo en Fase 3, donde volvería a empaquetar el atlas ignorando dónde está el arte real. Se resuelve abajo, §2.</p>
+      </div>
+      <div class="callout callout--finding">
+        <span class="callout-label">Hallazgo B — el editor manual nunca revalida UV en el backend</span>
+        <p>El editor manual (018/036) calcula AutoUv 100% client-side; el backend nunca lo revalida en autosave/Guardar. Inocuo en Fase 1+2 (el export siempre recomputaba); en Fase 3, con <code class="mono">StableUvStrategy</code> protegiendo regiones pintadas, un cliente que calcule su propia UV localmente podría saltarse esa protección. Se resuelve abajo, §2.</p>
+      </div>
+
+      <div class="prose">
+        <h4>1. Extensión de <code class="mono">MobProjectModel</code></h4>
+        <p><code class="mono">TextureDocument(int width, int height, String storageKey)</code> no cambia de forma — solo de semántica: <code class="mono">storageKey</code> pasa a ser la clave real, content-addressed, de la textura pintada. <code class="mono">UvRegion</code> gana un campo de estado:</p>
+      </div>
+      <div class="table-wrap">
+        <p class="code-label" style="padding:0.7rem 0.9rem 0;">domain/uv — UvRegion.java</p>
+        <pre class="code-block"><code>public record UvRegion(String cuboidId, FaceName face, Vec4 rect, UvRegionStatus status) {}
+
+public enum UvRegionStatus { UNPAINTED, PAINTED, ORPHAN }</code></pre>
+      </div>
+      <div class="prose">
+        <ul>
+          <li><strong>UNPAINTED</strong> — región de un cuboid/cara vivo sin arte real todavía.</li>
+          <li><strong>PAINTED</strong> — región con al menos un píxel editado por el usuario o compuesto por IA. Flag explícito actualizado en el mismo commit que pinta — no derivado por diff de píxeles.</li>
+          <li><strong>ORPHAN</strong> — tombstone de una región cuyo cuboid ya no existe, tras un delete.</li>
+        </ul>
+
+        <h4>2. Contrato <code class="mono">StableUvStrategy</code></h4>
+        <p><code class="mono">UvLayoutStrategy.layout(cuboids, w, h)</code> no puede saber qué regiones están pintadas. Se resuelve con extensión aditiva — un método <code class="mono">default</code> nuevo que preserva 100% compatibilidad con <code class="mono">AlphaAutoPackStrategy</code>:</p>
+      </div>
+      <div class="table-wrap">
+        <p class="code-label" style="padding:0.7rem 0.9rem 0;">domain/uv — UvLayoutStrategy.java</p>
+        <pre class="code-block"><code>public interface UvLayoutStrategy {
+    Result layout(List&lt;Cuboid&gt; cuboids, int textureWidth, int textureHeight); // sin cambios
+
+    default Result layout(List&lt;Cuboid&gt; cuboids, int textureWidth, int textureHeight,
+                           List&lt;UvRegion&gt; previousRegions) {
+        return layout(cuboids, textureWidth, textureHeight); // default: reflow completo
+    }
+}</code></pre>
+      </div>
+      <div class="prose">
+        <p><code class="mono">UvLayoutSelector implements UvLayoutStrategy</code> (nuevo, marcado <code class="mono">@Primary</code>) se inyecta en todos los puntos que hoy reciben <code class="mono">UvLayoutStrategy</code> (<code class="mono">GeometryEngine.apply</code>, <code class="mono">GeometryPlannerService</code>, <code class="mono">AiGeometryEditPlannerService</code>, <code class="mono">BBModelExporterV5</code>): sin ningún <code class="mono">PAINTED</code>/<code class="mono">ORPHAN</code> previo delega en <code class="mono">AlphaAutoPackStrategy</code> (byte-idéntico a Fase 1+2); con al menos uno, delega en <code class="mono">StableUvStrategy</code>. Ambas comparten la matemática de box-unwrap ya verificada, extraída a un helper común <code class="mono">BoxUvMath</code>.</p>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Caso</th><th>Detección</th><th>Resultado</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Resize con cara(s) <span class="mono">PAINTED</span></td>
+              <td>El nuevo <span class="mono">from</span>/<span class="mono">to</span> cambia el footprint de una cara pintada</td>
+              <td>Lanza <span class="mono">PaintedRegionResizeConfirmationRequiredException</span> con el detalle de caras afectadas. Confirmado: reempaqueta en espacio libre, marca <span class="mono">UNPAINTED</span> en la nueva ubicación.</td>
+            </tr>
+            <tr>
+              <td>Add sin espacio libre</td>
+              <td>El footprint nuevo no cabe en espacio verdaderamente libre</td>
+              <td>Rechaza (mismo tipo que <span class="mono">UvAtlasOverflowException</span>) — nunca crece el atlas ni reempaqueta.</td>
+            </tr>
+            <tr>
+              <td>Delete con textura pintada</td>
+              <td>El cuboid removido tiene ≥1 cara <span class="mono">PAINTED</span></td>
+              <td>Las 6 caras (bloque único) pasan a <span class="mono">ORPHAN</span> — Undo (019) recupera el estado exacto sin lógica adicional.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="prose">
+        <p><strong>Vía manual vs. vía IA — ninguna se salta la protección.</strong> Vía IA (031): si <code class="mono">GeometryEngine.apply</code> dispara la excepción, se refleja en el diff como «N caras perderán su arte» — el botón «Aplicar cambios» ya sirve como confirmación. Vía manual (018/036): se agrega <strong><code class="mono">POST /api/mobs/{mobId}/geometry/apply</code></strong> (nuevo <code class="mono">MobGeometryController</code> en <code class="mono">project/api/</code>, respaldado por <code class="mono">project/geometry/</code> — mismo patrón que <code class="mono">project/draft/DraftPersistenceService</code>) solo para <code class="mono">createCuboid</code>/<code class="mono">resizeCuboid</code>/<code class="mono">removeCuboid</code>; <code class="mono">moveCuboid</code>/<code class="mono">rotateCuboid</code>/pivot siguen 100% client-side, sin regresión de latencia en el drag. Si el backend devuelve la excepción, el frontend muestra el modal y reenvía con <code class="mono">confirmPaintLoss: true</code>.</p>
+        <p><strong>Cierra el Hallazgo A</strong>: <code class="mono">BBModelExporterV5</code> invoca <code class="mono">UvLayoutSelector</code> en vez de <code class="mono">AlphaAutoPackStrategy</code> directo — idéntico a hoy sin regiones pintadas; con ellas, exporta la UV tal cual está almacenada, sin recomputar.</p>
+
+        <h4>3. Persistencia eficiente de textura en revisiones</h4>
+        <p><strong>Decisión: bitmap content-addressed en MinIO.</strong> Clave <code class="mono">textures/{sha256-hex}.png</code>, global — el hash desambigua y permite dedup incluso entre mobs distintos. <code class="mono">TextureDocument.storageKey</code> guarda esa clave; el bitmap nunca se embebe inline en <code class="mono">model_jsonb</code>.</p>
+        <p>Se descarta diffs binarios por región: cada <code class="mono">mob_revisions</code> es hoy un snapshot completo e independiente — introducir deltas rompería esa auto-contención. Efecto directo: dos revisiones sin cambio de bitmap comparten <code class="mono">storageKey</code> — dedup automático y gratuito. El editor de píxeles (Web Worker/OffscreenCanvas) exporta el bitmap, calcula SHA-256 (Web Crypto) y lo sube vía <code class="mono">PUT /api/mobs/{mobId}/texture</code> — el backend sube a MinIO solo si la clave no existe (idempotente).</p>
+
+        <h4>4. Dirty-check/autosave para textura</h4>
+        <p><strong>Decisión: valor completo del <code class="mono">MobProjectModel</code>, sin caso especial.</strong> Como <code class="mono">storageKey</code> ya es un hash de contenido, el <code class="mono">.equals()</code> estructural que <code class="mono">DraftPersistenceService</code> ya usa compara strings de clave — O(1), sin checksum nuevo.</p>
+
+        <h4>5. <code class="mono">OpenAiImageProvider</code></h4>
+        <p><code class="mono">ImageGenerationProvider</code> se extiende de forma aditiva:</p>
+      </div>
+      <div class="table-wrap">
+        <p class="code-label" style="padding:0.7rem 0.9rem 0;">aiorchestrator/provider — ImageGenerationProvider.java</p>
+        <pre class="code-block"><code>public interface ImageGenerationProvider {
+    byte[] generateImage(String prompt); // se conserva
+
+    byte[] generateTextureRegion(TextureGenerationRequest request);
+
+    record TextureGenerationRequest(
+        String prompt, byte[] referenceImageBytes,
+        int targetWidth, int targetHeight, String style) {}
+}</code></pre>
+      </div>
+      <div class="prose">
+        <p><code class="mono">OpenAiImageProvider</code> (nuevo, <code class="mono">aiorchestrator/provider/</code>) usa <code class="mono">gpt-image-1</code> vía <code class="mono">POST /v1/images/edits</code> cuando hay región existente que preservar/inpaintear, o <code class="mono">/v1/images/generations</code> para la primera pasada. <em>Verificar el identificador de modelo vigente contra la documentación real de OpenAI al implementar.</em></p>
+        <p><strong>Split de responsabilidades («IA propone, la app valida y aplica»):</strong></p>
+        <ol>
+          <li><strong>Paleta + mapeo semántico</strong> — <code class="mono">StructuredReasoningProvider</code> (Claude), paso separado antes de OpenAI. Nueva salida validada <code class="mono">TexturePlan</code> (mismo patrón que <code class="mono">ModelIntent</code>): etiqueta semántica por bone, paleta dominante/acento, notas de material.</li>
+          <li><strong>Resolución determinista de layout</strong> — 100% código. Granularidad = bone; un bone con varios cuboids emite una llamada por cuboid, agrupadas bajo un único paso de progreso.</li>
+          <li><strong>Composición de prompt</strong> — código determinista: estilo + etiqueta semántica + paleta + orientación de cara.</li>
+          <li><strong>Llamada a OpenAI</strong> → bytes PNG crudos.</li>
+          <li><strong><code class="mono">TextureCompositorService</code></strong> (nuevo, <code class="mono">aiorchestrator/texture/</code>) — determinista: recorta/escala si no calza, compone sobre una copia del atlas (nunca sobre el bitmap en vivo), corre limpieza de píxeles/paleta para Pixel Art/Minecraft Vanilla.</li>
+          <li><strong><code class="mono">ai_jobs</code> bookkeeping</strong> — nuevos <code class="mono">job_type</code>, mismo esquema (<code class="mono">provider='openai'</code>, model, prompt/schema version, reference IDs).</li>
+        </ol>
+
+        <h4>6. Progreso vía SSE</h4>
+        <p>Reutiliza <code class="mono">ai_job_events</code>/SSE tal cual (replay por <code class="mono">Last-Event-ID</code>) — nuevos valores de <code class="mono">stage</code> (<code class="mono">analizando_paleta</code>, <code class="mono">mapeando_caras</code>, <code class="mono">generando_bone_X</code>, <code class="mono">componiendo_atlas</code>, <code class="mono">limpiando_pixeles</code>). Cada evento lleva un <code class="mono">preview_texture_patch</code> (parche + rect, no el atlas completo).</p>
+
+        <h4>7. Selección de cara individual</h4>
+        <p><code class="mono">ThreeViewportService.pickCuboidIdAt</code> raycastea contra el mesh completo — sin tagging por cara. Se extiende de forma aditiva usando <code class="mono">intersection.face.normal</code> (nativo del raycast), mapeada a <code class="mono">NORTH/SOUTH/EAST/WEST/UP/DOWN</code> vía el <code class="mono">CoordinateSystemContract</code> ya existente. Nueva función <code class="mono">pickCuboidFaceAt</code>; la selección vive en <code class="mono">textureSelectionStore.ts</code>, separado del store de selección de cuboid completo.</p>
+
+        <h4>8. Alcance del Undo/Redo de textura</h4>
+        <p><strong>Decisión: pila independiente por tab.</strong> Un trazo de pincel puede tocar miles de píxeles — snapshotear el bitmap completo en la misma pila que geometría sería órdenes de magnitud más pesado. Los tabs Modelo/Textura son la frontera natural.</p>
+
+        <h4>9. Conflicto 409 al aplicar textura</h4>
+        <p><strong>Decisión: contra cualquier avance del draft compartido</strong>, no solo textura — geometría y textura viven en el mismo <code class="mono">MobProjectModel</code>. Se reutiliza literalmente el chequeo ya implementado en <code class="mono">AiEditService.applyEdit</code>.</p>
+
+        <h4>10. <code class="mono">textureResolution</code> del wizard vs. atlas real</h4>
+        <p><strong>Decisión: se reemplaza por un valor derivado del atlas.</strong> El tamaño real lo determina el packing de la geometría real, que ocurre después de que el wizard pide ese campo — mantenerlo vinculante reintroduciría dos fuentes de verdad. Se quita como parámetro enviado al backend; el atlas sigue el default de 128×128 y crece/rechaza según la geometría real.</p>
+
+        <h4>11. Compatibilidad con revisiones existentes</h4>
+        <p>Las filas viejas tienen <code class="mono">uv.regions[].status</code> ausente y <code class="mono">texture.storageKey = null</code>. Se resuelve sin migración: <code class="mono">UvRegion.status</code> deserializa con default <code class="mono">UNPAINTED</code> cuando falta — un modelo viejo cae en la rama <code class="mono">AlphaAutoPackStrategy</code>, comportamiento idéntico a hoy. Se agrega un test de regresión con una fixture real de Fase 1+2.</p>
+
+        <h4>12. Nuevas tablas/columnas Postgres</h4>
+        <p>Cambio relacional mínimo — texture/UV viven dentro del <code class="mono">model_jsonb</code> ya existente:</p>
+      </div>
+      <div class="table-wrap">
+        <p class="code-label" style="padding:0.7rem 0.9rem 0;">V3__ai_jobs_texture_job_types.sql</p>
+        <pre class="code-block"><code>alter table ai_jobs drop constraint ai_jobs_job_type_check;
+alter table ai_jobs add constraint ai_jobs_job_type_check
+    check (job_type in ('generate', 'edit', 'generate_texture', 'edit_texture'));
+
+alter table ai_jobs add column target_bone_id text; -- nullable</code></pre>
+      </div>
+      <div class="prose">
+        <p>Deliberadamente sin tabla nueva para bitmaps (MinIO ya es la fuente de verdad, content-addressed) ni para huérfanas (viven dentro de <code class="mono">uv.regions</code> del JSONB).</p>
+
+        <h4>13. Pendiente de ticket, no bloquea VoBo</h4>
+        <p>Formatos de imagen adicionales, límites de tamaño/resolución de textura, cuotas/rate-limiting de OpenAI, moderación de contenido — mismo criterio que los riesgos análogos de Fase 1+2.</p>
+      </div>
+    </section>
+
+    <section id="diagramas">
+      <h2><span class="num">06</span> Diagramas</h2>
+      <p class="section-kicker">Extienden los diagramas ya aprobados de Fase 1+2 — no se repite el diagrama de arquitectura general ni el ER completo, solo lo que cambia.</p>
+
+      <h4>Estados de <code class="mono">UvRegionStatus</code></h4>
+      <div class="diagram-panel">
+        <pre class="mermaid">
+stateDiagram-v2
+    [*] --> UNPAINTED: cuboid nuevo (Add)\nsus 6 caras nacen en espacio libre
+
+    note left of [*]
+        Un cuboid nuevo NUNCA se coloca sobre
+        una región PAINTED/ORPHAN existente.
+        Si no cabe en espacio verdaderamente
+        libre, error de rechazo (nunca crece
+        el atlas ni reempaqueta para hacerle sitio).
+    end note
+
+    UNPAINTED --> PAINTED: usuario pinta a mano,\no Apply de generación IA sobre esta cara
+
+    PAINTED --> UNPAINTED: resize confirmado\n(confirmPaintLoss=true)
+    note right of PAINTED
+        La cara se reempaqueta en espacio LIBRE
+        nuevo y queda UNPAINTED ahi. El bitmap
+        viejo, en su posicion original, queda
+        como garbage aceptado, no se re-visita,
+        no hay GC este ciclo.
+    end note
+
+    UNPAINTED --> ORPHAN: delete del cuboid dueño\n(bloque completo de sus 6 caras)
+    PAINTED --> ORPHAN: delete del cuboid dueño\n(bloque completo de sus 6 caras)
+
+    ORPHAN --> [*]: terminal este ciclo\n(sin GC ni reclamo de espacio)
+
+    note right of ORPHAN
+        Unica forma de revivir el contenido:
+        un Undo que restaura el MobProjectModel
+        COMPLETO de antes del delete (snapshot
+        de ticket 019), no es una transicion
+        de estado hacia adelante de ORPHAN.
+    end note
+        </pre>
+      </div>
+      <p class="diagram-caption">El diagrama central del documento: cada cara de cada cuboid vivo tiene uno de estos 3 estados. La única transición hacia atrás (<code class="mono">PAINTED → UNPAINTED</code>) no limpia nada — mueve la cara a una ubicación nueva y abandona el bitmap viejo como basura permanente. <code class="mono">ORPHAN</code> es una trampa de un solo sentido: la salida es un Undo que reemplaza todo el modelo, no una transición hacia adelante.</p>
+
+      <h4>Secuencia — resize con confirmación (vía manual)</h4>
+      <div class="diagram-panel">
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor U as Usuario
+    participant ED as Editor (frontend)
+    participant API as POST /geometry/apply
+    participant ENGINE as GeometryEngine.apply
+    participant SEL as UvLayoutSelector
+
+    note over U,ED: Move/Rotate NO pasan por este flujo, siguen 100% client-side + autosave (018)
+
+    U->>ED: arrastra handle de resize del cuboid
+    ED->>API: POST geometry/apply { op: resize, ... }
+    API->>ENGINE: apply(operation)
+    ENGINE->>SEL: resuelve estrategia UV
+    SEL-->>ENGINE: previousRegions tiene PAINTED/ORPHAN -> StableUvStrategy
+    ENGINE->>ENGINE: detecta caras PAINTED afectadas por el nuevo tamaño
+    ENGINE-->>API: throw PaintedRegionResizeConfirmationRequiredException
+    API-->>ED: 4xx con detalle de que caras se perderian
+
+    ED->>U: modal de confirmacion
+
+    alt Usuario cancela
+        U->>ED: Cancelar
+        note over ED: nada se reenvia, cuboid vuelve al tamaño anterior
+    else Usuario confirma
+        U->>ED: Confirmar
+        ED->>API: POST geometry/apply (MISMA operacion) confirmPaintLoss=true
+        API->>ENGINE: apply(operation, confirmPaintLoss=true)
+        ENGINE->>SEL: resuelve estrategia UV (mismo resultado)
+        SEL-->>ENGINE: StableUvStrategy
+        ENGINE->>ENGINE: reempaqueta caras afectadas en espacio libre, marca UNPAINTED
+        ENGINE-->>API: geometria + UV aplicados
+        API-->>ED: 200 OK
+        ED->>U: refleja el resize + reset visual en esas caras
+    end
+        </pre>
+      </div>
+      <p class="diagram-caption">El mismo endpoint y la misma excepción cubren Add/Remove — se dibuja Resize por ser el único con una rama de confirmación explícita. Add nunca pisa una región pintada por diseño; Remove no requiere confirmación porque el usuario ya sabe que borra el cuboid completo.</p>
+
+      <h4>Secuencia — generación de textura por IA</h4>
+      <div class="diagram-panel">
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor U as Usuario
+    participant FE as Frontend
+    participant ORCH as ai-orchestrator
+    participant REASON as StructuredReasoningProvider (Claude)
+    participant IMG as OpenAiImageProvider (gpt-image-1)
+    participant COMP as TextureCompositorService
+    participant JOBS as ai_jobs / ai_job_events (SSE)
+    participant STORE as MinIO + mob_revisions
+
+    U->>FE: elige estilo (1 de 4) + detalle + boneId opcional
+    FE->>ORCH: POST /ai/generate-texture (o edit-texture)
+    ORCH->>JOBS: insert ai_jobs (running, base_revision_number, base_draft_version)
+    ORCH-->>FE: 202 { jobId }
+    FE->>ORCH: GET /api/jobs/{jobId}/events (SSE)
+
+    ORCH->>REASON: imagen de referencia ya subida -> pide TexturePlan
+    REASON-->>ORCH: TexturePlan validado (etiqueta por bone, paleta, material)
+    ORCH->>JOBS: stage=analizando_paleta
+    JOBS-->>FE: SSE
+
+    ORCH->>ORCH: resuelve cuboids del bone objetivo y sus footprints UV reales
+    ORCH->>JOBS: stage=mapeando_caras
+    JOBS-->>FE: SSE
+
+    loop por cada cuboid del bone
+        ORCH->>ORCH: compone prompt (estilo + etiqueta + paleta + cara)
+        ORCH->>IMG: generateTextureRegion(prompt, region existente?)
+        note right of IMG: /v1/images/edits si preserva/inpaintea,\n/generations en la primera pasada
+        IMG-->>ORCH: bytes PNG de la region
+        ORCH->>JOBS: stage=generando_bone_X
+        JOBS-->>FE: SSE
+        ORCH->>COMP: compone parche sobre COPIA en memoria del atlas
+        COMP->>COMP: si no calza: recorta/escala automatico
+        COMP->>COMP: limpieza de pixeles/paleta
+        COMP-->>ORCH: atlas en memoria actualizado + rect del parche
+        ORCH->>JOBS: stage=componiendo_atlas|limpiando_pixeles + preview_texture_patch
+        JOBS-->>FE: SSE, preview incremental
+    end
+
+    ORCH->>JOBS: status=completed, proposal_jsonb
+    JOBS-->>FE: SSE listo para revisar
+    FE->>U: diff Antes/Despues (mismo patron que edicion geometrica, 031)
+
+    alt Usuario: Reject
+        U->>FE: Reject
+        note over JOBS,STORE: no se escribe nada
+    else Usuario: Apply
+        U->>FE: Apply
+        FE->>STORE: POST apply(jobId)
+        rect rgb(255, 224, 224)
+            note over STORE: conflicto si CUALQUIER parte del draft compartido avanzo
+            alt draft/revision avanzaron
+                STORE-->>FE: 409, propuesta descartada
+            end
+        end
+        alt draft y revision vigentes
+            rect rgb(224, 255, 224)
+                STORE->>STORE: sube bitmap a MinIO textures/{sha256}.png (dedup automatico)
+                STORE->>STORE: crea mob_revision (texture+geometry juntas)
+            end
+            STORE-->>FE: 200 aplicado
+        end
+    end
+        </pre>
+      </div>
+      <p class="diagram-caption">Mismo lenguaje visual que el diagrama de IA de geometría ya aprobado: el bloque de conflicto verifica geometría <em>o</em> textura indistintamente porque comparten el mismo draft, y el SSE nunca manda el atlas completo — solo el parche y su rectángulo, evento a evento.</p>
+
+      <h4>Componentes — extensión de la arquitectura</h4>
+      <div class="diagram-panel">
+        <pre class="mermaid">
+flowchart LR
+    subgraph CALLERS["Llamadores existentes de UvLayoutStrategy"]
+        GE["GeometryEngine.apply"]
+        GPS["GeometryPlannerService"]
+        AGEPS["AiGeometryEditPlannerService"]
+        EXP5["BBModelExporterV5"]
+    end
+
+    SEL["UvLayoutSelector\n(NUEVO, domain/uv)"]
+    ALPHA["AlphaAutoPackStrategy\n(existente, sin cambios)"]
+    STABLE["StableUvStrategy\n(NUEVO, domain/uv)"]
+
+    GE --> SEL
+    GPS --> SEL
+    AGEPS --> SEL
+    EXP5 --> SEL
+    SEL -- "sin PAINTED/ORPHAN" --> ALPHA
+    SEL -- "con PAINTED/ORPHAN" --> STABLE
+
+    subgraph AIPROV["Interfaces de proveedor IA"]
+        REASONI["StructuredReasoningProvider"]
+        VISIONI["VisionModelProvider"]
+        IMGI["ImageGenerationProvider"]
+    end
+    CLAUDEP["ClaudeProvider\n(sin cambio)"]
+    OPENAIP["OpenAiImageProvider\n(NUEVO, aiorchestrator/provider)"]
+
+    REASONI -.-> CLAUDEP
+    VISIONI -.-> CLAUDEP
+    IMGI -.-> OPENAIP
+
+    ORCHNODE["aiorchestrator\n(loop por cuboid del bone)"]
+    ORCHNODE --> REASONI
+    ORCHNODE --> IMGI
+
+    COMPOSITOR["TextureCompositorService\n(NUEVO, aiorchestrator/texture)"]
+    OPENAIP -- "PNG de la region" --> COMPOSITOR
+    COMPOSITOR -- "atlas actualizado" --> ORCHNODE
+
+    ENDPOINT["POST /geometry/apply\n(NUEVO, project/api + project/geometry)"]
+    FE["Editor manual"] -- "Resize / Add / Remove" --> ENDPOINT
+    ENDPOINT --> GE
+        </pre>
+      </div>
+      <p class="diagram-caption">Extensión aditiva en todos los frentes: nada de lo existente en Fase 1+2 cambia de comportamiento cuando no hay regiones pintadas.</p>
+    </section>
+
+    <section id="riesgos">
+      <h2><span class="num">07</span> Riesgos y preguntas abiertas</h2>
+      <p class="section-kicker">Documentadas para resolverse a nivel de ticket — no bloquean el VoBo de este documento porque no cambian alcance ni arquitectura (mismo criterio que Fase 1+2).</p>
+      <ul class="risk-list">
+        <li>Convención exacta de etiquetado de regiones UV cuando los bones tienen nombres libres/arbitrarios — se define con <code class="mono">ux-ui-designer</code> al crear el ticket del editor.</li>
+        <li>Formatos de imagen de referencia adicionales soportados para el análisis de paleta — ticket de <code class="mono">ai-orchestrator</code>.</li>
+        <li>Límite de tamaño/resolución de textura — ticket de <code class="mono">AutoUv</code>/Épica J.</li>
+        <li>Cuotas/rate-limiting y control de costo de llamadas a OpenAI — extiende el riesgo análogo de Fase 1+2 (Claude) a este proveedor.</li>
+        <li>Control de contenido/moderación sobre las imágenes generadas por OpenAI.</li>
+        <li>¿Soporta este ciclo pegar un PNG completo sobre todo el atlas de una sola vez, o solo pegado acotado a una región (HU-28)?</li>
+        <li>Retención/GC de bitmaps huérfanos en MinIO — sin política de poda este ciclo.</li>
+      </ul>
+    </section>
+
+    <section id="impacto">
+      <h2><span class="num">08</span> Impacto estimado</h2>
+      <p class="section-kicker">Lista tentativa de tickets a desglosar con el skill <code class="mono">nuevo-ticket</code> tras el VoBo — no definitiva.</p>
+      <ol class="impact-list">
+        <li><code class="mono">MobProjectModel</code>: extensión de <code class="mono">UvRegion</code>/<code class="mono">UvRegionStatus</code>, contratos TS + DTOs Java + JSON Schemas (HU-24, HU-29).</li>
+        <li><code class="mono">UvLayoutSelector</code> + <code class="mono">StableUvStrategy</code> + <code class="mono">BoxUvMath</code> compartido + <code class="mono">PaintedRegionResizeConfirmationRequiredException</code> (HU-33, HU-34, HU-35).</li>
+        <li><code class="mono">POST /geometry/apply</code> + wiring del flujo de confirmación en el editor manual (HU-33).</li>
+        <li>Persistencia content-addressed de textura en MinIO + migración de <code class="mono">ai_jobs</code> (HU-30, HU-31, HU-39).</li>
+        <li>Editor de textura/UV manual: canvas, herramientas, pila de Undo independiente (HU-27, HU-28, HU-32).</li>
+        <li>Selección cruzada cuboid↔UV: <code class="mono">pickCuboidFaceAt</code>, <code class="mono">textureSelectionStore.ts</code> (HU-25, HU-26).</li>
+        <li>Pantalla del editor de textura (mockup 07), tab «Textura» funcional (HU-41).</li>
+        <li><code class="mono">OpenAiImageProvider</code> + <code class="mono">MockImageProvider</code> real de tests (HU-39, HU-40).</li>
+        <li><code class="mono">TexturePlan</code> (contrato + validación) vía Claude (HU-36).</li>
+        <li><code class="mono">TextureCompositorService</code> (recorte/escala, limpieza de píxeles) (HU-40).</li>
+        <li>Pipeline completo de generación/regeneración + SSE + diff + Apply/Reject con 409 (HU-36, HU-37, HU-38).</li>
+        <li>Pantalla del generador IA de textura (mockup 08) (HU-42).</li>
+        <li><code class="mono">BBModelExporterV5</code> sin recomputar UV con regiones pintadas + fixtures nuevas contra Blockbench real (HU-43).</li>
+        <li>Suite de aceptación E2E de Fase 3, análoga a HU-23/ticket 033 (HU-43).</li>
+      </ol>
+    </section>
+
+  </main>
+</div>
+
+<footer class="doc-footer">
+  Documento guardado en <code class="mono">docs/definiciones/galgoth-studio-fase3-textura.md</code> · elaborado por business-analyst, architect y solution-designer · pendiente de VoBo conjunto del equipo y el Product Owner antes de crear tickets.
+</footer>
