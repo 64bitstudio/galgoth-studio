@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.galgothstudio.backend.domain.jackson.Vec4JacksonModule;
 import com.galgothstudio.backend.domain.model.FaceName;
 import com.galgothstudio.backend.domain.model.UvLayout;
+import com.galgothstudio.backend.domain.model.UvPaintOrigin;
 import com.galgothstudio.backend.domain.model.UvRegion;
 import com.galgothstudio.backend.domain.model.UvRegionStatus;
 import com.galgothstudio.backend.domain.model.UvReservation;
@@ -113,6 +114,50 @@ class UvRegionUvReservationContractTest {
 		String roundTripped = mapper.writeValueAsString(deserialized);
 
 		assertThat(deserialized).isEqualTo(layout);
+		JSONAssert.assertEquals(serialized, roundTripped, JSONCompareMode.STRICT);
+	}
+
+	/**
+	 * Ticket 054 -- {@code paintedBy} es aditivo de la misma forma que
+	 * {@code status} (040): una región legacy (pre-054, incluye toda región
+	 * PAINTED de Fase 3 anterior a este ticket) no tiene este campo en su
+	 * JSON almacenado -- debe deserializar con {@code paintedBy=null}
+	 * ("origen desconocido", ver Javadoc de {@link UvPaintOrigin}), sin
+	 * lanzar excepción.
+	 */
+	@Test
+	void unaUvRegionLegacySinPaintedByDeserializaConNull() throws Exception {
+		String legacyJson = "{ \"cuboidId\": \"head_main\", \"face\": \"north\", \"rect\": [0, 0, 8, 8], \"status\": \"painted\" }";
+
+		UvRegion region = mapper().readValue(legacyJson, UvRegion.class);
+
+		assertThat(region.paintedBy()).isNull();
+		assertThat(region.status()).isEqualTo(UvRegionStatus.PAINTED);
+	}
+
+	/** Ticket 054 -- `paintedBy=null` NUNCA se serializa explícito (`@JsonInclude(NON_NULL)`), para no romper la comparación JSON estricta de fixtures/round-trips ya congeladas que no lo tienen. */
+	@Test
+	void unaUvRegionConPaintedByNullNoSerializaEsaClave() throws Exception {
+		ObjectMapper mapper = mapper();
+		UvRegion region = new UvRegion("head_main", FaceName.NORTH, new Vec4(0, 0, 8, 8), UvRegionStatus.UNPAINTED);
+
+		String serialized = mapper.writeValueAsString(region);
+
+		assertThat(serialized).doesNotContain("paintedBy");
+	}
+
+	/** Ticket 054 -- round-trip con `paintedBy=AI` explícito (el que escribe `TextureGenerationService` tras un Apply de generación por IA) sobrevive idéntico. */
+	@Test
+	void unaUvRegionConPaintedByAiSobreviveElRoundTripIdentica() throws Exception {
+		ObjectMapper mapper = mapper();
+		UvRegion region = new UvRegion("head_main", FaceName.NORTH, new Vec4(0, 0, 8, 8), UvRegionStatus.PAINTED, UvPaintOrigin.AI);
+
+		String serialized = mapper.writeValueAsString(region);
+		UvRegion deserialized = mapper.readValue(serialized, UvRegion.class);
+		String roundTripped = mapper.writeValueAsString(deserialized);
+
+		assertThat(deserialized).isEqualTo(region);
+		assertThat(deserialized.paintedBy()).isEqualTo(UvPaintOrigin.AI);
 		JSONAssert.assertEquals(serialized, roundTripped, JSONCompareMode.STRICT);
 	}
 

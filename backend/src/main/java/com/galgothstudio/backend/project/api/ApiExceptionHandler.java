@@ -7,6 +7,9 @@ import com.galgothstudio.backend.aiorchestrator.NoReferenceImageException;
 import com.galgothstudio.backend.aiorchestrator.edit.NoBaseRevisionException;
 import com.galgothstudio.backend.aiorchestrator.edit.StaleEditBaseException;
 import com.galgothstudio.backend.aiorchestrator.planner.InvalidGeometryProposalException;
+import com.galgothstudio.backend.aiorchestrator.texture.InvalidTextureGenerationRequestException;
+import com.galgothstudio.backend.aiorchestrator.texture.StaleTextureBaseException;
+import com.galgothstudio.backend.aiorchestrator.texture.TextureTargetBoneNotFoundException;
 import com.galgothstudio.backend.domain.geometry.GeometryValidationException;
 import com.galgothstudio.backend.domain.uv.PaintedRegionResizeConfirmationRequiredException;
 import com.galgothstudio.backend.domain.uv.UvAtlasOverflowException;
@@ -166,6 +169,25 @@ public class ApiExceptionHandler {
 				.toList();
 		return ResponseEntity.status(HttpStatus.CONFLICT)
 				.body(new ApiErrorResponse("PAINTED_REGION_RESIZE_CONFIRMATION_REQUIRED", ex.getMessage(), details));
+	}
+
+	/** Ticket 054 -- `style`/`detailLevel` fuera de los 4/3 valores aceptados, o el mob/bone objetivo no tiene ningún cuboid que texturizar. */
+	@ExceptionHandler(InvalidTextureGenerationRequestException.class)
+	public ResponseEntity<ApiErrorResponse> handleInvalidTextureGenerationRequest(InvalidTextureGenerationRequestException ex) {
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+				.body(new ApiErrorResponse("INVALID_TEXTURE_GENERATION_REQUEST", ex.getMessage(), null));
+	}
+
+	/** Ticket 054 (HU-37) -- el `boneId` pedido para "Regenerar textura" no existe en el modelo actual. */
+	@ExceptionHandler(TextureTargetBoneNotFoundException.class)
+	public ResponseEntity<ApiErrorResponse> handleTextureTargetBoneNotFound(TextureTargetBoneNotFoundException ex) {
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("TEXTURE_TARGET_BONE_NOT_FOUND", ex.getMessage(), null));
+	}
+
+	/** Ticket 054, Diseño técnico §16 -- el draft/revisión compartido (geometría o textura) avanzó desde que se generó la propuesta de textura. */
+	@ExceptionHandler(StaleTextureBaseException.class)
+	public ResponseEntity<ApiErrorResponse> handleStaleTextureBase(StaleTextureBaseException ex) {
+		return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiErrorResponse("STALE_TEXTURE_BASE", ex.getMessage(), null));
 	}
 
 }

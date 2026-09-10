@@ -40,12 +40,12 @@ class SchemaMigrationReversibilityTest {
 				.load();
 
 		assertThatCode(flyway::migrate).doesNotThrowAnyException();
-		assertThat(flyway.info().current().getVersion().toString()).isEqualTo("2");
+		assertThat(flyway.info().current().getVersion().toString()).isEqualTo("3");
 
 		assertThatCode(flyway::clean).doesNotThrowAnyException();
 
 		assertThatCode(flyway::migrate).doesNotThrowAnyException();
-		assertThat(flyway.info().current().getVersion().toString()).isEqualTo("2");
+		assertThat(flyway.info().current().getVersion().toString()).isEqualTo("3");
 	}
 
 }

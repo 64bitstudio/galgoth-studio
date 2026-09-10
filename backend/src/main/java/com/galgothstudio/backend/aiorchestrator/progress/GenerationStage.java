@@ -33,6 +33,23 @@ public final class GenerationStage {
 	public static final String FALLIDO = "fallido";
 	public static final String CANCELADO = "cancelado";
 
+	/**
+	 * Ticket 054 (Diseño técnico §13 de
+	 * `docs/definiciones/galgoth-studio-fase3-textura.md`, HU-36) -- etapas
+	 * nuevas del pipeline de generación/regeneración de TEXTURA por IA
+	 * (`TextureGenerationService`), reutilizando `ai_job_events`/SSE tal
+	 * cual. {@code GENERANDO_BONE_PREFIX} es la base de un valor DINÁMICO
+	 * (a diferencia de todas las demás constantes de esta clase, fijas) --
+	 * el propio Diseño técnico lo describe como {@code generando_bone_X},
+	 * donde {@code X} es el bone real que se está generando en ese
+	 * momento; ver {@code TextureGenerationService#generatingBoneStage}.
+	 */
+	public static final String ANALIZANDO_PALETA = "analizando_paleta";
+	public static final String MAPEANDO_CARAS = "mapeando_caras";
+	public static final String GENERANDO_BONE_PREFIX = "generando_bone_";
+	public static final String COMPONIENDO_ATLAS = "componiendo_atlas";
+	public static final String LIMPIANDO_PIXELES = "limpiando_pixeles";
+
 	private GenerationStage() {
 	}
 

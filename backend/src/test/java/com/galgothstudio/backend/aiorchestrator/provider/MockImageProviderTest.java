@@ -11,6 +11,14 @@ import org.junit.jupiter.api.Test;
 
 class MockImageProviderTest {
 
+	/** Ticket 054 -- `provider()`/`model()` suben a la interfaz `ImageGenerationProvider` (ver su Javadoc); mismos literales que `MockVisionProvider`/`MockReasoningProvider`. */
+	@Test
+	void provider_y_model_devuelven_los_literales_mock() {
+		MockImageProvider provider = new MockImageProvider();
+		assertThat(provider.provider()).isEqualTo("mock");
+		assertThat(provider.model()).isEqualTo("mock-model");
+	}
+
 	@Test
 	void devuelve_bytes_vacios_por_defecto_y_es_configurable() {
 		MockImageProvider provider = new MockImageProvider();

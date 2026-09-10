@@ -67,9 +67,15 @@ public class OpenAiImageProvider implements ImageGenerationProvider {
 		this.model = model;
 	}
 
-	/** Modelo configurado (`ai.openai.image-model`) -- ver el Javadoc de la clase, punto 6 del ticket 051. */
+	/** Modelo configurado (`ai.openai.image-model`) -- ver el Javadoc de la clase, punto 6 del ticket 051. Sube a la interfaz `ImageGenerationProvider` en el ticket 054 -- ver su Javadoc. */
+	@Override
 	public String model() {
 		return model;
+	}
+
+	@Override
+	public String provider() {
+		return "openai";
 	}
 
 	@Override

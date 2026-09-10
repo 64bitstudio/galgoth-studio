@@ -136,6 +136,7 @@ class OpenAiImageProviderTest {
 
 		assertThat(providerA.model()).isEqualTo(CONFIGURED_MODEL);
 		assertThat(providerB.model()).isEqualTo(OTHER_CONFIGURED_MODEL);
+		assertThat(providerA.provider()).isEqualTo("openai");
 
 		serverBoxA[0]
 				.expect(requestTo(BASE_URL + "/v1/images/generations"))

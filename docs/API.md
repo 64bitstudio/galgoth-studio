@@ -223,6 +223,46 @@ POST   /api/jobs/{jobId}/apply-edit         -- aplica un plan ya generado (201, 
 - `409 Conflict` (`JOB_NOT_COMPLETED`) si el job no es un `edit` completado.
 - `409 Conflict` (`STALE_EDIT_BASE`) si el draft/revisión base avanzaron desde que se generó el plan (otro autosave/"Guardar" ocurrió mientras tanto) -- no aplica nada; el frontend ofrece regenerar el plan contra el estado actual.
 
+### Pipeline de generación de textura por IA + diff + Apply atómico (ticket `054`, HU-36 a HU-39)
+
+Implementado en `backend/.../aiorchestrator/api/TextureGenerationController.java`, orquestado por `TextureGenerationService` (paquete `aiorchestrator.texture`) -- mismo patrón de orquestación que `MobGenerationService` (028/029): síncrono hasta crear la fila `ai_jobs` en `running`, el pipeline real corre en `generationExecutor`. Reutiliza `GET /api/jobs/{jobId}/events` (SSE, 029) TAL CUAL -- ese endpoint es genérico por `jobId`, sin lógica de `job_type`.
+
+```text
+POST   /api/mobs/{mobId}/ai/generate-texture   -- arranca un job de generación/regeneración de textura (202, no bloqueante)
+GET    /api/jobs/{jobId}/events                -- progreso en vivo (SSE, 029, reutilizado sin cambios)
+GET    /api/jobs/{jobId}/texture-result        -- diff Antes/Después de una propuesta ya completada
+POST   /api/jobs/{jobId}/apply-texture         -- Apply atómico (bitmap + draft + revisión + current_revision_number)
+```
+
+**`POST /api/mobs/{mobId}/ai/generate-texture`** -- body `{"style": "faithful"|"minecraft_vanilla"|"pixel_art"|"realistic", "detailLevel": "low"|"medium"|"high", "boneId": "<id>"|null}`
+- `202 Accepted` -- `{"jobId": "<uuid>"}`. Reutiliza SIEMPRE la imagen de referencia más reciente ya subida en Fase 2 -- nunca pide una nueva (HU-36 AC #1). `boneId` ausente/`null` -> `job_type=generate_texture` (HU-36, todos los bones con geometría); `boneId` presente -> `job_type=edit_texture` (HU-37, regenera solo ese bone -- una sola llamada de imagen coherente para todo el bone, nunca una por cuboid).
+- `404 Not Found` (`MOB_NOT_FOUND`).
+- `400 Bad Request` (`NO_BASE_REVISION`) si `mobs.current_revision_number=0` -- necesita geometría ya usable.
+- `400 Bad Request` (`NO_REFERENCE_IMAGE`) si el mob no tiene ninguna imagen de referencia subida.
+- `400 Bad Request` (`INVALID_TEXTURE_GENERATION_REQUEST`) -- `style`/`detailLevel` fuera de los valores aceptados, o el mob/bone objetivo no tiene ningún cuboid que texturizar.
+- `400 Bad Request` (`TEXTURE_TARGET_BONE_NOT_FOUND`) -- el `boneId` pedido no existe en el modelo actual.
+
+**Progreso SSE (Diseño técnico §13)**: nuevos valores de `stage` sobre el mismo mecanismo de siempre -- `analizando_paleta` (análisis de material/paleta vía `TexturePlanService`, 052), `mapeando_caras` (uno por bone objetivo, `TextureGenerationSheetPlanner`, 053), `generando_bone_<id>` (uno por bone/sub-sheet -- valor DINÁMICO, incluye el id real del bone; si hubo fallback/batching, el `message` agrega `"(parte N/M)"`), `componiendo_atlas` (payload `preview_texture_patch`), `limpiando_pixeles`. Esquema formal de `preview_texture_patch` (payload del evento): `{ type: "preview_texture_patch", rect: {x,y,width,height}, encoding: "base64"|"asset_url", data|url }` -- hasta 32 KB de payload base64 codificado van inline (`encoding=base64`); por encima, se sube como asset temporal a MinIO bajo `texture-previews/{jobId}/{seq}.png` (servido por `GET /api/texture-previews/{jobId}/{fileName}`, prefijo DISTINTO de `textures/`) y se emite `encoding=asset_url` con esa `url`. **Estos previews NUNCA se persisten como textura definitiva** -- ni el `rect`+`data` inline ni el asset temporal tocan `textures/{sha256}.png` ni ninguna fila de `mob_drafts`/`mob_revisions`; lo único que persiste algo real es un Apply exitoso.
+
+**`GET /api/jobs/{jobId}/texture-result`** (HU-38)
+- `200 OK` -- `{jobId, mobId, wholeModel, touchedBoneIds, touchedFaces, hasHandPaintedOverwrite, beforeAtlasPngBase64, afterAtlasPngBase64}`. `touchedFaces[]` (`{cuboidId, face, rect, handPaintedOverwrite}`) es el diff a nivel de cara; `handPaintedOverwrite=true` señala EXPLÍCITAMENTE que esa cara tenía contenido pintado a mano (o de origen desconocido/legacy) que esta propuesta sobrescribiría -- distinto de simplemente "ya tenía contenido generado por IA" (HU-37 AC #2). Nunca re-ejecuta el pipeline.
+- `404 Not Found` (`JOB_NOT_FOUND`).
+- `409 Conflict` (`JOB_NOT_COMPLETED`) si el job no es un job de textura (`generate_texture`/`edit_texture`) en estado `completed`.
+
+**`POST /api/jobs/{jobId}/apply-texture`** (HU-38 AC #3, Diseño técnico §10/§16)
+- `201 Created` -- `{revisionNumber, draftVersion}`. Chequeo de conflicto PRIMERO: si `mobs.current_revision_number`/`mob_drafts.draft_version` avanzaron (geometría O textura, ambas viven en el mismo `MobProjectModel`) desde que se generó la propuesta, `409 Conflict` (`STALE_TEXTURE_BASE`) -- se descarta sin tocar nada (ni MinIO ni Postgres). Sin conflicto, **atómico**: (1) sube el bitmap compuesto a MinIO bajo su `storageKey` content-addressed REAL (mismo mecanismo de `TextureService`/`PUT /texture`, 045 -- el backend recién calcula este hash acá, nunca antes) PRIMERO, fuera de la transacción; (2) UNA transacción Postgres (`DraftPersistenceService.applyGenerationProposal`, reutilizada tal cual de 030) que actualiza `mob_drafts`, inserta `mob_revisions` (texture+geometría juntas) y avanza `mobs.current_revision_number` -- todo o nada.
+- **"Reject" no es un endpoint** -- simplemente no se llama a este; la propuesta queda en `ai_jobs` para auditoría, sin tocar `mob_drafts`/`mob_revisions`/MinIO.
+- `404 Not Found` (`JOB_NOT_FOUND`).
+- `409 Conflict` (`JOB_NOT_COMPLETED`).
+
+**`GET /api/texture-previews/{jobId}/{fileName}`** -- sirve exclusivamente los assets temporales de `preview_texture_patch` cuando cruzan el umbral de 32 KB (ver arriba). `404 Not Found` si no existe (ya expiró o nunca existió) -- sin garantía de retención a largo plazo.
+
+**Migración `V3__ai_jobs_texture_job_types.sql`**: `ai_jobs.job_type` acepta `generate_texture`/`edit_texture` además de `generate`/`edit`; nueva columna `target_bone_id` (nullable -- poblada solo en `edit_texture`). **Hallazgo real, señalado explícitamente**: a diferencia de lo que el ticket 054 pedía literalmente, también fue necesario actualizar `chk_ai_jobs_base_values_by_type` (003) para que `generate_texture`/`edit_texture` exijan `base_revision_number`/`base_draft_version` `NOT NULL` (mismo criterio que `edit`, nunca como `generate`) -- ambos job types SIEMPRE corren sobre un mob con geometría ya usable, necesaria para el chequeo de conflicto 409.
+
+**Extensión aditiva de `ImageGenerationProvider` (051)**: gana `provider()`/`model()` (además de `generateImage`/`generateTextureSheet`, sin cambios) -- `TextureGenerationService` los necesita para persistir en `ai_jobs.provider`/`ai_jobs.model` el proveedor/modelo REAL usado en el paso de generación de imagen (HU-39), ya que `generateTextureSheet` devuelve solo `byte[]` (a diferencia de `VisionModelProvider`/`StructuredReasoningProvider`, que devuelven un `AiProviderResponse` completo).
+
+**`UvRegion` gana `paintedBy` (`UvPaintOrigin`: `hand`/`ai`), aditivo** -- necesario para que HU-37 AC #2 pueda distinguir "contenido pintado a mano" de "contenido generado por IA" al construir el diff (antes de este ticket, `PAINTED` no llevaba esa información). `null`/ausente (todo JSON legacy, y toda región pintada a mano por el editor manual del ticket 047, que todavía no escribe este campo explícitamente) se trata como "origen desconocido, tratar como posible pintado a mano" -- nunca se asume `ai` por default. Serializado con `@JsonInclude(NON_NULL)` para no romper comparaciones JSON estrictas ya congeladas.
+
 ### Exportación (ticket `032`, HU-19, mockup 11)
 
 Implementado en `MobExportController.java` (paquete `project.export`). "Guardar y exportar" NO es un endpoint compuesto: el frontend orquesta `POST /api/mobs/{mobId}/revisions` (020, "Guardar") seguido de `GET .../export/bbmodel` -- dos llamadas sucesivas reutilizando el mecanismo de Guardar tal cual, en vez de un endpoint propio que lo duplique. Difiere de la ruta "prevista" originalmente (`POST .../export/bbmodel`): es `GET`, no `POST` -- exportar es una operación de solo lectura sobre `mob_revisions`, nunca escribe nada por sí misma.
