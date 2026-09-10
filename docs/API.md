@@ -138,6 +138,23 @@ GET    /api/mobs/{mobId}/thumbnail    -- servir el PNG actual del mob
 
 El thumbnail es un asset **derivado y best-effort**: el frontend lo genera/sube DESPUÉS de un Guardar exitoso (`EditorToolbar.vue`, botón "Guardar" real añadido en este mismo ticket — el ticket 020 solo implementó el backend de "Guardar"), en un paso separado cuyo fallo nunca revierte ni bloquea la revisión ya guardada (solo `console.warn` en el frontend).
 
+### Persistencia content-addressed de textura (ticket `045`, HU-30/HU-31)
+
+Implementados en `backend/.../project/api/MobTextureController.java`. Autoridad de negocio: `TextureService` (paquete `project.texture`), sobre `AssetStorageService` (mismo cliente S3 genérico que thumbnails/referencias). Ver `docs/definiciones/galgoth-studio-fase3-textura.md`, Diseño técnico §4/§6 — **el backend es la única autoridad del hash/`storageKey`**, nunca confía en uno propuesto por el cliente.
+
+```text
+PUT    /api/mobs/{mobId}/texture    -- subir el bitmap de textura, content-addressed
+```
+
+**`PUT /api/mobs/{mobId}/texture`** — body: bytes crudos de un PNG, `Content-Type: image/png` (NO JSON, NO multipart — mismo estilo que el thumbnail del ticket 023). El contrato no tiene ningún campo para que el cliente proponga un `storageKey`.
+- `200 OK` — `{ storageKey: "textures/{sha256-hex}.png" }`. El backend decodifica los bytes recibidos (nunca confía en el `Content-Type` declarado), los re-codifica a PNG canónico, calcula el SHA-256 sobre esos bytes canónicos (no sobre los bytes crudos subidos — dos encoders/clientes distintos pueden producir bytes PNG distintos para el mismo contenido de píxeles; hashear la forma canónica es lo que garantiza el dedup automático de HU-31 sin importar el origen), y sube a MinIO bajo `textures/{sha256-hex}.png` — **idempotente**: si la key ya existe, no vuelve a escribirla.
+- `400 Bad Request` (`error: "INVALID_TEXTURE"`) — los bytes no decodifican como una imagen válida.
+- `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe.
+
+**Flush obligatorio antes de crear una Revision** (Diseño técnico §6): el frontend debe esperar (await) la respuesta de este endpoint y usar EXACTAMENTE el `storageKey` devuelto antes de invocar "Guardar" (`POST /revisions`) o "Usar este modelo" (`POST /jobs/{jobId}/apply`) — nunca dispararlos en paralelo con un `PUT /texture` todavía en vuelo. Como defensa en profundidad (contra un cliente que por bug no respete ese orden), ambos endpoints verifican que el `storageKey` referenciado por `model.texture()` exista realmente en MinIO antes de escribir la fila: `400 Bad Request` (`error: "DANGLING_TEXTURE_REFERENCE"`) si no existe — nunca se persiste una `mob_revision` con una referencia colgante.
+
+El dirty-check de autosave (`PATCH /draft`, ticket 020) no requiere ningún cambio: `TextureDocument.storageKey` es un `String` más dentro de `MobProjectModel`, así que la comparación de igualdad estructural ya existente lo cubre automáticamente (O(1), sin comparar bitmaps) — el `storageKey` comparado es siempre el que este endpoint devolvió, nunca uno calculado solo por el cliente.
+
 ### Pipeline de generación IA + progreso SSE + Resultado (tickets `028`/`029`/`030`, HU-11/HU-12/HU-13/HU-14/HU-15)
 
 Implementados en `backend/.../aiorchestrator/api/GenerationJobController.java`. Orquestador: `MobGenerationService` (`aiorchestrator`), que corre el pipeline Vision→`ModelIntent`→Geometry planner→`MobProjectModel` de forma **asíncrona** (`generationExecutor`, ver `GenerationExecutorConfig`) — el nombre real difiere de `/ai/generate-geometry` previsto originalmente en la sección "Rutas previstas" de más abajo, unificado en un solo endpoint de arranque en vez de separar vision/geometría en dos llamadas HTTP distintas. `GenerationResultService` (mismo paquete `aiorchestrator`) es el lado "leer resultado"/"aceptar propuesta" (030) -- nunca re-ejecuta el pipeline de IA.

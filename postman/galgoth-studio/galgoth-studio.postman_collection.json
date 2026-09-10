@@ -333,6 +333,25 @@
       ]
     },
     {
+      "name": "Textura (ticket 045)",
+      "item": [
+        {
+          "name": "Subir bitmap de textura (content-addressed)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "image/png" }],
+            "body": { "mode": "file", "file": {} },
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/texture",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "mobs", "{{mobId}}", "texture"]
+            },
+            "description": "Body: bytes crudos de un PNG (elegir un archivo local en la pestaña Body > binary de Postman) -- NO JSON, NO multipart. El backend decodifica/valida la imagen (400 INVALID_TEXTURE si no es un PNG válido, nunca confía en el Content-Type declarado), calcula ÉL MISMO el SHA-256 sobre los bytes canónicos re-codificados y sube a MinIO bajo textures/{sha256-hex}.png -- idempotente (no vuelve a subir si la key ya existe). 200 con { storageKey }, siempre el que el backend calculó -- el contrato no acepta ninguno propuesto por el cliente. 404 (MOB_NOT_FOUND) si el mob no existe."
+          }
+        }
+      ]
+    },
+    {
       "name": "Imágenes de referencia (ticket 024)",
       "item": [
         {
