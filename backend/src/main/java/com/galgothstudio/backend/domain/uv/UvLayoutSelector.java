@@ -54,6 +54,19 @@ public final class UvLayoutSelector implements UvLayoutStrategy {
 		return resolve(previousLayout).layout(cuboids, textureWidth, textureHeight, previousLayout);
 	}
 
+	/**
+	 * Ticket 043: propaga {@code confirmPaintLoss} a la estrategia resuelta
+	 * -- {@link StableUvStrategy} lo consume de verdad (único caso que
+	 * puede lanzar {@link PaintedRegionResizeConfirmationRequiredException});
+	 * {@link AlphaAutoPackStrategy} lo ignora vía el default de la interfaz
+	 * (nunca lo necesita).
+	 */
+	@Override
+	public Result layout(
+			List<Cuboid> cuboids, int textureWidth, int textureHeight, UvLayout previousLayout, boolean confirmPaintLoss) {
+		return resolve(previousLayout).layout(cuboids, textureWidth, textureHeight, previousLayout, confirmPaintLoss);
+	}
+
 	private UvLayoutStrategy resolve(UvLayout previousLayout) {
 		boolean hasPaintedOrOrphan = previousLayout.regions()
 				.stream()

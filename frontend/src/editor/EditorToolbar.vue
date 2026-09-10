@@ -22,6 +22,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { threeViewportService } from '../viewport/ThreeViewportService'
 import { useDraftModelStore } from './draftModelStore'
+import { useGeometryApplyStore } from './geometryApplyStore'
 import { useSelectionStore } from './selectionStore'
 import { saveRevision } from './draftPersistenceApi'
 import { uploadThumbnail } from './thumbnailApi'
@@ -45,6 +46,7 @@ const UNDO_SHORTCUT = `${MODIFIER_KEY}+Z`
 const REDO_SHORTCUT = `${MODIFIER_KEY}+Shift+Z`
 
 const draft = useDraftModelStore()
+const geometryApply = useGeometryApplyStore()
 const selection = useSelectionStore()
 const mode = ref<TransformMode>('translate')
 const saving = ref(false)
@@ -80,12 +82,14 @@ function contextBoneId(): string | undefined {
   return selectedCuboid?.boneId ?? draft.model?.bones[0]?.id
 }
 
-function addCuboid(): void {
+/** Ticket 043: "Agregar cuboide" pasa a ser server-side (`POST /geometry/apply`, mismo servicio que Resize) -- el id real lo asigna el backend, no se puede predecir client-side. */
+async function addCuboid(): Promise<void> {
   const boneId = contextBoneId()
-  if (!boneId) {
+  const mobId = draft.model?.mobId
+  if (!boneId || !mobId) {
     return
   }
-  const newId = draft.addCuboid(boneId, 'nuevo_cuboid', [-2, 0, -2], [2, 4, 2], [0, 2, 0])
+  const newId = await geometryApply.createCuboid(mobId, boneId, 'nuevo_cuboid', [-2, 0, -2], [2, 4, 2], [0, 2, 0])
   if (newId) {
     selection.select(newId)
   }
@@ -96,6 +100,14 @@ function addBone(): void {
   draft.addBone(parentId, 'nuevo_bone', [0, 0, 0], [0, 0, 0])
 }
 
+/**
+ * Duplicar NO está en el alcance del ticket 043 (solo Resize/Add/Remove) --
+ * sigue exactamente igual que antes, 100% client-side vía
+ * `geometryOperations.ts`. Gap real, ya señalado en el ticket: internamente
+ * duplicar es equivalente a un `createCuboid`, así que hereda el mismo
+ * Hallazgo B (UV client-side sin revalidar) que 043 cierra para "Agregar" --
+ * queda pendiente para un ticket futuro si el Product Owner decide cerrarlo.
+ */
 function duplicateSelected(): void {
   if (!selection.selectedCuboidId) {
     return
@@ -106,11 +118,14 @@ function duplicateSelected(): void {
   }
 }
 
-function deleteSelected(): void {
-  if (!selection.selectedCuboidId) {
+/** Ticket 043: "Eliminar" pasa a ser server-side (`POST /geometry/apply`, mismas reglas de 041 -- caras PAINTED del cuboid eliminado pasan a ORPHAN). */
+async function deleteSelected(): Promise<void> {
+  const cuboidId = selection.selectedCuboidId
+  const mobId = draft.model?.mobId
+  if (!cuboidId || !mobId) {
     return
   }
-  draft.deleteCuboid(selection.selectedCuboidId)
+  await geometryApply.removeCuboid(mobId, cuboidId)
   selection.select(null)
 }
 
@@ -166,7 +181,7 @@ async function handleSave(): Promise<void> {
       <IconButton label="Rehacer" :shortcut="REDO_SHORTCUT" :disabled="!draft.canRedo" @click="draft.redo()"><IconRedo :size="18" /></IconButton>
     </fieldset>
     <div class="editor-toolbar__spacer" />
-    <span v-if="draft.lastError" class="editor-toolbar__error">{{ draft.lastError }}</span>
+    <span v-if="draft.lastError || geometryApply.lastError" class="editor-toolbar__error">{{ draft.lastError ?? geometryApply.lastError }}</span>
     <span v-if="saveMessage" class="editor-toolbar__save-message">{{ saveMessage }}</span>
     <GButton variant="primary" :disabled="!draft.model || saving" @click="handleSave">{{ saving ? 'Guardando…' : 'Guardar' }}</GButton>
   </div>

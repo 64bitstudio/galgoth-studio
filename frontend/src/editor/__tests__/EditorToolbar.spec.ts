@@ -21,10 +21,25 @@ vi.mock('three', async (importOriginal) => {
 vi.mock('../draftPersistenceApi', () => ({ saveRevision: vi.fn() }))
 vi.mock('../thumbnailApi', () => ({ uploadThumbnail: vi.fn() }))
 
+// Ticket 043: Add/Delete de cuboid pasan a ser server-side (`POST /geometry/apply`,
+// vía `geometryApplyStore`) -- se mockea el cliente HTTP, nunca `fetch` real.
+class PaintedRegionResizeConfirmationRequiredErrorStub extends Error {
+  affectedFaces: { cuboidId: string; face: string }[]
+  constructor(message: string, affectedFaces: { cuboidId: string; face: string }[]) {
+    super(message)
+    this.affectedFaces = affectedFaces
+  }
+}
+vi.mock('../geometryApplyApi', () => ({
+  applyGeometry: vi.fn(),
+  PaintedRegionResizeConfirmationRequiredError: PaintedRegionResizeConfirmationRequiredErrorStub,
+}))
+
 const { default: EditorToolbar } = await import('../EditorToolbar.vue')
 const { threeViewportService } = await import('../../viewport/ThreeViewportService')
 const { saveRevision } = await import('../draftPersistenceApi')
 const { uploadThumbnail } = await import('../thumbnailApi')
+const { applyGeometry } = await import('../geometryApplyApi')
 
 const EMPTY_FACES = {
   north: { uv: [0, 0, 0, 0] as [number, number, number, number], texture: null },
@@ -102,9 +117,14 @@ describe('EditorToolbar.vue', () => {
     draft.load(modelWith([bone('b1', null), bone('b2', null)], [cuboid('c1', 'b2')]))
     const selection = useSelectionStore()
     selection.select('c1')
+    vi.mocked(applyGeometry).mockImplementation(async (_mobId, operations) => {
+      const op = operations[0] as { op: 'createCuboid'; boneId: string }
+      return { model: { ...draft.model!, cuboids: [...draft.model!.cuboids, cuboid('c2', op.boneId)] }, draftVersion: 2 }
+    })
     const wrapper = mount(EditorToolbar)
 
     await findButton(wrapper, 'Agregar cuboide').trigger('click')
+    await flushPromises()
 
     const created = draft.model!.cuboids.find((c) => c.id !== 'c1')
     expect(created?.boneId).toBe('b2') // bone del cuboid seleccionado, no el primero del modelo
@@ -114,9 +134,14 @@ describe('EditorToolbar.vue', () => {
   it('Add cuboid sin selección usa el primer bone del modelo como destino', async () => {
     const draft = useDraftModelStore()
     draft.load(modelWith([bone('unico', null)], []))
+    vi.mocked(applyGeometry).mockImplementation(async (_mobId, operations) => {
+      const op = operations[0] as { op: 'createCuboid'; boneId: string }
+      return { model: { ...draft.model!, cuboids: [cuboid('nuevo', op.boneId)] }, draftVersion: 1 }
+    })
     const wrapper = mount(EditorToolbar)
 
     await findButton(wrapper, 'Agregar cuboide').trigger('click')
+    await flushPromises()
 
     expect(draft.model!.cuboids).toHaveLength(1)
     expect(draft.model!.cuboids[0]!.boneId).toBe('unico')
@@ -181,9 +206,14 @@ describe('EditorToolbar.vue', () => {
     draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
     const selection = useSelectionStore()
     selection.select('c1')
+    vi.mocked(applyGeometry).mockImplementation(async (_mobId, operations) => {
+      const op = operations[0] as { op: 'removeCuboid'; target: string }
+      return { model: { ...draft.model!, cuboids: draft.model!.cuboids.filter((c) => c.id !== op.target) }, draftVersion: 2 }
+    })
     const wrapper = mount(EditorToolbar)
 
     await findButton(wrapper, 'Eliminar').trigger('click')
+    await flushPromises()
 
     expect(draft.model!.cuboids).toHaveLength(0)
     expect(selection.selectedCuboidId).toBeNull()
@@ -224,9 +254,14 @@ describe('EditorToolbar.vue', () => {
       draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
       const selection = useSelectionStore()
       selection.select('c1')
+      vi.mocked(applyGeometry).mockImplementation(async (_mobId, operations) => {
+        const op = operations[0] as { op: 'removeCuboid'; target: string }
+        return { model: { ...draft.model!, cuboids: draft.model!.cuboids.filter((c) => c.id !== op.target) }, draftVersion: 2 }
+      })
       const wrapper = mount(EditorToolbar)
 
       await findButton(wrapper, 'Eliminar').trigger('click')
+      await flushPromises()
       expect(draft.model!.cuboids).toHaveLength(0)
 
       await findButton(wrapper, 'Deshacer').trigger('click')

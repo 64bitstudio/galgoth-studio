@@ -97,6 +97,38 @@ class GeometryEngineUvSelectorIntegrationTest {
 				.isInstanceOf(PaintedRegionResizeConfirmationRequiredException.class);
 	}
 
+	/**
+	 * Ticket 043: la sobrecarga de 4 argumentos de {@code GeometryEngine.apply}
+	 * (con {@code confirmPaintLoss}) es el canal real por el que
+	 * {@code MobGeometryApplyService} confirma la pérdida de pintura --
+	 * mismo escenario que el test de arriba, pero con {@code confirmPaintLoss=true}
+	 * aplica en vez de lanzar, y crea la {@code UvReservation} esperada.
+	 */
+	@Test
+	void resizeQueAfectaUnaCaraPintada_confirmado_seAplicaYCreaLaReservaEsperada() {
+		String boneId = UUID.randomUUID().toString();
+		String cuboidId = UUID.randomUUID().toString();
+		MobProjectModel base = GeometryFixtures.modelWithBoneAndCuboid(boneId, cuboidId);
+		Cuboid cuboid = base.cuboids().get(0);
+		CuboidFaces faces = BoxUvMath.boxUnwrapFaces(cuboid, 0, 0);
+		List<UvRegion> regions = new ArrayList<>();
+		for (FaceName faceName : FaceName.values()) {
+			UvRegionStatus status = faceName == FaceName.UP ? UvRegionStatus.PAINTED : UvRegionStatus.UNPAINTED;
+			regions.add(new UvRegion(cuboidId, faceName, BoxUvMath.faceOf(faces, faceName).uv(), status));
+		}
+		MobProjectModel model = withUv(base, regions, List.of());
+		GeometryOperation resize = new ResizeCuboid(cuboidId, new Vec3(2, 2, 2));
+
+		MobProjectModel result = GeometryEngine.apply(model, List.of(resize), SELECTOR, true);
+
+		assertThat(result.uv().reservations()).hasSize(1);
+		assertThat(result.uv().reservations().get(0).sourceFace()).isEqualTo(FaceName.UP);
+		assertThat(result.uv().regions())
+				.filteredOn(r -> r.face() == FaceName.UP)
+				.singleElement()
+				.satisfies(r -> assertThat(r.status()).isEqualTo(UvRegionStatus.UNPAINTED));
+	}
+
 	@Test
 	void unaOperacionQueNoTocaUv_preservaLasReservasExistentesDelModelo() {
 		// Ticket 041: antes de este fix, CUALQUIER operación (incluso una

@@ -61,15 +61,17 @@ public final class StableUvStrategy implements UvLayoutStrategy {
 	}
 
 	/**
-	 * Igual que la sobrecarga de 4 argumentos de {@link UvLayoutStrategy},
-	 * pero con el flag explícito de confirmación de pérdida de pintura del
-	 * caso "Resize" (Diseño técnico §2). No es parte de la interfaz --
-	 * {@code confirmPaintLoss} todavía no tiene un canal formal desde el
-	 * endpoint/operación de geometría (eso es wiring de un ticket
-	 * posterior); este método es el punto de entrada real del caso
-	 * "confirmado" para quien sí lo tenga disponible (y para los tests de
-	 * este ticket).
+	 * Sobrecarga de 5 argumentos de {@link UvLayoutStrategy} (ticket 043 --
+	 * el ticket 041 la introdujo aquí ANTES de que existiera la sobrecarga
+	 * formal en la interfaz, ahora {@code @Override} real): el flag
+	 * explícito de confirmación de pérdida de pintura del caso "Resize"
+	 * (Diseño técnico §2) llega hasta acá desde
+	 * {@code POST /api/mobs/{mobId}/geometry/apply}
+	 * (`project/geometry/MobGeometryApplyService`), vía
+	 * {@link UvLayoutSelector} y el motor de geometría -- este es el punto
+	 * de entrada real del caso "confirmado", no solo un método de test.
 	 */
+	@Override
 	public Result layout(
 			List<Cuboid> cuboids, int textureWidth, int textureHeight, UvLayout previousLayout, boolean confirmPaintLoss) {
 		Map<String, Map<FaceName, UvRegion>> oldByCuboid = groupByCuboid(previousLayout.regions());

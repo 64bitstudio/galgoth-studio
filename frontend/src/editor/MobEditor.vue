@@ -15,7 +15,7 @@
  * real (`emptyMobProjectModel`, compartido con el pipeline de
  * generación IA), nunca una pantalla rota ni en blanco sin explicación.
  */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ThreeViewport from '../viewport/ThreeViewport.vue'
 import { threeViewportService } from '../viewport/ThreeViewportService'
@@ -26,12 +26,14 @@ import EditorToolbar from './EditorToolbar.vue'
 import AiEditPanel from './AiEditPanel.vue'
 import GenerationPreviewViewport from '../ai/GenerationPreviewViewport.vue'
 import { useDraftModelStore } from './draftModelStore'
+import { useGeometryApplyStore } from './geometryApplyStore'
 import { getDraft } from './draftPersistenceApi'
 import { getMob } from '../projects/mobsApi'
 import { emptyMobProjectModel } from '../domain/emptyMobProjectModel'
 import { ApiError } from '../api/ApiError'
 import GSidebar, { type GSidebarKey } from '../design-system/components/GSidebar.vue'
 import GButton from '../design-system/components/GButton.vue'
+import ConfirmDialog from '../design-system/components/ConfirmDialog.vue'
 import IconCamera from '../design-system/icons/IconCamera.vue'
 import IconSparkle from '../design-system/icons/IconSparkle.vue'
 import type { MobProjectModel } from '../domain/MobProjectModel'
@@ -42,9 +44,40 @@ const projectId = route.params.projectId as string
 const mobId = route.params.mobId as string
 
 const draft = useDraftModelStore()
+const geometryApply = useGeometryApplyStore()
 const loadError = ref<string | null>(null)
 const notFound = ref(false)
 const mobName = ref('')
+
+// -- Ticket 043, Diseño técnico §2: modal de confirmación de pérdida de --
+// -- pintura, compartido por los 3 puntos de entrada de Resize (gizmo 3D --
+// -- de ThreeViewport, input numérico de InspectorPanel) -- montado UNA --
+// -- sola vez acá, sin importar desde dónde se disparó el resize. --
+
+const pendingResizeMessage = computed(() => {
+  const pending = geometryApply.pendingResizeConfirmation
+  if (!pending) {
+    return ''
+  }
+  const affected = pending.affectedFaces
+    .map((f) => {
+      const cuboidName = draft.model?.cuboids.find((c) => c.id === f.cuboidId)?.name ?? f.cuboidId
+      return `${cuboidName} (${f.face})`
+    })
+    .join(', ')
+  return `Este cambio de tamaño hará perder el arte ya pintado de: ${affected}. ¿Confirmar de todas formas?`
+})
+
+async function confirmPendingResize(): Promise<void> {
+  if (!draft.model) {
+    return
+  }
+  await geometryApply.confirmPendingResize(draft.model.mobId)
+}
+
+function cancelPendingResize(): void {
+  geometryApply.cancelPendingResize()
+}
 
 // Ticket 031: mientras `AiEditPanel` tiene un plan activo, el canvas
 // principal muestra ese modelo de solo lectura (`aiPreviewModel`) en vez
@@ -137,6 +170,18 @@ function backToProject(): void {
       </template>
       <p v-else class="mob-editor__loading">Cargando…</p>
     </main>
+
+    <ConfirmDialog
+      v-if="geometryApply.pendingResizeConfirmation"
+      title="Confirmar pérdida de pintura"
+      :message="pendingResizeMessage"
+      confirm-label="Confirmar"
+      danger
+      :busy="geometryApply.busy"
+      :error="geometryApply.lastError"
+      @confirm="confirmPendingResize"
+      @cancel="cancelPendingResize"
+    />
   </div>
 </template>
 

@@ -1,10 +1,26 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Bone, Cuboid, MobProjectModel } from '../../domain/MobProjectModel'
 import { useDraftModelStore } from '../draftModelStore'
 import { useSelectionStore } from '../selectionStore'
-import InspectorPanel from '../InspectorPanel.vue'
+
+// Ticket 043: "Tamaño" pasa a ser server-side (`POST /geometry/apply`, vía
+// `geometryApplyStore`) -- se mockea el cliente HTTP, nunca `fetch` real.
+class PaintedRegionResizeConfirmationRequiredErrorStub extends Error {
+  affectedFaces: { cuboidId: string; face: string }[]
+  constructor(message: string, affectedFaces: { cuboidId: string; face: string }[]) {
+    super(message)
+    this.affectedFaces = affectedFaces
+  }
+}
+vi.mock('../geometryApplyApi', () => ({
+  applyGeometry: vi.fn(),
+  PaintedRegionResizeConfirmationRequiredError: PaintedRegionResizeConfirmationRequiredErrorStub,
+}))
+
+const { default: InspectorPanel } = await import('../InspectorPanel.vue')
+const { applyGeometry } = await import('../geometryApplyApi')
 
 const EMPTY_FACES = {
   north: { uv: [0, 0, 0, 0] as [number, number, number, number], texture: null },
@@ -94,14 +110,26 @@ describe('InspectorPanel.vue', () => {
     expect(updated.to[1] - updated.from[1]).toBe(4)
   })
 
-  it('Tamaño edita el eje X y llama a resizeSelectedCuboid con el factor de escala correcto', async () => {
+  it('Tamaño edita el eje X y llama a POST /geometry/apply con el factor de escala correcto (ticket 043)', async () => {
     const { draft, wrapper } = mountWithSelection('armRight')
+    vi.mocked(applyGeometry).mockImplementation(async (_mobId, operations) => {
+      const op = operations[0] as { op: 'resizeCuboid'; target: string; scale: [number, number, number] }
+      const current = draft.model!.cuboids[0]!
+      const resized = {
+        ...current,
+        from: current.from.map((v, i) => v * op.scale[i]!) as typeof current.from,
+        to: current.to.map((v, i) => v * op.scale[i]!) as typeof current.to,
+      }
+      return { model: { ...draft.model!, cuboids: [resized] }, draftVersion: 2 }
+    })
 
     // Tamaño X actual = to.x(2) - from.x(-2) = 4. Pide 8 -> escala 2.
     const input = axisInput(wrapper, 'Tamaño', 'X')
     await input.setValue('8')
     await input.trigger('change')
+    await flushPromises()
 
+    expect(applyGeometry).toHaveBeenCalledWith('test-mob', [{ op: 'resizeCuboid', target: 'armRight', scale: [2, 1, 1] }])
     const updated = draft.model!.cuboids[0]!
     expect(updated.to[0] - updated.from[0]).toBe(8)
     // Y/Z sin cambios (resizeCuboid escala eje por eje).
