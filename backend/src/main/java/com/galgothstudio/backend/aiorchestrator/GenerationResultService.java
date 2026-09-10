@@ -8,14 +8,12 @@ import com.galgothstudio.backend.domain.export.BBModelExporterV5;
 import com.galgothstudio.backend.domain.export.validation.FmmCompatibilityValidator;
 import com.galgothstudio.backend.domain.export.validation.ValidationResult;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
-import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
 import com.galgothstudio.backend.project.draft.ApplyGenerationResponse;
 import com.galgothstudio.backend.project.draft.DraftPersistenceService;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
 import com.galgothstudio.backend.project.persistence.MobEntity;
 import com.galgothstudio.backend.project.persistence.MobRepository;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 /**
@@ -33,25 +31,16 @@ public class GenerationResultService {
 	private final AiJobRepository aiJobRepository;
 	private final MobRepository mobRepository;
 	private final DraftPersistenceService draftPersistenceService;
-	private final UvLayoutStrategy uvLayoutStrategy;
 	private final ObjectMapper objectMapper;
 
 	public GenerationResultService(
 			AiJobRepository aiJobRepository,
 			MobRepository mobRepository,
 			DraftPersistenceService draftPersistenceService,
-			// Ticket 041: uso de EXPORTACIÓN (BBModelExporterV5.export) --
-			// deliberadamente fuera de UvLayoutSelector (@Primary desde este
-			// ticket, ver Diseño técnico §2/§3 de
-			// `docs/definiciones/galgoth-studio-fase3-textura.md` y el ticket
-			// 044). Qualifier explícito para no heredarlo por accidente vía
-			// autowire-by-type.
-			@Qualifier("alphaAutoPackStrategy") UvLayoutStrategy uvLayoutStrategy,
 			ObjectMapper objectMapper) {
 		this.aiJobRepository = aiJobRepository;
 		this.mobRepository = mobRepository;
 		this.draftPersistenceService = draftPersistenceService;
-		this.uvLayoutStrategy = uvLayoutStrategy;
 		this.objectMapper = objectMapper;
 	}
 
@@ -62,8 +51,12 @@ public class GenerationResultService {
 
 		// El estado REAL de compatibilidad FMM (013), no un estimado -- exporta
 		// la propuesta tal cual quedaría si se aceptara, y le corre encima el
-		// mismo validador que el exportador productivo usa como último checkpoint.
-		String bbmodelJson = BBModelExporterV5.export(model, uvLayoutStrategy);
+		// mismo validador que el exportador productivo usa como último
+		// checkpoint. Sin normalización legacy (ticket 044): esta propuesta
+		// nunca viene de una Revision persistida vieja, sale fresca del
+		// pipeline de IA que ya corrió por `GeometryPlannerService`/
+		// `UvLayoutSelector`.
+		String bbmodelJson = BBModelExporterV5.export(model);
 		ValidationResult validation = FmmCompatibilityValidator.validate(bbmodelJson);
 
 		return new GenerationResultView(

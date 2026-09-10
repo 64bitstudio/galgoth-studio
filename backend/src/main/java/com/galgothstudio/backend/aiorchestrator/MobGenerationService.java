@@ -39,7 +39,6 @@ import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.ModelIntent;
 import com.galgothstudio.backend.domain.model.TextureDocument;
 import com.galgothstudio.backend.domain.model.UvLayout;
-import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
 import com.galgothstudio.backend.project.persistence.MobEntity;
 import com.galgothstudio.backend.project.persistence.MobRepository;
@@ -123,7 +122,6 @@ public class MobGenerationService {
 	private final GenerationCancellationRegistry cancellationRegistry;
 	private final ObjectMapper objectMapper;
 	private final Executor generationExecutor;
-	private final UvLayoutStrategy uvLayoutStrategy;
 	private final boolean geometryStreamingEnabled;
 	private final long heartbeatInitialDelaySeconds;
 	private final long heartbeatPeriodSeconds;
@@ -140,13 +138,6 @@ public class MobGenerationService {
 			GenerationCancellationRegistry cancellationRegistry,
 			ObjectMapper objectMapper,
 			@Qualifier("generationExecutor") Executor generationExecutor,
-			// Ticket 041: este uso es de EXPORTACIÓN (BBModelExporterV5, línea
-			// ~396) -- el exportador queda deliberadamente fuera de
-			// UvLayoutSelector (@Primary desde este ticket, ver Diseño técnico
-			// §2/§3 de `docs/definiciones/galgoth-studio-fase3-textura.md` y
-			// el ticket 044). Qualifier explícito para no heredarlo por
-			// accidente vía autowire-by-type.
-			@Qualifier("alphaAutoPackStrategy") UvLayoutStrategy uvLayoutStrategy,
 			@Value("${ai.geometry-streaming-enabled}") boolean geometryStreamingEnabled,
 			// Ticket 038 -- cadencia del ping de "sigue vivo" en modo heartbeat:
 			// configurable (no una constante hardcodeada) para que los tests
@@ -165,7 +156,6 @@ public class MobGenerationService {
 		this.aiJobEventRepository = aiJobEventRepository;
 		this.eventBroadcaster = eventBroadcaster;
 		this.cancellationRegistry = cancellationRegistry;
-		this.uvLayoutStrategy = uvLayoutStrategy;
 		this.geometryStreamingEnabled = geometryStreamingEnabled;
 		this.heartbeatInitialDelaySeconds = heartbeatInitialDelaySeconds;
 		this.heartbeatPeriodSeconds = heartbeatPeriodSeconds;
@@ -412,7 +402,7 @@ public class MobGenerationService {
 	 */
 	private void validateFmmCompatibilityInformational(UUID jobId, MobProjectModel finalModel) {
 		try {
-			String bbmodelJson = BBModelExporterV5.export(finalModel, uvLayoutStrategy);
+			String bbmodelJson = BBModelExporterV5.export(finalModel);
 			ValidationResult validation = FmmCompatibilityValidator.validate(bbmodelJson);
 			if (!validation.pass()) {
 				log.info("Job {} generó un modelo con hallazgos de compatibilidad FMM (informativo, no falla el job): {}", jobId, validation.issues());

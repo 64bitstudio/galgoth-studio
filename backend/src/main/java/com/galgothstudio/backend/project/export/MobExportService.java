@@ -7,7 +7,7 @@ import com.galgothstudio.backend.domain.export.validation.FmmCompatibilityValida
 import com.galgothstudio.backend.domain.export.validation.ValidationIssue;
 import com.galgothstudio.backend.domain.export.validation.ValidationResult;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
-import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
+import com.galgothstudio.backend.domain.uv.LegacyUvNormalizationService;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
 import com.galgothstudio.backend.project.persistence.MobDraftEntity;
 import com.galgothstudio.backend.project.persistence.MobDraftRepository;
@@ -19,7 +19,6 @@ import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,25 +41,24 @@ public class MobExportService {
 	private final MobRepository mobRepository;
 	private final MobRevisionRepository revisionRepository;
 	private final MobDraftRepository draftRepository;
-	private final UvLayoutStrategy uvLayoutStrategy;
+	private final LegacyUvNormalizationService legacyUvNormalizationService;
 	private final ObjectMapper objectMapper;
 
 	public MobExportService(
 			MobRepository mobRepository,
 			MobRevisionRepository revisionRepository,
 			MobDraftRepository draftRepository,
-			// Ticket 041: el exportador queda deliberadamente fuera de
-			// UvLayoutSelector (@Primary desde este ticket) -- ver Diseño
-			// técnico §2/§3 de `docs/definiciones/galgoth-studio-fase3-textura.md`
-			// (Hallazgo A, revertido por el PO) y el ticket 044, que le
-			// quitará este parámetro por completo. Qualifier explícito para
-			// no heredar el nuevo @Primary por accidente vía autowire-by-type.
-			@Qualifier("alphaAutoPackStrategy") UvLayoutStrategy uvLayoutStrategy,
+			// Ticket 044: único caller real de exportación desde una Revision
+			// persistida -- normaliza la UV legacy (Diseño técnico §3 de
+			// `docs/definiciones/galgoth-studio-fase3-textura.md`) ANTES de
+			// llamar al exportador, que desde este ticket ya no acepta ningún
+			// UvLayoutStrategy (ni lo necesita: nunca recomputa nada).
+			LegacyUvNormalizationService legacyUvNormalizationService,
 			ObjectMapper objectMapper) {
 		this.mobRepository = mobRepository;
 		this.revisionRepository = revisionRepository;
 		this.draftRepository = draftRepository;
-		this.uvLayoutStrategy = uvLayoutStrategy;
+		this.legacyUvNormalizationService = legacyUvNormalizationService;
 		this.objectMapper = objectMapper;
 	}
 
@@ -74,7 +72,8 @@ public class MobExportService {
 		MobProjectModel latestRevisionModel = null;
 		if (hasSavedRevision) {
 			latestRevisionModel = loadRevisionModel(mob);
-			String bbmodelJson = BBModelExporterV5.export(latestRevisionModel, uvLayoutStrategy);
+			MobProjectModel normalized = legacyUvNormalizationService.normalizeIfSafe(latestRevisionModel);
+			String bbmodelJson = BBModelExporterV5.export(normalized);
 			ValidationResult validation = FmmCompatibilityValidator.validate(bbmodelJson);
 			fmmCompatible = validation.pass();
 			fmmIssues = validation.issues();
@@ -92,7 +91,8 @@ public class MobExportService {
 			throw new NoSavedRevisionException(mobId);
 		}
 		MobProjectModel model = loadRevisionModel(mob);
-		String bbmodelJson = BBModelExporterV5.export(model, uvLayoutStrategy);
+		MobProjectModel normalized = legacyUvNormalizationService.normalizeIfSafe(model);
+		String bbmodelJson = BBModelExporterV5.export(normalized);
 		return new ExportedFile(safeFilename(mob.getName()), bbmodelJson);
 	}
 

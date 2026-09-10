@@ -8,12 +8,8 @@ import com.galgothstudio.backend.domain.export.bbmodel.BBTexture;
 import com.galgothstudio.backend.domain.jackson.Vec3JacksonModule;
 import com.galgothstudio.backend.domain.jackson.Vec4JacksonModule;
 import com.galgothstudio.backend.domain.model.Cuboid;
-import com.galgothstudio.backend.domain.model.MobProjectModel;
-import com.galgothstudio.backend.domain.model.UvLayout;
 import com.galgothstudio.backend.domain.model.Vec3;
-import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
 import java.util.Base64;
-import java.util.UUID;
 
 /**
  * Lógica compartida entre {@link BBModelExporterV5} y {@link BBModelExporterV4}
@@ -21,6 +17,15 @@ import java.util.UUID;
  * ticket 014); solo difieren en cómo estructuran `groups`/`outliner`.
  */
 final class BBModelExportSupport {
+
+	// UUID FIJO (no `UUID.randomUUID()`) -- ticket 044, AC de determinismo:
+	// exportar el mismo modelo dos veces debe producir bytes idénticos, sin
+	// dependencia de estado externo. Antes de este ticket este campo SÍ era
+	// aleatorio (hallazgo real, ver Hecho del ticket 044) -- inofensivo
+	// mientras el exportador recomputaba UV en cada export (ningún test
+	// dependía de bytes estables), pero incompatible con la nueva garantía
+	// de determinismo de `export(model)` al ser ahora el único overload.
+	private static final String PLACEHOLDER_TEXTURE_UUID = "00000000-0000-4000-8000-000000000001";
 
 	private BBModelExportSupport() {
 	}
@@ -36,21 +41,19 @@ final class BBModelExportSupport {
 		return v.x() == 0 && v.y() == 0 && v.z() == 0;
 	}
 
+	/**
+	 * Textura placeholder embebida en cualquier export -- ticket 011, sin cambios
+	 * de fondo en el ticket 044 (la reversión de ese ticket es sobre EL
+	 * CÁLCULO DE LA UV, no sobre este mecanismo, ortogonal: dimensiones
+	 * tomadas tal cual de {@code MobProjectModel.texture()}, nunca
+	 * recalculadas). Necesaria para que Blockbench/`FmmCompatibilityValidator`
+	 * resuelvan el índice de textura que ya trae cada `Face` cuando la UV
+	 * fue asignada (por los llamadores de motor, nunca por el exportador).
+	 */
 	static BBTexture buildPlaceholderTexture(int width, int height) {
 		byte[] png = PlaceholderTexture.generatePng(width, height);
 		String dataUri = "data:image/png;base64," + Base64.getEncoder().encodeToString(png);
-		return new BBTexture(UUID.randomUUID().toString(), "placeholder", "0", false, width, height, dataUri);
-	}
-
-	/** Recomputa la UV vía {@code uvLayoutStrategy} y devuelve un modelo con esa UV fresca -- ver export(model, strategy) de cada exportador. */
-	static MobProjectModel withFreshUv(MobProjectModel model, UvLayoutStrategy uvLayoutStrategy) {
-		int width = model.texture().width();
-		int height = model.texture().height();
-		UvLayoutStrategy.Result uvResult = uvLayoutStrategy.layout(model.cuboids(), width, height);
-		return new MobProjectModel(
-				model.mobId(), model.projectId(), model.name(), model.baseType(), model.units(), model.bones(),
-				uvResult.cuboids(), model.texture(), new UvLayout(width, height, uvResult.regions()),
-				model.animations(), model.exportSettings(), model.referenceImages());
+		return new BBTexture(PLACEHOLDER_TEXTURE_UUID, "placeholder", "0", false, width, height, dataUri);
 	}
 
 	static String serialize(Object document) {

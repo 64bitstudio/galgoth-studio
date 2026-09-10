@@ -16,6 +16,7 @@ import com.galgothstudio.backend.domain.model.UvLayout;
 import com.galgothstudio.backend.domain.model.Vec3;
 import com.galgothstudio.backend.domain.model.Vec4;
 import com.galgothstudio.backend.domain.uv.AlphaAutoPackStrategy;
+import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -38,6 +39,25 @@ class FmmCompatibilityValidatorTest {
 				new ExportSettings(FormatVersion.V5), new ArrayList<>());
 	}
 
+	/**
+	 * Ticket 044: el exportador ya no recomputa UV -- quien llama a
+	 * {@code export(model)} debe entregarle un modelo con la UV YA
+	 * resuelta (misma responsabilidad que hoy tienen `GeometryEngine`/
+	 * `GeometryPlannerService`/`AiGeometryEditPlannerService` vía
+	 * `UvLayoutSelector`). Este helper reemplaza, solo para este test, lo
+	 * que antes hacía el propio exportador internamente.
+	 */
+	private static MobProjectModel modelWithFreshUv(List<Bone> bones, List<Cuboid> cuboids) {
+		MobProjectModel model = modelWith(bones, cuboids);
+		int width = model.texture().width();
+		int height = model.texture().height();
+		UvLayoutStrategy.Result uvResult = new AlphaAutoPackStrategy().layout(model.cuboids(), width, height);
+		return new MobProjectModel(
+				model.mobId(), model.projectId(), model.name(), model.baseType(), model.units(), model.bones(),
+				uvResult.cuboids(), model.texture(), new UvLayout(width, height, uvResult.regions()),
+				model.animations(), model.exportSettings(), model.referenceImages());
+	}
+
 	// -- AC #1: un .bbmodel generado por 010+011 pasa todos los checks aplicables --
 
 	@Test
@@ -47,7 +67,7 @@ class FmmCompatibilityValidatorTest {
 		Cuboid cuboid = new Cuboid(
 				UUID.randomUUID().toString(), "body", boneId, new Vec3(-4, 0, -2), new Vec3(4, 8, 2),
 				new Vec3(0, 0, 0), new Vec3(0, 0, 0), emptyFaces());
-		String json = BBModelExporterV5.export(modelWith(List.of(bone), List.of(cuboid)), new AlphaAutoPackStrategy());
+		String json = BBModelExporterV5.export(modelWithFreshUv(List.of(bone), List.of(cuboid)));
 
 		ValidationResult result = FmmCompatibilityValidator.validate(json);
 
