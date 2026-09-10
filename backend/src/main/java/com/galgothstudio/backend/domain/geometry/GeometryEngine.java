@@ -63,7 +63,14 @@ public final class GeometryEngine {
 				new ArrayList<>(bones.values()),
 				new ArrayList<>(cuboids.values()),
 				model.texture(),
-				new UvLayout(model.uv().textureWidth(), model.uv().textureHeight(), regions),
+				// `reservations` se preserva sin cambios -- este overload
+				// (sin UvLayoutStrategy) nunca crea ni consume reservas, solo
+				// bones/cuboids/regions (ticket 041: antes de este fix, CUALQUIER
+				// operación -- incluso una que no toca UV, p.ej. moveCuboid --
+				// perdía en silencio las reservas ya existentes del modelo
+				// porque este punto usaba el constructor de 3 argumentos de
+				// `UvLayout`, que las defaultea a vacío).
+				new UvLayout(model.uv().textureWidth(), model.uv().textureHeight(), regions, model.uv().reservations()),
 				model.animations(),
 				model.exportSettings(),
 				model.referenceImages());
@@ -83,19 +90,34 @@ public final class GeometryEngine {
 	 * del atlas, per el ticket 006 -- y {@code uv.textureWidth/textureHeight}
 	 * (bookkeeping) se sincroniza con esos mismos valores en el resultado,
 	 * nunca se deja divergir.
+	 *
+	 * <p>Ticket 041: invoca la sobrecarga de 4 argumentos de
+	 * {@code uvLayoutStrategy} pasando {@code model.uv()} -- el
+	 * {@link UvLayout} tal como estaba ANTES de este batch (no
+	 * {@code afterOps.uv()}), para que una estrategia como
+	 * {@code StableUvStrategy} (vía {@code UvLayoutSelector}, `@Primary`)
+	 * pueda leer {@code regions()}/{@code reservations()} previos y
+	 * decidir/actuar sobre los 3 casos (Add/Resize/Delete). {@code touchesUv}
+	 * ahora incluye {@code RemoveCuboid} -- antes de este ticket un batch de
+	 * solo-delete nunca invocaba la estrategia (necesario para que el caso
+	 * "Delete con textura pintada" del Diseño técnico §2 -- las 6 caras del
+	 * cuboid eliminado pasan a {@code ORPHAN} -- ocurra de verdad vía este
+	 * método; antes, esa detección solo era posible en las 3 clases de
+	 * `domain/uv` invocadas directamente, nunca a través del motor).
 	 */
 	public static MobProjectModel apply(
 			MobProjectModel model, List<GeometryOperation> operations, UvLayoutStrategy uvLayoutStrategy) {
 		MobProjectModel afterOps = apply(model, operations);
 
-		boolean touchesUv = operations.stream().anyMatch(op -> op instanceof CreateCuboid || op instanceof ResizeCuboid);
+		boolean touchesUv = operations.stream()
+				.anyMatch(op -> op instanceof CreateCuboid || op instanceof ResizeCuboid || op instanceof RemoveCuboid);
 		if (!touchesUv) {
 			return afterOps;
 		}
 
 		int atlasWidth = afterOps.texture().width();
 		int atlasHeight = afterOps.texture().height();
-		UvLayoutStrategy.Result uvResult = uvLayoutStrategy.layout(afterOps.cuboids(), atlasWidth, atlasHeight);
+		UvLayoutStrategy.Result uvResult = uvLayoutStrategy.layout(afterOps.cuboids(), atlasWidth, atlasHeight, model.uv());
 		return new MobProjectModel(
 				afterOps.mobId(),
 				afterOps.projectId(),
@@ -105,7 +127,7 @@ public final class GeometryEngine {
 				afterOps.bones(),
 				uvResult.cuboids(),
 				afterOps.texture(),
-				new UvLayout(atlasWidth, atlasHeight, uvResult.regions()),
+				new UvLayout(atlasWidth, atlasHeight, uvResult.regions(), uvResult.reservations()),
 				afterOps.animations(),
 				afterOps.exportSettings(),
 				afterOps.referenceImages());

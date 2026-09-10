@@ -15,6 +15,7 @@ import com.galgothstudio.backend.project.draft.MobNotFoundException;
 import com.galgothstudio.backend.project.persistence.MobEntity;
 import com.galgothstudio.backend.project.persistence.MobRepository;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 /**
@@ -39,7 +40,13 @@ public class GenerationResultService {
 			AiJobRepository aiJobRepository,
 			MobRepository mobRepository,
 			DraftPersistenceService draftPersistenceService,
-			UvLayoutStrategy uvLayoutStrategy,
+			// Ticket 041: uso de EXPORTACIÓN (BBModelExporterV5.export) --
+			// deliberadamente fuera de UvLayoutSelector (@Primary desde este
+			// ticket, ver Diseño técnico §2/§3 de
+			// `docs/definiciones/galgoth-studio-fase3-textura.md` y el ticket
+			// 044). Qualifier explícito para no heredarlo por accidente vía
+			// autowire-by-type.
+			@Qualifier("alphaAutoPackStrategy") UvLayoutStrategy uvLayoutStrategy,
 			ObjectMapper objectMapper) {
 		this.aiJobRepository = aiJobRepository;
 		this.mobRepository = mobRepository;

@@ -17,3 +17,19 @@ Nace de `docs/definiciones/galgoth-studio-fase3-textura.md` (Diseño técnico §
 - Dado `BoxUvMath` (helper compartido, extraído de la matemática de box-unwrap ya verificada de `AlphaAutoPackStrategy`), cuando `StableUvStrategy` calcula footprints, entonces produce resultados idénticos a los que `AlphaAutoPackStrategy` calcularía para la misma geometría (test de paridad, mismo criterio que las fixtures compartidas frontend/backend ya existentes).
 
 ## Hecho
+
+Implementado exactamente el algoritmo de los 3 casos (Add/Resize/Delete) del Diseño técnico §2, más `UvLayoutSelector` (`@Primary`) y `BoxUvMath` compartido.
+
+**Nuevo**: `BoxUvMath` (matemática de box-unwrap extraída de `AlphaAutoPackStrategy`, sin duplicarla), `StableUvStrategy` (Add rechaza con `UvAtlasOverflowException` si no cabe en espacio verdaderamente libre — regiones + reservas; Resize con cara `PAINTED` lanza `PaintedRegionResizeConfirmationRequiredException`, confirmado crea `UvReservation` y reempaqueta; Delete marca `ORPHAN` sin crear reserva), `PaintedRegionResizeConfirmationRequiredException`, `UvLayoutSelector` (decide Alpha vs. Stable según `PAINTED`/`ORPHAN` en el layout previo).
+
+**Tres hallazgos reales corregidos, no ocultados**:
+1. `@Primary` en `UvLayoutSelector` se habría inyectado por accidente en los 3 usos de EXPORTACIÓN (`MobExportService`/`MobGenerationService`/`GenerationResultService`) — fijados con `@Qualifier("alphaAutoPackStrategy")` explícito, preservando la instrucción del ticket 044 de que el exportador queda fuera de esta lista este ciclo.
+2. `GeometryEngine.apply(model, ops, strategy)` invocaba la sobrecarga de 3 argumentos de `UvLayoutStrategy`, nunca pasaba el `UvLayout` previo — sin esto, `StableUvStrategy` no podía leer `PAINTED`/`ORPHAN`/`reservations` anteriores. Corregido para pasar `model.uv()`.
+3. `touchesUv` no incluía `RemoveCuboid` — un batch de solo-delete nunca invocaba la estrategia, haciendo imposible el caso "Delete marca ORPHAN" a través del motor real. Agregado. **Efecto secundario señalado explícitamente**: un remove-only en un modelo SIN pintura ahora también dispara un reflow completo vía `AlphaAutoPackStrategy` (antes no recalculaba nada) — mismo comportamiento que ya tenían create/resize, determinista y correcto, sin romper ningún test existente ni ningún contrato de datos/API.
+4. `GeometryEngine.apply(model, ops)` (la sobrecarga de 3 args, sin estrategia) perdía `reservations` en cualquier operación que no tocara UV (p. ej. `moveCuboid`) porque construía el `UvLayout` final con el constructor de 3 argumentos de `UvLayout` (default `[]`). Corregido para preservar `model.uv().reservations()`.
+
+**Tests**: 269 tests de backend (20 nuevos de este ticket), 0 failures — incluye paridad `BoxUvMath`↔`AlphaAutoPackStrategy`, los 3 casos de `StableUvStrategy`, la regla de decisión de `UvLayoutSelector`, y wiring end-to-end vía `GeometryEngine.apply`.
+
+**Propuesta de mejora continua** (del propio agente que implementó, vale la pena registrarla): cuando un ticket agrega un campo persistente nuevo a un agregado inmutable (`UvLayout.reservations`), el compilador no detecta constructores/paths que lo pierdan por usar un constructor de conveniencia más viejo — valdría la pena que `code-review`/`qa-engineer` tengan un checklist explícito para ese caso.
+
+Fuera de alcance, respetado: no se tocó `BBModelExporterV5`/`V4` ni ningún endpoint/UI (`confirmPaintLoss` todavía sin canal HTTP formal — eso es el ticket 043).
