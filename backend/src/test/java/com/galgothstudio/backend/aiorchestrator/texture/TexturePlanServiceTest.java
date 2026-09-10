@@ -81,8 +81,10 @@ class TexturePlanServiceTest {
 		MockVisionProvider mockProvider = new MockVisionProvider();
 		mockProvider.setNextResponse("{\"boneLabels\": []}"); // faltan palette/materialNotes, boneLabels vacío
 		TexturePlanService service = newService(mockProvider);
+		byte[] imageBytes = {1};
+		MobProjectModel model = modelWithTwoBones();
 
-		assertThatThrownBy(() -> service.analyze(new byte[] {1}, "image/png", modelWithTwoBones()))
+		assertThatThrownBy(() -> service.analyze(imageBytes, "image/png", model))
 				.isInstanceOf(InvalidTexturePlanException.class)
 				.satisfies(e -> {
 					InvalidTexturePlanException invalid = (InvalidTexturePlanException) e;
@@ -96,8 +98,10 @@ class TexturePlanServiceTest {
 		MockVisionProvider mockProvider = new MockVisionProvider();
 		mockProvider.setNextResponse("esto no es JSON");
 		TexturePlanService service = newService(mockProvider);
+		byte[] imageBytes = {1};
+		MobProjectModel model = modelWithTwoBones();
 
-		assertThatThrownBy(() -> service.analyze(new byte[] {1}, "image/png", modelWithTwoBones())).isInstanceOf(InvalidTexturePlanException.class);
+		assertThatThrownBy(() -> service.analyze(imageBytes, "image/png", model)).isInstanceOf(InvalidTexturePlanException.class);
 	}
 
 }
