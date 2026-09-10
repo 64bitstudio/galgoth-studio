@@ -143,7 +143,7 @@ describe('TextureAiGeneratorScreen.vue', () => {
     await flushPromises()
 
     expect(listReferenceImages).toHaveBeenCalledWith('mob-1')
-    const img = wrapper.find('img[alt="Imagen de referencia del mob"]')
+    const img = wrapper.find('img[alt="Referencia del mob"]')
     expect(img.exists()).toBe(true)
     expect(img.attributes('src')).toContain('/api/mobs/mob-1/references/r1')
 

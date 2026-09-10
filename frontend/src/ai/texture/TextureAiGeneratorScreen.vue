@@ -141,7 +141,7 @@ const resultImageSrc = computed(() => {
   return `data:image/png;base64,${base64}`
 })
 
-const resultImageAlt = computed(() =>
+const resultAltText = computed(() =>
   showingAfter.value ? 'Atlas de textura después de la generación por IA' : 'Atlas de textura antes de la generación por IA',
 )
 
@@ -360,7 +360,7 @@ function handleSidebarSelect(key: GSidebarKey): void {
         <div class="texture-ai-generator__body">
           <div class="texture-ai-generator__column">
             <div class="texture-ai-generator__reference">
-              <img v-if="referenceUrl" class="texture-ai-generator__reference-img" :src="referenceUrl" alt="Imagen de referencia del mob" />
+              <img v-if="referenceUrl" class="texture-ai-generator__reference-img" :src="referenceUrl" alt="Referencia del mob" />
               <div v-else class="texture-ai-generator__reference-placeholder">Sin referencia</div>
             </div>
 
@@ -378,7 +378,8 @@ function handleSidebarSelect(key: GSidebarKey): void {
               <p v-if="phase === 'form'" class="texture-ai-generator__preview-placeholder">El resultado aparecerá aquí.</p>
 
               <template v-else-if="phase === 'generating'">
-                <canvas ref="canvasEl" class="texture-ai-generator__canvas" role="img" aria-label="Preview incremental del atlas de textura generándose" />
+                <!-- S6819/S6843: el canvas es un elemento potencialmente interactivo del navegador -- no lleva rol de imagen, el aria-label ya describe el contenido para lectores de pantalla. -->
+                <canvas ref="canvasEl" class="texture-ai-generator__canvas" aria-label="Preview incremental del atlas de textura generándose" />
                 <div class="texture-ai-generator__progress-block">
                   <ul class="texture-ai-generator__stages">
                     <li
@@ -406,7 +407,7 @@ function handleSidebarSelect(key: GSidebarKey): void {
                   <button type="button" role="tab" :aria-selected="!showingAfter" :class="{ 'texture-ai-generator__toggle-btn--active': !showingAfter }" class="texture-ai-generator__toggle-btn" @click="showingAfter = false">Antes</button>
                   <button type="button" role="tab" :aria-selected="showingAfter" :class="{ 'texture-ai-generator__toggle-btn--active': showingAfter }" class="texture-ai-generator__toggle-btn" @click="showingAfter = true">Después</button>
                 </div>
-                <img class="texture-ai-generator__result-image" :src="resultImageSrc" :alt="resultImageAlt" />
+                <img class="texture-ai-generator__result-image" :src="resultImageSrc" :alt="resultAltText" />
               </template>
 
               <p v-else-if="resultLoading" class="texture-ai-generator__preview-placeholder">Cargando resultado…</p>
