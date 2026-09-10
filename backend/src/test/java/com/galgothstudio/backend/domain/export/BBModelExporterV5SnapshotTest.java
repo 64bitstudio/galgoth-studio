@@ -24,6 +24,13 @@ import org.skyscreamer.jsonassert.JSONCompareMode;
  * de aprobarlo -- un cambio que lo rompe sin querer falla este test, uno
  * intencional requiere actualizar el snapshot explícitamente (nunca en
  * silencio).
+ *
+ * <p>Regenerado en el ticket 044: {@code export(model)} pasó a ser el
+ * único overload (nunca recomputa UV) y absorbió la textura placeholder
+ * que antes solo emitía el overload de 2 argumentos -- el golden ahora
+ * incluye esa entrada en {@code textures} (antes {@code []}), con un
+ * UUID FIJO (no aleatorio, ver `BBModelExportSupport`) para que la
+ * comparación byte a byte siga siendo posible.
  */
 class BBModelExporterV5SnapshotTest {
 

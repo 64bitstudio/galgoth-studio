@@ -13,7 +13,6 @@ import com.galgothstudio.backend.domain.model.Bone;
 import com.galgothstudio.backend.domain.model.Cuboid;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.Vec3;
-import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -54,33 +53,34 @@ public final class BBModelExporterV5 {
 	}
 
 	/**
-	 * Export sin recomputar UV -- para callers que ya garantizan una UV
-	 * fresca/válida (o que deliberadamente no la necesitan, ej. tests de
-	 * estructura pura). Sin textura embebida (ticket 010, alcance original).
+	 * Único export -- ticket 044, Diseño técnico §3 de
+	 * `docs/definiciones/galgoth-studio-fase3-textura.md` (reversión directa
+	 * de una decisión previa, ticket 011: el exportador SÍ recomputaba UV
+	 * en cada export). Nunca invoca {@code UvLayoutSelector}/
+	 * {@code AlphaAutoPackStrategy}/{@code StableUvStrategy} -- de hecho no
+	 * depende en absoluto de {@code domain.uv} (garantía estructural, no
+	 * solo de comportamiento). Nunca muta el {@code UvLayout}/{@code faces}
+	 * que trae {@code model}: serializa EXACTAMENTE {@code model.uv()} y
+	 * {@code model.texture()} tal como llegan -- la UV canónica de esa
+	 * Revision, decidida en su momento por quien aplicó la última operación
+	 * de geometría, nunca en este punto. Determinista: el mismo modelo
+	 * exportado dos veces produce bytes idénticos.
+	 *
+	 * <p>Sigue embebiendo una textura placeholder con las MISMAS dimensiones
+	 * que el atlas (`MobProjectModel.texture`, ticket 011) -- mecanismo
+	 * ortogonal a la UV en sí (Blockbench/`FmmCompatibilityValidator`
+	 * necesitan poder resolver el índice de textura que ya trae cada
+	 * {@code Face} cuando la UV fue asignada, sin importar quién la asignó).
+	 *
+	 * <p>Para revisiones legacy de Fase 1+2 que necesiten normalizar su UV
+	 * antes de este punto, ver {@code LegacyUvNormalizationService}
+	 * (`domain/uv/`), invocado por el caller ANTES de este método -- nunca
+	 * dentro de él.
 	 */
 	public static String export(MobProjectModel model) {
-		return BBModelExportSupport.serialize(buildDocument(model, List.of()));
-	}
-
-	/**
-	 * Export completo (ticket 011): SIEMPRE recomputa la UV vía
-	 * {@code uvLayoutStrategy} antes de exportar -- backend es la autoridad
-	 * canónica de UV también en el punto de export
-	 * (`docs/definiciones/galgoth-studio-mvp.md` Diseño técnico §6, HU-16:
-	 * "...o se exporta, cuando esas acciones corren en backend, entonces
-	 * AutoUv del backend recomputa/revalida la UV de forma canónica").
-	 * Genera y embebe una textura placeholder con las MISMAS dimensiones
-	 * que el atlas (`MobProjectModel.texture`). Si el modelo no cabe en el
-	 * atlas, {@code uvLayoutStrategy.layout(...)} lanza
-	 * {@link com.galgothstudio.backend.domain.uv.UvAtlasOverflowException}
-	 * -- se propaga tal cual, el export falla explícito, nunca genera una
-	 * textura más grande en silencio (AC #3).
-	 */
-	public static String export(MobProjectModel model, UvLayoutStrategy uvLayoutStrategy) {
-		MobProjectModel modelWithFreshUv = BBModelExportSupport.withFreshUv(model, uvLayoutStrategy);
 		BBTexture placeholder =
 				BBModelExportSupport.buildPlaceholderTexture(model.texture().width(), model.texture().height());
-		return BBModelExportSupport.serialize(buildDocument(modelWithFreshUv, List.of(placeholder)));
+		return BBModelExportSupport.serialize(buildDocument(model, List.of(placeholder)));
 	}
 
 	private static BBModelDocument buildDocument(MobProjectModel model, List<BBTexture> textures) {

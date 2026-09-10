@@ -12,7 +12,6 @@ import com.galgothstudio.backend.domain.model.Bone;
 import com.galgothstudio.backend.domain.model.Cuboid;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.Vec3;
-import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -43,17 +42,11 @@ public final class BBModelExporterV4 {
 	private BBModelExporterV4() {
 	}
 
-	/** Ver {@link BBModelExporterV5#export(MobProjectModel)} -- misma semántica, sin recomputar UV. */
+	/** Ver {@link BBModelExporterV5#export(MobProjectModel)} -- misma semántica (ticket 044: nunca recomputa UV). */
 	public static String export(MobProjectModel model) {
-		return BBModelExportSupport.serialize(buildDocument(model, List.of()));
-	}
-
-	/** Ver {@link BBModelExporterV5#export(MobProjectModel, UvLayoutStrategy)} -- misma semántica de autoridad canónica de UV. */
-	public static String export(MobProjectModel model, UvLayoutStrategy uvLayoutStrategy) {
-		MobProjectModel modelWithFreshUv = BBModelExportSupport.withFreshUv(model, uvLayoutStrategy);
 		BBTexture placeholder =
 				BBModelExportSupport.buildPlaceholderTexture(model.texture().width(), model.texture().height());
-		return BBModelExportSupport.serialize(buildDocument(modelWithFreshUv, List.of(placeholder)));
+		return BBModelExportSupport.serialize(buildDocument(model, List.of(placeholder)));
 	}
 
 	private static BBModelDocumentV4 buildDocument(MobProjectModel model, List<BBTexture> textures) {

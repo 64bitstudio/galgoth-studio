@@ -70,14 +70,14 @@ class E2eAcceptanceBbmodelExportTest {
 		assertThat(model.bones()).hasSizeGreaterThanOrEqualTo(2);
 		assertThat(model.cuboids()).hasSizeGreaterThanOrEqualTo(2);
 
-		String v5Json = BBModelExporterV5.export(model, new AlphaAutoPackStrategy());
+		String v5Json = BBModelExporterV5.export(model);
 		ValidationResult v5Validation = FmmCompatibilityValidator.validate(v5Json);
 		assertThat(v5Validation.pass()).as("v5: %s", v5Validation.issues()).isTrue();
 		JsonNode v5Root = objectMapper().readTree(v5Json);
 		assertThat(v5Root.path("meta").path("format_version").asText()).isEqualTo("5.0");
 		assertThat(v5Root.has("groups")).isTrue();
 
-		String v4Json = BBModelExporterV4.export(model, new AlphaAutoPackStrategy());
+		String v4Json = BBModelExporterV4.export(model);
 		ValidationResult v4Validation = FmmCompatibilityValidator.validate(v4Json);
 		assertThat(v4Validation.pass()).as("v4: %s", v4Validation.issues()).isTrue();
 		JsonNode v4Root = objectMapper().readTree(v4Json);
