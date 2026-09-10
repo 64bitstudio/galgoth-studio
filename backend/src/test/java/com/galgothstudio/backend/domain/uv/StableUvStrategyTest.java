@@ -59,8 +59,10 @@ class StableUvStrategyTest {
 		List<UvRegion> oldRegions = regionsFor("head", oldFaces, Map.of(FaceName.NORTH, UvRegionStatus.PAINTED));
 		UvLayout previousLayout = new UvLayout(64, 64, oldRegions);
 		Cuboid resizedHead = cube("head", 12); // dimensiones distintas -> footprint distinto
+		StableUvStrategy strategy = new StableUvStrategy();
+		List<Cuboid> cuboids = List.of(resizedHead);
 
-		assertThatThrownBy(() -> new StableUvStrategy().layout(List.of(resizedHead), 64, 64, previousLayout))
+		assertThatThrownBy(() -> strategy.layout(cuboids, 64, 64, previousLayout))
 				.isInstanceOf(PaintedRegionResizeConfirmationRequiredException.class)
 				.satisfies(ex -> {
 					var confirmation = (PaintedRegionResizeConfirmationRequiredException) ex;
@@ -163,8 +165,10 @@ class StableUvStrategyTest {
 		List<UvRegion> headRegions = regionsFor("head", headFaces, Map.of());
 		UvLayout previousLayout = new UvLayout(32, 16, headRegions);
 		Cuboid arm = cube("arm", 8); // no hay espacio libre en absoluto
+		StableUvStrategy strategy = new StableUvStrategy();
+		List<Cuboid> cuboids = List.of(head, arm);
 
-		assertThatThrownBy(() -> new StableUvStrategy().layout(List.of(head, arm), 32, 16, previousLayout))
+		assertThatThrownBy(() -> strategy.layout(cuboids, 32, 16, previousLayout))
 				.isInstanceOf(UvAtlasOverflowException.class);
 	}
 
@@ -197,7 +201,7 @@ class StableUvStrategyTest {
 
 		UvLayoutStrategy.Result result = new StableUvStrategy().layout(List.of(), 64, 64, previousLayout);
 
-		assertThat(result.regions()).extracting(UvRegion::status).allMatch(UvRegionStatus.ORPHAN::equals);
+		assertThat(result.regions()).extracting(UvRegion::status).containsOnly(UvRegionStatus.ORPHAN);
 	}
 
 	// -- Un cuboid sin cambios reales queda 100% intacto (posición y status) --

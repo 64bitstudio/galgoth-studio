@@ -90,7 +90,22 @@ public final class StableUvStrategy implements UvLayoutStrategy {
 		List<UvReservation> reservations = new ArrayList<>(previousLayout.reservations());
 		List<Cuboid> outputCuboids = new ArrayList<>(cuboids.size());
 
-		// -- Delete: cuboid vivo en el layout anterior, ausente de la lista actual --
+		markDeletedAsOrphan(oldByCuboid, currentIds, regions);
+
+		for (Cuboid cuboid : cuboids) {
+			Map<FaceName, UvRegion> oldFaces = oldByCuboid.get(cuboid.id());
+			Cuboid placed = oldFaces == null
+					? handleAdd(cuboid, textureWidth, textureHeight, occupied, regions)
+					: handleExisting(cuboid, oldFaces, textureWidth, textureHeight, occupied, regions, reservations, confirmPaintLoss);
+			outputCuboids.add(placed);
+		}
+
+		return new Result(outputCuboids, regions, reservations);
+	}
+
+	/** Delete: cuboid vivo en el layout anterior, ausente de la lista actual -- sus 6 filas pasan a ORPHAN en el sitio. */
+	private static void markDeletedAsOrphan(
+			Map<String, Map<FaceName, UvRegion>> oldByCuboid, Set<String> currentIds, List<UvRegion> regions) {
 		for (Map.Entry<String, Map<FaceName, UvRegion>> entry : oldByCuboid.entrySet()) {
 			if (!currentIds.contains(entry.getKey())) {
 				for (UvRegion oldRegion : entry.getValue().values()) {
@@ -98,92 +113,97 @@ public final class StableUvStrategy implements UvLayoutStrategy {
 				}
 			}
 		}
+	}
 
-		for (Cuboid cuboid : cuboids) {
-			Map<FaceName, UvRegion> oldFaces = oldByCuboid.get(cuboid.id());
+	/** Add: cuboid nuevo, no está en el layout anterior -- busca hueco en espacio verdaderamente libre. */
+	private static Cuboid handleAdd(
+			Cuboid cuboid, int textureWidth, int textureHeight, List<Vec4> occupied, List<UvRegion> regions) {
+		BoxUvMath.Footprint footprint = BoxUvMath.footprintOf(cuboid);
+		Vec4 spot = findFreeSpot(footprint, textureWidth, textureHeight, occupied)
+				.orElseThrow(() -> overflowFor(footprint, textureWidth, textureHeight));
+		CuboidFaces faces = BoxUvMath.boxUnwrapFaces(cuboid, (int) spot.a(), (int) spot.b());
+		for (FaceName faceName : FaceName.values()) {
+			Vec4 rect = BoxUvMath.faceOf(faces, faceName).uv();
+			regions.add(new UvRegion(cuboid.id(), faceName, rect, UvRegionStatus.UNPAINTED));
+			occupied.add(rect);
+		}
+		return withFaces(cuboid, faces);
+	}
 
-			if (oldFaces == null) {
-				// -- Add --
-				BoxUvMath.Footprint footprint = BoxUvMath.footprintOf(cuboid);
-				Vec4 spot = findFreeSpot(footprint, textureWidth, textureHeight, occupied)
-						.orElseThrow(() -> overflowFor(footprint, textureWidth, textureHeight));
-				CuboidFaces faces = BoxUvMath.boxUnwrapFaces(cuboid, (int) spot.a(), (int) spot.b());
-				outputCuboids.add(withFaces(cuboid, faces));
-				for (FaceName faceName : FaceName.values()) {
-					Vec4 rect = BoxUvMath.faceOf(faces, faceName).uv();
-					regions.add(new UvRegion(cuboid.id(), faceName, rect, UvRegionStatus.UNPAINTED));
-					occupied.add(rect);
-				}
-				continue;
-			}
+	/**
+	 * Cuboid ya presente en el layout anterior: recalcula el footprint EN
+	 * EL MISMO offset que ya tenía -- si da exactamente los mismos 6
+	 * rects, nada cambió (ni siquiera hace falta decidir "fue tocado por
+	 * esta operación o no": la geometría es la fuente de verdad). Si
+	 * cambió, delega en {@link #handleResize}.
+	 */
+	private static Cuboid handleExisting(
+			Cuboid cuboid, Map<FaceName, UvRegion> oldFaces, int textureWidth, int textureHeight,
+			List<Vec4> occupied, List<UvRegion> regions, List<UvReservation> reservations, boolean confirmPaintLoss) {
+		int offsetX = (int) Math.round(oldFaces.get(FaceName.WEST).rect().a());
+		int offsetY = (int) Math.round(oldFaces.get(FaceName.UP).rect().b());
+		CuboidFaces recomputed = BoxUvMath.boxUnwrapFaces(cuboid, offsetX, offsetY);
 
-			// Recalcula el footprint EN EL MISMO offset que ya tenía -- si da
-			// exactamente los mismos 6 rects, nada cambió (ni siquiera hace
-			// falta decidir "fue tocado por esta operación o no": la
-			// geometría es la fuente de verdad).
-			int offsetX = (int) Math.round(oldFaces.get(FaceName.WEST).rect().a());
-			int offsetY = (int) Math.round(oldFaces.get(FaceName.UP).rect().b());
-			CuboidFaces recomputed = BoxUvMath.boxUnwrapFaces(cuboid, offsetX, offsetY);
-
-			List<FaceName> changedFaces = new ArrayList<>();
-			for (FaceName faceName : FaceName.values()) {
-				if (!BoxUvMath.faceOf(recomputed, faceName).uv().equals(oldFaces.get(faceName).rect())) {
-					changedFaces.add(faceName);
-				}
-			}
-
-			if (changedFaces.isEmpty()) {
-				// -- Sin cambio de footprint: se preserva tal cual, incluido el status --
-				outputCuboids.add(withFaces(cuboid, recomputed));
-				for (FaceName faceName : FaceName.values()) {
-					regions.add(oldFaces.get(faceName));
-				}
-				continue;
-			}
-
-			// -- Resize con footprint cambiado -- las 6 caras comparten un
-			// mismo anchor de box-unwrap (BoxUvMath), así que el bloque
-			// ENTERO se reubica aunque `changedFaces` solo haya detectado
-			// diferencia en algunas (p.ej. solo cambió `y`, up/down quedan
-			// iguales en offset pero igual se reempaquetan con el resto) --
-			// las caras "afectadas" para confirmación/reserva son TODAS las
-			// PAINTED del cuboid, no solo el subconjunto de `changedFaces`.
-			List<PaintedRegionResizeConfirmationRequiredException.AffectedFace> paintedAffected = new ArrayList<>();
-			for (FaceName faceName : FaceName.values()) {
-				if (oldFaces.get(faceName).status() == UvRegionStatus.PAINTED) {
-					paintedAffected.add(
-							new PaintedRegionResizeConfirmationRequiredException.AffectedFace(cuboid.id(), faceName));
-				}
-			}
-
-			if (!paintedAffected.isEmpty() && !confirmPaintLoss) {
-				throw new PaintedRegionResizeConfirmationRequiredException(paintedAffected);
-			}
-
-			BoxUvMath.Footprint footprint = BoxUvMath.footprintOf(cuboid);
-			Vec4 spot = findFreeSpot(footprint, textureWidth, textureHeight, occupied)
-					.orElseThrow(() -> overflowFor(footprint, textureWidth, textureHeight));
-			CuboidFaces newFaces = BoxUvMath.boxUnwrapFaces(cuboid, (int) spot.a(), (int) spot.b());
-			outputCuboids.add(withFaces(cuboid, newFaces));
-
-			Set<FaceName> paintedAffectedNames = new LinkedHashSet<>();
-			for (var affected : paintedAffected) {
-				paintedAffectedNames.add(affected.face());
-			}
-			for (FaceName faceName : FaceName.values()) {
-				Vec4 newRect = BoxUvMath.faceOf(newFaces, faceName).uv();
-				if (paintedAffectedNames.contains(faceName)) {
-					reservations.add(
-							new UvReservation(
-									UUID.randomUUID().toString(), oldFaces.get(faceName).rect(),
-									UvReservationReason.RESIZE_ABANDONED, cuboid.id(), faceName));
-				}
-				regions.add(new UvRegion(cuboid.id(), faceName, newRect, UvRegionStatus.UNPAINTED));
-				occupied.add(newRect);
+		boolean footprintChanged = false;
+		for (FaceName faceName : FaceName.values()) {
+			if (!BoxUvMath.faceOf(recomputed, faceName).uv().equals(oldFaces.get(faceName).rect())) {
+				footprintChanged = true;
+				break;
 			}
 		}
 
-		return new Result(outputCuboids, regions, reservations);
+		if (!footprintChanged) {
+			// -- Sin cambio de footprint: se preserva tal cual, incluido el status --
+			for (FaceName faceName : FaceName.values()) {
+				regions.add(oldFaces.get(faceName));
+			}
+			return withFaces(cuboid, recomputed);
+		}
+
+		return handleResize(cuboid, oldFaces, textureWidth, textureHeight, occupied, regions, reservations, confirmPaintLoss);
+	}
+
+	/**
+	 * Resize con footprint cambiado -- las 6 caras comparten un mismo
+	 * anchor de box-unwrap (BoxUvMath), así que el bloque ENTERO se
+	 * reubica. Las caras "afectadas" para confirmación/reserva son TODAS
+	 * las PAINTED del cuboid, no solo el subconjunto que cambió de rect.
+	 */
+	private static Cuboid handleResize(
+			Cuboid cuboid, Map<FaceName, UvRegion> oldFaces, int textureWidth, int textureHeight,
+			List<Vec4> occupied, List<UvRegion> regions, List<UvReservation> reservations, boolean confirmPaintLoss) {
+		List<PaintedRegionResizeConfirmationRequiredException.AffectedFace> paintedAffected = new ArrayList<>();
+		for (FaceName faceName : FaceName.values()) {
+			if (oldFaces.get(faceName).status() == UvRegionStatus.PAINTED) {
+				paintedAffected.add(new PaintedRegionResizeConfirmationRequiredException.AffectedFace(cuboid.id(), faceName));
+			}
+		}
+
+		if (!paintedAffected.isEmpty() && !confirmPaintLoss) {
+			throw new PaintedRegionResizeConfirmationRequiredException(paintedAffected);
+		}
+
+		BoxUvMath.Footprint footprint = BoxUvMath.footprintOf(cuboid);
+		Vec4 spot = findFreeSpot(footprint, textureWidth, textureHeight, occupied)
+				.orElseThrow(() -> overflowFor(footprint, textureWidth, textureHeight));
+		CuboidFaces newFaces = BoxUvMath.boxUnwrapFaces(cuboid, (int) spot.a(), (int) spot.b());
+
+		Set<FaceName> paintedAffectedNames = new LinkedHashSet<>();
+		for (var affected : paintedAffected) {
+			paintedAffectedNames.add(affected.face());
+		}
+		for (FaceName faceName : FaceName.values()) {
+			Vec4 newRect = BoxUvMath.faceOf(newFaces, faceName).uv();
+			if (paintedAffectedNames.contains(faceName)) {
+				reservations.add(
+						new UvReservation(
+								UUID.randomUUID().toString(), oldFaces.get(faceName).rect(),
+								UvReservationReason.RESIZE_ABANDONED, cuboid.id(), faceName));
+			}
+			regions.add(new UvRegion(cuboid.id(), faceName, newRect, UvRegionStatus.UNPAINTED));
+			occupied.add(newRect);
+		}
+		return withFaces(cuboid, newFaces);
 	}
 
 	private static Map<String, Map<FaceName, UvRegion>> groupByCuboid(List<UvRegion> regions) {
@@ -214,7 +234,7 @@ public final class StableUvStrategy implements UvLayoutStrategy {
 		}
 		for (int y = 0; y + footprint.height() <= atlasHeight; y++) {
 			for (int x = 0; x + footprint.width() <= atlasWidth; x++) {
-				Vec4 candidate = new Vec4(x, y, x + footprint.width(), y + footprint.height());
+				Vec4 candidate = new Vec4(x, y, (double) x + footprint.width(), (double) y + footprint.height());
 				if (occupied.stream().noneMatch(rect -> overlaps(candidate, rect))) {
 					return Optional.of(candidate);
 				}
@@ -229,11 +249,11 @@ public final class StableUvStrategy implements UvLayoutStrategy {
 
 	private static UvAtlasOverflowException overflowFor(BoxUvMath.Footprint footprint, int atlasWidth, int atlasHeight) {
 		// A diferencia de AlphaAutoPackStrategy (reflow completo, puede
-		// calcular la dimensión mínima EXACTA que haría caber todo), acá el
-		// atlas ya tiene contenido estable que no se puede reordenar -- las
-		// dimensiones "requeridas" son una cota superior conservadora
-		// (agregar una fila nueva del alto del footprint), no un mínimo
-		// exacto.
+		// calcular la dimensión mínima EXACTA que haría caber el conjunto
+		// completo), acá el atlas ya tiene contenido estable que no se
+		// puede reordenar -- las dimensiones "requeridas" son una cota
+		// superior conservadora (agregar una fila nueva del alto del
+		// footprint), no un mínimo exacto.
 		int requiredWidth = Math.max(atlasWidth, footprint.width());
 		int requiredHeight = atlasHeight + footprint.height();
 		return new UvAtlasOverflowException(atlasWidth, atlasHeight, requiredWidth, requiredHeight);

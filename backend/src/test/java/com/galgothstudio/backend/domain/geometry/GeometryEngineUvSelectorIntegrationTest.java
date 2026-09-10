@@ -91,8 +91,9 @@ class GeometryEngineUvSelectorIntegrationTest {
 		}
 		MobProjectModel model = withUv(base, regions, List.of());
 		GeometryOperation resize = new ResizeCuboid(cuboidId, new Vec3(2, 2, 2));
+		List<GeometryOperation> operations = List.of(resize);
 
-		assertThatThrownBy(() -> GeometryEngine.apply(model, List.of(resize), SELECTOR))
+		assertThatThrownBy(() -> GeometryEngine.apply(model, operations, SELECTOR))
 				.isInstanceOf(PaintedRegionResizeConfirmationRequiredException.class);
 	}
 

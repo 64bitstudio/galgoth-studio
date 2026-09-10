@@ -19,7 +19,10 @@ import java.util.List;
  */
 public final class PaintedRegionResizeConfirmationRequiredException extends RuntimeException {
 
-	private final List<AffectedFace> affectedFaces;
+	// transient: esta excepción de dominio nunca se serializa entre JVMs
+	// (mismo criterio que las demás excepciones de domain/uv) -- AffectedFace
+	// es un record sin garantía de Serializable, y no hace falta que lo sea.
+	private final transient List<AffectedFace> affectedFaces;
 
 	/** Una cara {@code PAINTED} de un cuboid vivo cuyo footprint cambiaría con el resize propuesto. */
 	public record AffectedFace(String cuboidId, FaceName face) {
