@@ -68,7 +68,7 @@ public class ProjectService {
 	@Transactional(readOnly = true)
 	public ProjectDetail get(UUID projectId) {
 		ProjectEntity project = requireProject(projectId);
-		return toDetail(project, (int) mobRepository.countByProjectId(projectId));
+		return toDetail(project, (int) mobRepository.countByProjectIdAndDeletedAtIsNull(projectId));
 	}
 
 	@Transactional
@@ -77,7 +77,7 @@ public class ProjectService {
 		project.setName(requireValidName(newName));
 		project.setUpdatedAt(Instant.now());
 		projectRepository.save(project);
-		return toDetail(project, (int) mobRepository.countByProjectId(projectId));
+		return toDetail(project, (int) mobRepository.countByProjectIdAndDeletedAtIsNull(projectId));
 	}
 
 	@Transactional
@@ -94,7 +94,7 @@ public class ProjectService {
 		ProjectEntity copy = new ProjectEntity(UUID.randomUUID(), original.getName() + COPY_SUFFIX, original.getOwnerRef(), now, now);
 		projectRepository.save(copy);
 
-		List<MobEntity> mobs = mobRepository.findByProjectIdOrderByUpdatedAtDesc(projectId);
+		List<MobEntity> mobs = mobRepository.findByProjectIdAndDeletedAtIsNullOrderByUpdatedAtDesc(projectId);
 		for (MobEntity mob : mobs) {
 			duplicateMob(mob, copy.getId(), now);
 		}
@@ -145,7 +145,7 @@ public class ProjectService {
 	}
 
 	private ProjectSummary toSummary(ProjectEntity project) {
-		List<MobEntity> mobs = mobRepository.findByProjectIdOrderByUpdatedAtDesc(project.getId());
+		List<MobEntity> mobs = mobRepository.findByProjectIdAndDeletedAtIsNullOrderByUpdatedAtDesc(project.getId());
 		List<MobThumbnail> thumbnails =
 				mobs.stream().limit(3).map(m -> new MobThumbnail(m.getId().toString(), m.getThumbnailKey())).toList();
 		return new ProjectSummary(
