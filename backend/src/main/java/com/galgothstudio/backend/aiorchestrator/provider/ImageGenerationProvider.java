@@ -56,12 +56,12 @@ public interface ImageGenerationProvider {
 			if (this == other) {
 				return true;
 			}
-			if (!(other instanceof TextureGenerationSheetRequest that)) {
+			if (!(other instanceof TextureGenerationSheetRequest(
+					String otherPrompt, byte[] otherBytes, int otherWidth, int otherHeight, String otherStyle))) {
 				return false;
 			}
-			return sheetWidth == that.sheetWidth && sheetHeight == that.sheetHeight
-					&& Objects.equals(prompt, that.prompt) && Objects.equals(style, that.style)
-					&& Arrays.equals(referenceImageBytes, that.referenceImageBytes);
+			return sheetWidth == otherWidth && sheetHeight == otherHeight && Objects.equals(prompt, otherPrompt)
+					&& Objects.equals(style, otherStyle) && Arrays.equals(referenceImageBytes, otherBytes);
 		}
 
 		@Override
