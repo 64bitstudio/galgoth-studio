@@ -1,4 +1,5 @@
-import { DataTexture, Mesh, MeshStandardMaterial } from 'three'
+import { DataTexture, Mesh, MeshStandardMaterial, Raycaster, Vector3 } from 'three'
+import type { Face, Intersection } from 'three'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Cuboid, MobProjectModel } from '../../domain/MobProjectModel'
 
@@ -258,8 +259,109 @@ describe('ThreeViewportService', () => {
 
     const mobGroup = service.scene.children.find((c) => c.name === 'mob-uno')!
     const cubeMesh = mobGroup.children.find((c) => c.name === 'cube-1') as InstanceType<typeof Mesh>
-    const material = cubeMesh.material as InstanceType<typeof MeshStandardMaterial>
+    // Ticket 049: `mesh.material` es un array de 6 slots (misma instancia
+    // repetida) -- ver docstring de `buildMobScene.ts`.
+    const material = (cubeMesh.material as InstanceType<typeof MeshStandardMaterial>[])[0]!
     expect(material.map).toBe(atlasTexture)
+  })
+
+  describe('ticket 049 (HU-25, Diseño técnico §14): pickCuboidFaceAt determinista', () => {
+    const FACE_EMPTY_FACES = {
+      north: { uv: [0, 0, 0, 0] as [number, number, number, number], texture: null },
+      south: { uv: [0, 0, 0, 0] as [number, number, number, number], texture: null },
+      east: { uv: [0, 0, 0, 0] as [number, number, number, number], texture: null },
+      west: { uv: [0, 0, 0, 0] as [number, number, number, number], texture: null },
+      up: { uv: [0, 0, 0, 0] as [number, number, number, number], texture: null },
+      down: { uv: [0, 0, 0, 0] as [number, number, number, number], texture: null },
+    }
+
+    function cuboidFixture(rotation: [number, number, number] = [0, 0, 0]): Cuboid {
+      return {
+        id: 'cube-1',
+        name: 'cube-1',
+        boneId: 'bone-1',
+        from: [-1, -1, -1],
+        to: [1, 1, 1],
+        origin: [0, 0, 0],
+        rotation,
+        faces: FACE_EMPTY_FACES,
+      }
+    }
+
+    function fakeIntersection(mesh: Mesh, materialIndex: number, normal: Vector3): Intersection {
+      return {
+        distance: 1,
+        point: new Vector3(),
+        object: mesh,
+        face: { a: 0, b: 1, c: 2, materialIndex, normal } as Face,
+      } as Intersection
+    }
+
+    /** Construye el mesh real (vía `setModel`/`buildMobGroup`, sin mocks) para tener un `userData.faceNamesByGroup` real -- solo `Raycaster.intersectObjects` se mockea, nunca la resolución de la cara. */
+    function buildCubeMesh(rotation: [number, number, number] = [0, 0, 0]): Mesh {
+      const model = emptyModel('mob-uno')
+      const modelWithCuboid = { ...model, cuboids: [cuboidFixture(rotation)] }
+      service.setModel(modelWithCuboid, null)
+      const mobGroup = service.scene.children.find((c) => c.name === 'mob-uno')!
+      return mobGroup.children.find((c) => c.name === 'cube-1') as Mesh
+    }
+
+    it('resuelve {cuboidId, face} vía materialIndex -- índice 2 de BOX_GEOMETRY_FACE_ORDER es "up"', () => {
+      const mesh = buildCubeMesh()
+      vi.spyOn(Raycaster.prototype, 'intersectObjects').mockReturnValue([fakeIntersection(mesh, 2, new Vector3(0, 1, 0))])
+
+      expect(service.pickCuboidFaceAt(10, 10)).toEqual({ cuboidId: 'cube-1', face: 'up' })
+    })
+
+    it('el resultado es el MISMO sin importar la rotación mundial del cuboid -- materialIndex es agnóstico a la rotación (AC: "incluyendo uno rotado")', () => {
+      const mesh = buildCubeMesh([0, 90, 45])
+      vi.spyOn(Raycaster.prototype, 'intersectObjects').mockReturnValue([fakeIntersection(mesh, 4, new Vector3(0, 0, 1))])
+
+      expect(service.pickCuboidFaceAt(10, 10)).toEqual({ cuboidId: 'cube-1', face: 'south' })
+    })
+
+    it('AC del ticket: una normal reportada DELIBERADAMENTE discrepante (materialIndex resuelve "up", la normal reportada es la de "east") NUNCA cambia el resultado -- la normal es solo assert/validación dev-only', () => {
+      const mesh = buildCubeMesh()
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      // materialIndex=2 ("up", normal local esperada (0,1,0)) pero la normal reportada es (1,0,0) -- la de "east". Discrepancia forzada a propósito.
+      vi.spyOn(Raycaster.prototype, 'intersectObjects').mockReturnValue([fakeIntersection(mesh, 2, new Vector3(1, 0, 0))])
+
+      const pick = service.pickCuboidFaceAt(10, 10)
+
+      expect(pick).toEqual({ cuboidId: 'cube-1', face: 'up' }) // el resultado NO cambia por la discrepancia de normal
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      expect(warnSpy.mock.calls[0]![0]).toContain("'up'")
+    })
+
+    it('con un cuboid rotado en el MUNDO y una normal LOCALMENTE correcta, no dispara ninguna discrepancia -- Three.js reporta `face.normal` en espacio LOCAL, nunca compuesto con matrixWorld (ver FACE_LOCAL_NORMALS)', () => {
+      const mesh = buildCubeMesh([0, 90, 0]) // cuboid rotado 90° en el mundo
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      // Normal LOCAL real de "up" (materialIndex=2) es SIEMPRE (0,1,0), sin importar la rotación mundial del mesh.
+      vi.spyOn(Raycaster.prototype, 'intersectObjects').mockReturnValue([fakeIntersection(mesh, 2, new Vector3(0, 1, 0))])
+
+      const pick = service.pickCuboidFaceAt(10, 10)
+
+      expect(pick).toEqual({ cuboidId: 'cube-1', face: 'up' })
+      expect(warnSpy).not.toHaveBeenCalled()
+    })
+
+    it('sin intersección (click en vacío), devuelve null -- igual criterio que pickCuboidIdAt', () => {
+      buildCubeMesh()
+      vi.spyOn(Raycaster.prototype, 'intersectObjects').mockReturnValue([])
+
+      expect(service.pickCuboidFaceAt(10, 10)).toBeNull()
+    })
+
+    it('un hit sobre un objeto sin userData.cuboidId (p. ej. un marcador de pivote de bone) se descarta, igual que pickCuboidIdAt', () => {
+      const mesh = buildCubeMesh()
+      const pivotMarker = new Mesh()
+      vi.spyOn(Raycaster.prototype, 'intersectObjects').mockReturnValue([
+        { distance: 0.5, point: new Vector3(), object: pivotMarker, face: { a: 0, b: 1, c: 2, materialIndex: 0, normal: new Vector3(1, 0, 0) } as Face },
+        fakeIntersection(mesh, 2, new Vector3(0, 1, 0)),
+      ])
+
+      expect(service.pickCuboidFaceAt(10, 10)).toEqual({ cuboidId: 'cube-1', face: 'up' })
+    })
   })
 
   it('ticket 018: setTransformMode delega en transformControls.setMode', () => {

@@ -6,17 +6,18 @@
  * Monta el mecanismo de Undo/Redo del ticket 046 (textureEditorStore)
  * sobre un atlas real y visible por primera vez.
  *
- * Alcance explícito de ESTE ticket (ver "## Hecho" del ticket para el
+ * Alcance explícito del ticket 047 (ver "## Hecho" del ticket para el
  * detalle completo de qué se implementó/difirió): color picker + paleta,
  * Pincel, Borrador, Cubeta (flood-fill real), Eyedropper, toggle de
- * cuadrícula. NO incluye selección cruzada cuboid-UV (ticket 049), NI
- * import de PNG (ticket 048), NI Selección/Copiar-pegar/Undo-Redo con UI
- * propia (HU-27 los menciona pero la sección "Qué implementar" del
- * ticket 047 no los lista -- el mecanismo de textureEditorStore.undo/redo
- * queda disponible y correctamente alimentado por cada herramienta vía
- * recordPatch(), pero sin botón/atajo de teclado en este componente).
- * Este ticket tampoco ensambla la pantalla completa del mockup 07 (eso
- * es el ticket 050) -- este componente es la pieza que 050 va a montar.
+ * cuadrícula. NO incluía selección cruzada cuboid-UV -- ver ticket 049
+ * más abajo, ya integrada en este mismo componente --, NI import de PNG
+ * (ticket 048), NI Selección/Copiar-pegar/Undo-Redo con UI propia (HU-27
+ * los menciona pero la sección "Qué implementar" del ticket 047 no los
+ * lista -- el mecanismo de textureEditorStore.undo/redo queda disponible
+ * y correctamente alimentado por cada herramienta vía recordPatch(), pero
+ * sin botón/atajo de teclado en este componente). El ticket 047 tampoco
+ * ensambla la pantalla completa del mockup 07 (eso es el ticket 050) --
+ * este componente es la pieza que 050 va a montar.
  *
  * Arquitectura de dos capas superpuestas, deliberada:
  * - canvas (bitmap real, canvasRef): tamaño intrínseco EXACTO al atlas
@@ -42,11 +43,25 @@
  * NO cambia hasta pointerup, cuando se hace la ÚNICA llamada a
  * recordPatch() del trazo completo. La Cubeta es atómica (un solo
  * evento), así que llama a recordPatch() directo.
+ *
+ * Ticket 049 (HU-25, Diseño técnico §14): selección cruzada cuboid↔UV.
+ * `selectedRegionKey` deja de ser un `ref` local -- ahora es un computed
+ * de lectura/escritura sobre `textureSelectionStore.selectedFace`
+ * (`textureSelectionStore.ts`, store nuevo y separado de
+ * `selectionStore.ts`), así que el MISMO estado alimenta 3 superficies
+ * sin duplicar nada: el `<select>` de región (ya existía), el resaltado
+ * SVG de esa región (ya existía) y ahora también el highlight de esa cara
+ * en el preview 3D (`buildMobGroup`'s `selectedFace`, ver
+ * `buildMobScene.ts`). Un clic en una cara del preview 3D (`handlePreviewClick`,
+ * mismo patrón click-vs-drag que `ThreeViewport.vue`) llama a
+ * `pickCuboidFaceAt` y escribe al MISMO store -- de ahí sale la
+ * bidireccionalidad de la selección cruzada.
  */
 import { DataTexture, RGBAFormat, NearestFilter } from 'three'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { MobProjectModel } from '../../domain/MobProjectModel'
+import type { FaceName, MobProjectModel } from '../../domain/MobProjectModel'
 import { threeViewportService } from '../../viewport/ThreeViewportService'
+import type { CuboidFaceRef } from '../../viewport/textureUvMapping'
 import IconButton from '../../design-system/components/IconButton.vue'
 import IconBrush from '../../design-system/icons/IconBrush.vue'
 import IconBucket from '../../design-system/icons/IconBucket.vue'
@@ -68,8 +83,15 @@ import {
 import { ALL_REGIONS_VALUE, buildSelectableRegions, regionKey, type SelectableRegion } from './regionLabels'
 import { readRectFrom } from './textureRectBuffer'
 import { useTextureEditorStore } from './textureEditorStore'
+import { useTextureSelectionStore } from './textureSelectionStore'
 
 type Tool = 'brush' | 'eraser' | 'fill' | 'eyedropper'
+
+// Umbral de movimiento del mouse entre pointerdown y click en el preview
+// 3D -- por encima de esto se interpreta como arrastre de órbita
+// (OrbitControls), no como un click de selección de cara. Mismo criterio
+// que `ThreeViewport.vue` (ticket 017).
+const CLICK_DRAG_THRESHOLD_PX = 5
 
 const PALETTE: string[] = ['#f3f6f8', '#0b0f14', '#e0574c', '#f2c66d', '#48e5a0', '#4d8bf0', '#a35bd6', '#8a5a3b']
 const DEFAULT_COLOR = PALETTE[2]!
@@ -80,6 +102,7 @@ const MAX_BRUSH_SIZE = 32
 const props = defineProps<{ model: MobProjectModel }>()
 
 const textureEditorStore = useTextureEditorStore()
+const textureSelectionStore = useTextureSelectionStore()
 
 const canvasRef = ref<HTMLCanvasElement>()
 const previewContainerRef = ref<HTMLDivElement>()
@@ -88,7 +111,24 @@ const activeTool = ref<Tool>('brush')
 const activeColorHex = ref(DEFAULT_COLOR)
 const brushSize = ref(4)
 const showGrid = ref(false)
-const selectedRegionKey = ref(ALL_REGIONS_VALUE)
+
+/**
+ * Puente entre el `<select>` (formato `regionKey`, ya existente desde el
+ * ticket 047) y `textureSelectionStore.selectedFace` (formato
+ * `{cuboidId, face}`, ticket 049) -- el template no cambia, sigue usando
+ * `v-model="selectedRegionKey"`.
+ */
+const selectedRegionKey = computed<string>({
+  get: () => (textureSelectionStore.selectedFace ? regionKey(textureSelectionStore.selectedFace) : ALL_REGIONS_VALUE),
+  set: (value) => {
+    if (value === ALL_REGIONS_VALUE) {
+      textureSelectionStore.selectFace(null)
+      return
+    }
+    const [cuboidId, face] = value.split(':') as [string, FaceName]
+    textureSelectionStore.selectFace({ cuboidId, face })
+  },
+})
 
 const atlasWidth = computed(() => textureEditorStore.atlas?.width ?? 0)
 const atlasHeight = computed(() => textureEditorStore.atlas?.height ?? 0)
@@ -147,10 +187,22 @@ function syncDataTexture(): void {
     nextTexture.generateMipmaps = false
     dataTexture = nextTexture
     dataTexturePixelsRef = atlas.pixels
-    threeViewportService.setModel(props.model, null, dataTexture)
+    applyPreviewModel()
   } else if (dataTexture) {
     dataTexture.needsUpdate = true
   }
+}
+
+/**
+ * Ticket 049 (HU-25): reconstruye el mob del preview 3D con el highlight
+ * de `textureSelectionStore.selectedFace` vigente -- separado de la rama
+ * `else` (needsUpdate-only) de `syncDataTexture` a propósito: cada trazo
+ * de pintado NO debe reconstruir todos los meshes (esa optimización del
+ * ticket 047 sigue intacta), pero un cambio de selección de cara sí
+ * necesita reconstruir (el highlight se agrega dentro de `buildMobGroup`).
+ */
+function applyPreviewModel(): void {
+  threeViewportService.setModel(props.model, null, dataTexture, textureSelectionStore.selectedFace)
 }
 
 // -- Bitmap 2D real (canvas, sin overlay) --------------------------------
@@ -184,11 +236,32 @@ function loadModelAtlas(model: MobProjectModel): void {
   redraw()
 }
 
+// -- Selección cruzada cuboid<->UV en el preview 3D (ticket 049, HU-25) --
+let previewPointerDownPosition: { x: number; y: number } | null = null
+
+function handlePreviewPointerDown(event: PointerEvent): void {
+  previewPointerDownPosition = { x: event.clientX, y: event.clientY }
+}
+
+/** Mismo criterio click-vs-drag que `ThreeViewport.vue` (ticket 017) -- un arrastre de órbita (`OrbitControls`) nunca debe interpretarse como una selección de cara. */
+function handlePreviewClick(event: MouseEvent): void {
+  if (previewPointerDownPosition) {
+    const distance = Math.hypot(event.clientX - previewPointerDownPosition.x, event.clientY - previewPointerDownPosition.y)
+    if (distance > CLICK_DRAG_THRESHOLD_PX) {
+      return
+    }
+  }
+  const pick: CuboidFaceRef | null = threeViewportService.pickCuboidFaceAt(event.clientX, event.clientY)
+  textureSelectionStore.selectFace(pick)
+}
+
 onMounted(() => {
   loadModelAtlas(props.model)
   if (previewContainerRef.value) {
     threeViewportService.attachTo(previewContainerRef.value)
     threeViewportService.startRenderLoop()
+    previewContainerRef.value.addEventListener('pointerdown', handlePreviewPointerDown)
+    previewContainerRef.value.addEventListener('click', handlePreviewClick)
   }
 })
 
@@ -197,7 +270,18 @@ watch(
   () => loadModelAtlas(props.model),
 )
 
+// Ticket 049 (HU-25 AC "seleccionar una región UV en el editor 2D resalta
+// la cara en el preview 3D"): cualquier cambio de selección (desde el
+// dropdown, desde un clic en el preview, o deseleccionar) reconstruye el
+// mob del preview con el highlight vigente -- ver `applyPreviewModel`.
+watch(
+  () => textureSelectionStore.selectedFace,
+  () => applyPreviewModel(),
+)
+
 onBeforeUnmount(() => {
+  previewContainerRef.value?.removeEventListener('pointerdown', handlePreviewPointerDown)
+  previewContainerRef.value?.removeEventListener('click', handlePreviewClick)
   threeViewportService.detach()
   dataTexture?.dispose()
 })
