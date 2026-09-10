@@ -48,6 +48,16 @@ const router = createRouter({
       component: () => import('../editor/ExportScreen.vue'),
     },
     {
+      // Ticket 055, HU-36/HU-37/HU-38/HU-42, mockup 08: generador de
+      // textura por IA (pipeline de 054) -- ruta propia, mismo criterio
+      // que `ai-mob-wizard` (independiente de MobEditor.vue). El tab
+      // "Textura" que la enlazará de verdad es responsabilidad de 050
+      // (todavía pending) -- ver el comentario de cabecera del componente.
+      path: '/projects/:projectId/mobs/:mobId/texture/generate-ai',
+      name: 'texture-ai-generator',
+      component: () => import('../ai/texture/TextureAiGeneratorScreen.vue'),
+    },
+    {
       path: '/dev/design-system',
       name: 'design-system-showcase',
       component: () => import('../design-system/Showcase.vue'),
