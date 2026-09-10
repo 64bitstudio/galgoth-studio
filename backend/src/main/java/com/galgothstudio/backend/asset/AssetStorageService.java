@@ -11,6 +11,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -58,6 +59,21 @@ public class AssetStorageService {
 			return Optional.empty();
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
+		}
+	}
+
+	/**
+	 * `HEAD` puro (sin descargar bytes) -- usado por la subida de textura
+	 * content-addressed (ticket 045) para decidir si un `PUT` es
+	 * redundante, y por el flush de integridad antes de crear una
+	 * Revision (verificación de existencia del `storageKey` referenciado).
+	 */
+	public boolean exists(String key) {
+		try {
+			s3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build());
+			return true;
+		} catch (NoSuchKeyException _) {
+			return false;
 		}
 	}
 

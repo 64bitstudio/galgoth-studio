@@ -2,7 +2,9 @@ package com.galgothstudio.backend.project.draft;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.galgothstudio.backend.asset.AssetStorageService;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
+import com.galgothstudio.backend.domain.model.TextureDocument;
 import com.galgothstudio.backend.modelvalidation.MobProjectModelValidator;
 import com.galgothstudio.backend.project.persistence.MobDraftEntity;
 import com.galgothstudio.backend.project.persistence.MobDraftRepository;
@@ -30,6 +32,17 @@ import org.springframework.transaction.annotation.Transactional;
  * Guardar NO toca `mob_drafts` -- son dos propósitos independientes
  * (resumición vs. historial inmutable) y ningún AC de HU-09/HU-22 pide
  * mantenerlos sincronizados; el siguiente autosave los realinea solo.
+ *
+ * <p>El dirty-check de textura (HU-30, ticket 045, Diseño técnico §5) no
+ * requiere ningún cambio adicional: {@code TextureDocument.storageKey}
+ * es un campo {@code String} más dentro de {@link MobProjectModel}, así
+ * que el mismo {@code equals()} estructural de records ya lo compara
+ * como cualquier otro valor -- O(1), sin comparar bitmaps. Ambos
+ * métodos que crean una `mob_revision` ({@link #saveRevision}/
+ * {@link #applyGenerationProposal}) verifican, como defensa en
+ * profundidad, que el `storageKey` referenciado exista realmente en
+ * MinIO antes de escribir la fila (Diseño técnico §6) -- ver
+ * {@link #requireTextureAssetPersisted}.
  */
 @Service
 public class DraftPersistenceService {
@@ -39,18 +52,21 @@ public class DraftPersistenceService {
 	private final MobRevisionRepository revisionRepository;
 	private final MobProjectModelValidator validator;
 	private final ObjectMapper objectMapper;
+	private final AssetStorageService assetStorageService;
 
 	public DraftPersistenceService(
 			MobRepository mobRepository,
 			MobDraftRepository draftRepository,
 			MobRevisionRepository revisionRepository,
 			MobProjectModelValidator validator,
-			ObjectMapper objectMapper) {
+			ObjectMapper objectMapper,
+			AssetStorageService assetStorageService) {
 		this.mobRepository = mobRepository;
 		this.draftRepository = draftRepository;
 		this.revisionRepository = revisionRepository;
 		this.validator = validator;
 		this.objectMapper = objectMapper;
+		this.assetStorageService = assetStorageService;
 	}
 
 	@Transactional(readOnly = true)
@@ -93,6 +109,7 @@ public class DraftPersistenceService {
 		if (!errors.isEmpty()) {
 			throw new InvalidDraftException(errors);
 		}
+		requireTextureAssetPersisted(model);
 
 		if (mob.getCurrentRevisionNumber() > 0) {
 			MobRevisionEntity latest = revisionRepository
@@ -136,6 +153,7 @@ public class DraftPersistenceService {
 		if (!errors.isEmpty()) {
 			throw new InvalidDraftException(errors);
 		}
+		requireTextureAssetPersisted(model);
 
 		int newRevisionNumber = mob.getCurrentRevisionNumber() + 1;
 		MobRevisionEntity revision =
@@ -155,6 +173,23 @@ public class DraftPersistenceService {
 		mobRepository.save(mob);
 
 		return new ApplyGenerationResponse(newRevisionNumber, newDraftVersion);
+	}
+
+	/**
+	 * Defensa en profundidad (ticket 045, Diseño técnico §6): el flujo
+	 * normal del frontend espera la respuesta de `PUT /texture` antes de
+	 * invocar "Guardar"/Apply, así que en la práctica `storageKey`
+	 * siempre existe ya en MinIO acá -- esta verificación cubre el caso
+	 * de un cliente que, por bug, dispare la creación de la Revision sin
+	 * esperar esa respuesta. Nunca se escribe una fila con una
+	 * referencia colgante.
+	 */
+	private void requireTextureAssetPersisted(MobProjectModel model) {
+		TextureDocument texture = model.texture();
+		String storageKey = texture != null ? texture.storageKey() : null;
+		if (storageKey != null && !assetStorageService.exists(storageKey)) {
+			throw new DanglingTextureReferenceException(storageKey);
+		}
 	}
 
 	private MobEntity requireMob(UUID mobId) {

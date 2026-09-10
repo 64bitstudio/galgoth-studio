@@ -12,6 +12,7 @@ import com.galgothstudio.backend.domain.uv.PaintedRegionResizeConfirmationRequir
 import com.galgothstudio.backend.domain.uv.UvAtlasOverflowException;
 import com.galgothstudio.backend.project.InvalidProjectNameException;
 import com.galgothstudio.backend.project.ProjectNotFoundException;
+import com.galgothstudio.backend.project.draft.DanglingTextureReferenceException;
 import com.galgothstudio.backend.project.draft.DraftNotFoundException;
 import com.galgothstudio.backend.project.draft.InvalidDraftException;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
@@ -19,6 +20,7 @@ import com.galgothstudio.backend.project.export.NoSavedRevisionException;
 import com.galgothstudio.backend.project.geometry.UnsupportedGeometryApplyOperationException;
 import com.galgothstudio.backend.project.mob.InvalidMobRequestException;
 import com.galgothstudio.backend.project.reference.InvalidReferenceImageException;
+import com.galgothstudio.backend.project.texture.InvalidTextureException;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.http.HttpStatus;
@@ -64,6 +66,17 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(InvalidReferenceImageException.class)
 	public ResponseEntity<ApiErrorResponse> handleInvalidReferenceImage(InvalidReferenceImageException ex) {
 		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("INVALID_REFERENCE_IMAGE", ex.getMessage(), null));
+	}
+
+	@ExceptionHandler(InvalidTextureException.class)
+	public ResponseEntity<ApiErrorResponse> handleInvalidTexture(InvalidTextureException ex) {
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("INVALID_TEXTURE", ex.getMessage(), null));
+	}
+
+	/** Ticket 045 (Diseño técnico §6) -- defensa en profundidad: nunca se escribe una `mob_revision` que referencia un `storageKey` no persistido en MinIO. */
+	@ExceptionHandler(DanglingTextureReferenceException.class)
+	public ResponseEntity<ApiErrorResponse> handleDanglingTextureReference(DanglingTextureReferenceException ex) {
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("DANGLING_TEXTURE_REFERENCE", ex.getMessage(), null));
 	}
 
 	@ExceptionHandler(NoReferenceImageException.class)

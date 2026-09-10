@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.galgothstudio.backend.TestcontainersConfiguration;
+import com.galgothstudio.backend.asset.AssetStorageService;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import jakarta.persistence.EntityManager;
 import java.io.File;
@@ -61,6 +62,9 @@ class MobDraftControllerTest {
 	@Autowired
 	private EntityManager entityManager;
 
+	@Autowired
+	private AssetStorageService assetStorageService;
+
 	/**
 	 * `@Transactional` en la clase de test hace que TODA la petición HTTP
 	 * (controller -> service -> Hibernate) participe de la MISMA
@@ -108,6 +112,13 @@ class MobDraftControllerTest {
 	private String fixtureJsonWithoutTexture() throws IOException {
 		ObjectNode node = (ObjectNode) objectMapper.readTree(fixtureJson());
 		node.putNull("texture");
+		return objectMapper.writeValueAsString(node);
+	}
+
+	/** La misma fixture, con `texture.storageKey` fijado a un valor elegido por el test -- ticket 045 (Diseño técnico §6). */
+	private String fixtureJsonWithTextureStorageKey(String storageKey) throws IOException {
+		ObjectNode node = (ObjectNode) objectMapper.readTree(fixtureJson());
+		((ObjectNode) node.get("texture")).put("storageKey", storageKey);
 		return objectMapper.writeValueAsString(node);
 	}
 
@@ -291,6 +302,42 @@ class MobDraftControllerTest {
 						.content(draftRequestBody(fixtureJson())))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.error", is("MOB_NOT_FOUND")));
+	}
+
+	/**
+	 * Ticket 045 (Diseño técnico §6) -- flush obligatorio/defensa en
+	 * profundidad: "Guardar" nunca escribe una `mob_revision` que
+	 * referencia un `storageKey` de textura que no existe en MinIO.
+	 */
+	@Test
+	void guardar_con_storageKey_de_textura_inexistente_en_minio_responde_400_y_no_crea_revision_ticket045() throws Exception {
+		UUID mobId = aMob(aProject());
+		String modelJson = fixtureJsonWithTextureStorageKey("textures/no-existe-en-minio.png");
+
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(draftRequestBody(modelJson)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.error", is("DANGLING_TEXTURE_REFERENCE")));
+
+		flush();
+		Integer revisionCount =
+				jdbc.queryForObject("select count(*) from mob_revisions where mob_id = ?", Integer.class, mobId);
+		assertThat(revisionCount).isZero();
+	}
+
+	@Test
+	void guardar_con_storageKey_de_textura_que_si_existe_en_minio_crea_la_revision_ticket045() throws Exception {
+		UUID mobId = aMob(aProject());
+		String storageKey = "textures/si-existe-de-verdad.png";
+		assetStorageService.put(storageKey, new byte[] {1, 2, 3}, "image/png");
+		String modelJson = fixtureJsonWithTextureStorageKey(storageKey);
+
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(draftRequestBody(modelJson)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.created", is(true)));
 	}
 
 }
