@@ -2,6 +2,7 @@ package com.galgothstudio.backend.aiorchestrator.texture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.galgothstudio.backend.TestcontainersConfiguration;
@@ -212,8 +213,11 @@ class TextureGenerationApplyTest {
 
 		String draftStorageKey = extractStorageKey(draftModelJson);
 		String revisionStorageKey = extractStorageKey(revisionModelJson);
-		assertThat(draftStorageKey).isNotNull().startsWith("textures/").endsWith(".png");
-		assertThat(draftStorageKey).isEqualTo(revisionStorageKey); // "GET posterior... obtiene EXACTAMENTE la textura aplicada"
+		assertThat(draftStorageKey)
+				.isNotNull()
+				.startsWith("textures/")
+				.endsWith(".png")
+				.isEqualTo(revisionStorageKey); // "GET posterior... obtiene EXACTAMENTE la textura aplicada"
 		assertThat(assetStorageService.exists(draftStorageKey)).isTrue();
 	}
 
@@ -266,7 +270,7 @@ class TextureGenerationApplyTest {
 		UUID mobId = aMobReadyForTexture();
 		UUID jobId = aCompletedTextureJob(mobId);
 
-		Mockito.doThrow(new RuntimeException("fallo forzado a mitad de la transacción de Apply"))
+		doThrow(new RuntimeException("fallo forzado a mitad de la transacción de Apply"))
 				.when(mobRepository)
 				.save(Mockito.argThat(mob -> mob != null && mob.getId().equals(mobId)));
 

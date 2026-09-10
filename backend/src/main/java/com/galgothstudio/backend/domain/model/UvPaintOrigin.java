@@ -22,7 +22,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * heurística frágil y mucho más compleja).
  *
  * <p><b>Convención de default -- HAND es el valor seguro cuando no se
- * sabe</b>: {@code null} (todo JSON legacy, y cualquier región marcada
+ * sabe</b>: {@code null} (el JSON legacy completo, y cualquier región marcada
  * {@code PAINTED} por el editor manual de pintado a mano ya existente,
  * ticket 047, que todavía no fue actualizado para escribir este campo)
  * se trata como "posiblemente pintado a mano" por el generador de diff

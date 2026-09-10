@@ -27,7 +27,7 @@ public class TextureGenerationController {
 		this.textureGenerationService = textureGenerationService;
 	}
 
-	/** HU-36 (`boneId` ausente/null -&gt; todo el modelo) / HU-37 (`boneId` presente -&gt; un bone puntual). */
+	/** HU-36 (`boneId` ausente/null -&gt; el modelo completo) / HU-37 (`boneId` presente -&gt; un bone puntual). */
 	@PostMapping("/api/mobs/{mobId}/ai/generate-texture")
 	public ResponseEntity<StartGenerationResponse> startGeneration(@PathVariable UUID mobId, @RequestBody GenerateTextureRequest request) {
 		UUID jobId = textureGenerationService.startGeneration(mobId, request);

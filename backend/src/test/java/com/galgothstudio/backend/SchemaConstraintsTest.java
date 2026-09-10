@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -83,18 +85,29 @@ class SchemaConstraintsTest {
 		assertThat(count).isEqualTo(1);
 	}
 
-	@Test
-	void ai_jobs_edit_rechaza_base_revision_o_draft_version_nulos() {
+	/**
+	 * S5976: unifica 3 tests casi idénticos -- mismo INSERT exacto (sin
+	 * `base_revision_number`/`base_draft_version`), solo cambia el valor
+	 * de `job_type`: `edit`/`generate_texture` violan
+	 * `chk_ai_jobs_base_values_by_type` por `base_*` nulos, y
+	 * `not_a_real_job_type` viola la whitelist de `job_type` -- ambas
+	 * causas distintas, mismo tipo de excepción verificado
+	 * (`DataIntegrityViolationException`).
+	 */
+	@ParameterizedTest
+	@ValueSource(strings = {"edit", "generate_texture", "not_a_real_job_type"})
+	void ai_jobs_rechaza_insercion_invalida_por_job_type_o_base_nulos(String jobType) {
 		UUID projectId = aProject();
 		UUID mobId = aMob(projectId);
+		UUID jobId = UUID.randomUUID();
 
 		assertThatThrownBy(() -> jdbc.update(
 				"""
 				insert into ai_jobs
 				  (id, mob_id, job_type, status, provider, model, prompt_version, schema_version)
-				values (?, ?, 'edit', 'running', 'claude', 'claude-fable-5-1', 'v1', 'v1')
+				values (?, ?, ?, 'running', 'claude', 'claude-fable-5-1', 'v1', 'v1')
 				""",
-				UUID.randomUUID(), mobId))
+				jobId, mobId, jobType))
 				.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
@@ -187,36 +200,6 @@ class SchemaConstraintsTest {
 
 		String targetBoneId = jdbc.queryForObject("select target_bone_id from ai_jobs where id = ?", String.class, jobId);
 		assertThat(targetBoneId).isEqualTo("bone-1");
-	}
-
-	@Test
-	void ai_jobs_generate_texture_rechaza_base_revision_o_draft_version_nulos() {
-		UUID projectId = aProject();
-		UUID mobId = aMob(projectId);
-
-		assertThatThrownBy(() -> jdbc.update(
-				"""
-				insert into ai_jobs
-				  (id, mob_id, job_type, status, provider, model, prompt_version, schema_version)
-				values (?, ?, 'generate_texture', 'running', 'claude', 'claude-fable-5-1', 'v1', 'v1')
-				""",
-				UUID.randomUUID(), mobId))
-				.isInstanceOf(DataIntegrityViolationException.class);
-	}
-
-	@Test
-	void ai_jobs_job_type_rechaza_un_valor_fuera_de_whitelist() {
-		UUID projectId = aProject();
-		UUID mobId = aMob(projectId);
-
-		assertThatThrownBy(() -> jdbc.update(
-				"""
-				insert into ai_jobs
-				  (id, mob_id, job_type, status, provider, model, prompt_version, schema_version)
-				values (?, ?, 'not_a_real_job_type', 'running', 'claude', 'claude-fable-5-1', 'v1', 'v1')
-				""",
-				UUID.randomUUID(), mobId))
-				.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
 	@Test

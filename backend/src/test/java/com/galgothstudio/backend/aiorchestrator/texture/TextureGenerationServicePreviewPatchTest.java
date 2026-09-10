@@ -102,9 +102,9 @@ class TextureGenerationServicePreviewPatchTest {
 	@Test
 	void payload_grande_por_encima_de_32kb_base64_sube_como_asset_temporal_y_emite_asset_url_AC3() {
 		byte[] bigAtlas = randomNoisePng(150); // ruido real incompresible -- garantiza cruzar el umbral de 32 KB en base64
-		assertThat(java.util.Base64.getEncoder().encodeToString(bigAtlas).getBytes().length)
+		assertThat(java.util.Base64.getEncoder().encodeToString(bigAtlas).getBytes())
 				.as("fixture inválida si esto no supera el umbral -- ajustar el tamaño de randomNoisePng")
-				.isGreaterThan(TextureGenerationService.INLINE_PREVIEW_MAX_BASE64_BYTES);
+				.hasSizeGreaterThan(TextureGenerationService.INLINE_PREVIEW_MAX_BASE64_BYTES);
 		TextureGenerationService service = newService();
 		UUID jobId = UUID.randomUUID();
 

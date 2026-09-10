@@ -21,7 +21,6 @@ import com.galgothstudio.backend.domain.model.Bone;
 import com.galgothstudio.backend.domain.model.FaceName;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.TextureDocument;
-import com.galgothstudio.backend.domain.model.TexturePlan;
 import com.galgothstudio.backend.domain.model.UvLayout;
 import com.galgothstudio.backend.domain.model.UvPaintOrigin;
 import com.galgothstudio.backend.domain.model.UvRegion;
@@ -433,8 +432,9 @@ public class TextureGenerationService {
 	 * NUNCA `textures/`) si no. Estos previews NUNCA tocan
 	 * `mob_drafts`/`mob_revisions`/`textures/{hash}.png` -- ver Javadoc de
 	 * la clase y el test dedicado que lo verifica.
+	 *
+	 * <p>Visibilidad de paquete deliberada (no `private`) -- {@code TextureGenerationServicePreviewPatchTest} lo ejercita de forma aislada (sin Testcontainers) para forzar el umbral de 32 KB del AC (Diseño técnico §13), imposible de forzar de forma confiable a través del pipeline completo (el PNG sintético determinista de {@code MockImageProvider} es un tablero de ajedrez -- altamente compresible, nunca cruza el umbral sin importar el tamaño pedido).
 	 */
-	/** Visibilidad de paquete deliberada (no `private`) -- {@code TextureGenerationServicePreviewPatchTest} lo ejercita de forma aislada (sin Testcontainers) para forzar el umbral de 32 KB del AC (Diseño técnico §13), imposible de forzar de forma confiable a través del pipeline completo (el PNG sintético determinista de {@code MockImageProvider} es un tablero de ajedrez -- altamente compresible, nunca cruza el umbral sin importar el tamaño pedido). */
 	JsonNode previewPatchPayload(UUID jobId, AtomicInteger seq, byte[] currentAtlas, List<CuboidFacePlacement> placements) {
 		Vec4 unionRect = unionRect(placements);
 		int x = (int) Math.round(unionRect.a());

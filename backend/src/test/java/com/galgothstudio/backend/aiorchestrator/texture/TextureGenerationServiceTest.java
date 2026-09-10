@@ -220,10 +220,11 @@ class TextureGenerationServiceTest {
 		assertThat(job.getModel()).isEqualTo("mock-model");
 
 		List<String> stages = stagesOf(jobId);
-		assertThat(stages).contains(
-				GenerationStage.ANALIZANDO_PALETA, GenerationStage.MAPEANDO_CARAS, GenerationStage.COMPONIENDO_ATLAS,
-				GenerationStage.LIMPIANDO_PIXELES, GenerationStage.COMPLETADO);
-		assertThat(stages).anyMatch(s -> s.startsWith(GenerationStage.GENERANDO_BONE_PREFIX));
+		assertThat(stages)
+				.contains(
+						GenerationStage.ANALIZANDO_PALETA, GenerationStage.MAPEANDO_CARAS, GenerationStage.COMPONIENDO_ATLAS,
+						GenerationStage.LIMPIANDO_PIXELES, GenerationStage.COMPLETADO)
+				.anyMatch(s -> s.startsWith(GenerationStage.GENERANDO_BONE_PREFIX));
 		assertThat(stages.stream().filter(GenerationStage.MAPEANDO_CARAS::equals).count()).isEqualTo(2); // un bone cada uno
 	}
 

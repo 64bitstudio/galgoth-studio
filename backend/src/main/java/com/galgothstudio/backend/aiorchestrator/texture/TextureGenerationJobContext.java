@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Todo lo que {@code TextureGenerationService#runPipeline} necesita,
+ * El conjunto completo que {@code TextureGenerationService#runPipeline} necesita,
  * capturado de forma síncrona en {@code startGeneration} ANTES de
  * despachar al {@code generationExecutor} -- mismo patrón que
  * {@code GenerationJobContext} (028/029). El {@code model} es el draft

@@ -33,7 +33,7 @@ public record UvRegion(
 	}
 
 	/**
-	 * Constructor de conveniencia para TODO el código pre-054 que todavía
+	 * Constructor de conveniencia para el código pre-054 completo que todavía
 	 * crea regiones sin opinión de {@link UvPaintOrigin} (ticket 040 y
 	 * anteriores) -- {@code paintedBy=null}, tratado como "origen
 	 * desconocido/posible pintado a mano" por quien lo interprete (ver
