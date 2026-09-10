@@ -45,7 +45,13 @@ import org.springframework.test.context.TestPropertySource;
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
-@TestPropertySource(properties = {"ai.vision-provider=mock", "ai.reasoning-provider=mock", "ai.geometry-streaming-enabled=true"})
+@TestPropertySource(
+		properties = {
+				"ai.vision-provider=mock", "ai.reasoning-provider=mock", "ai.geometry-streaming-enabled=true",
+				// Acelerado SOLO para el test de heartbeat-durante-streaming --
+				// mismo criterio que MobGenerationServiceHeartbeatTest.
+				"ai.geometry-heartbeat-initial-delay-seconds=1", "ai.geometry-heartbeat-period-seconds=1"
+		})
 class MobGenerationServiceStreamingTest {
 
 	// PNG 1x1 real -- mismo fixture que MobGenerationServiceTest.
@@ -77,11 +83,17 @@ class MobGenerationServiceStreamingTest {
 		private List<String> operationJsons = List.of();
 		private int failAtIndex = -1;
 		private IntConsumer onBeforeIndex = i -> { };
+		private long delayBeforeFirstDeltaMillis = 0;
 
 		void configure(List<String> operationJsons, int failAtIndex, IntConsumer onBeforeIndex) {
 			this.operationJsons = operationJsons;
 			this.failAtIndex = failAtIndex;
 			this.onBeforeIndex = onBeforeIndex;
+		}
+
+		/** Ticket 038 -- simula el "pensamiento" real de Claude (`thinking_delta`, sin contenido) antes de emitir el primer token real. */
+		void delayFirstDeltaBy(long millis) {
+			this.delayBeforeFirstDeltaMillis = millis;
 		}
 
 		@Override
@@ -92,6 +104,13 @@ class MobGenerationServiceStreamingTest {
 
 		@Override
 		public AiProviderResponse reasonStreaming(ReasoningRequest request, Consumer<String> onTextDelta) {
+			if (delayBeforeFirstDeltaMillis > 0) {
+				try {
+					Thread.sleep(delayBeforeFirstDeltaMillis); // NOSONAR -- deliberado, ver delayFirstDeltaBy().
+				} catch (InterruptedException _) {
+					Thread.currentThread().interrupt();
+				}
+			}
 			for (int i = 0; i < operationJsons.size(); i++) {
 				onBeforeIndex.accept(i);
 				if (i == failAtIndex) {
@@ -138,6 +157,7 @@ class MobGenerationServiceStreamingTest {
 		((MockVisionProvider) visionModelProvider).setNextResponse(Files.readString(new File("../contracts/fixtures/model-intent-example.json").toPath()));
 		((MockVisionProvider) visionModelProvider).setOnCall(() -> { });
 		reasoningProvider.configure(List.of(), -1, i -> { });
+		reasoningProvider.delayFirstDeltaBy(0);
 	}
 
 	private UUID aProjectAndMobWithReference() {
@@ -257,6 +277,33 @@ class MobGenerationServiceStreamingTest {
 		// Se cortó ANTES de llegar a preparando_resultado/completado -- la
 		// cancelación de verdad interrumpió el stream, no dejó que terminara.
 		assertThat(events).noneMatch(e -> "completado".equals(e.getStage()));
+	}
+
+	@Test
+	void ticket_038_hallazgo_real_incluso_en_modo_streaming_el_heartbeat_hace_ping_mientras_claude_todavia_no_emitio_ningun_token_real() {
+		// Hallazgo real de la verificación en vivo (job cb867de9, 2026-09-10):
+		// Claude puede pasar bastante tiempo en razonamiento extendido antes
+		// de emitir el primer token de contenido real -- streaming solo
+		// ayuda una vez que ese contenido empieza a llegar. 2.5s de "silencio"
+		// simulado, ping cada 1s -> al menos 2 pings reales antes de la
+		// primera operación real.
+		reasoningProvider.delayFirstDeltaBy(2500);
+		reasoningProvider.configure(boneAndCuboids(2), -1, i -> { });
+		UUID mobId = aProjectAndMobWithReference();
+
+		UUID jobId = mobGenerationService.startGeneration(mobId);
+		AiJobEntity job = awaitTerminalStatus(jobId);
+
+		assertThat(job.getStatus()).isEqualTo("completed");
+		List<AiJobEventEntity> events = aiJobEventRepository.findByJobIdAndSeqGreaterThanOrderBySeqAsc(jobId, 0);
+		List<AiJobEventEntity> heartbeatPings =
+				events.stream().filter(e -> "detectando_silueta".equals(e.getStage()) && e.getMessage().contains("llevamos")).toList();
+
+		assertThat(heartbeatPings).as("al menos 2 pings reales mientras Claude no emitió ningún token real todavía").hasSizeGreaterThanOrEqualTo(2);
+		// Apenas llega la primera operación real, el heartbeat se apaga -- no sigue haciendo ping sobre eventos reales ya en curso.
+		AiJobEventEntity lastHeartbeat = heartbeatPings.getLast();
+		AiJobEventEntity firstRealCuboidEvent = events.stream().filter(e -> "creando_rig".equals(e.getStage())).findFirst().orElseThrow();
+		assertThat(lastHeartbeat.getSeq()).isLessThan(firstRealCuboidEvent.getSeq());
 	}
 
 }

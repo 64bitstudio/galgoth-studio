@@ -54,6 +54,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -254,17 +255,48 @@ public class MobGenerationService {
 	private GeometryPlanExecution planWithStreaming(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel emptyModel) {
 		List<GeometryOperation> collected = new ArrayList<>();
 		MobProjectModel[] previewBox = {emptyModel};
-		RawOperationsResult raw = geometryPlannerService.planStreaming(modelIntent, op -> {
-			checkCancellation(jobId);
-			collected.add(op);
-			// Progreso honesto basado en operaciones REALES ya vistas -- no
-			// se conoce el total hasta que el stream termina (a diferencia
-			// del modo heartbeat, que sí conoce `operations.size()` de
-			// entrada), así que se acerca asintóticamente a 89% en vez de
-			// una fracción exacta de un total desconocido.
-			int progressPct = Math.min(89, 40 + collected.size());
-			previewBox[0] = applyStepAndEmit(jobId, seq, emptyModel, collected, previewBox[0], op, progressPct);
-		});
+		// Hallazgo real (verificación en vivo del ticket 038 contra Claude
+		// real, job cb867de9, 2026-09-10): incluso con streaming, Claude
+		// puede pasar ~75s en razonamiento extendido (`thinking_delta`,
+		// deliberadamente NO mostrado -- nunca fue contenido para el
+		// usuario) ANTES de emitir el primer token de la respuesta real.
+		// Ese hueco es tan silencioso como el que streaming vino a
+		// resolver -- acá también corre el heartbeat honesto, pero SOLO
+		// mientras no llegó ninguna operación real todavía (`AtomicBoolean`,
+		// no un `List.isEmpty()` leído desde otro hilo -- visibilidad
+		// garantizada entre el hilo del pipeline y el del scheduler).
+		AtomicBoolean firstOperationReceived = new AtomicBoolean(false);
+		RawOperationsResult raw;
+		try (ScheduledExecutorService heartbeatScheduler = Executors.newSingleThreadScheduledExecutor()) {
+			long startNanos = System.nanoTime();
+			ScheduledFuture<?> heartbeat = heartbeatScheduler.scheduleAtFixedRate(
+					() -> {
+						if (!firstOperationReceived.get()) {
+							long elapsedSeconds = (System.nanoTime() - startNanos) / 1_000_000_000L;
+							emit(
+									jobId, seq, GenerationStage.DETECTANDO_SILUETA,
+									"Generando geometría… llevamos " + elapsedSeconds + "s, puede tardar hasta un minuto.", 25, null);
+						}
+					},
+					heartbeatInitialDelaySeconds, heartbeatPeriodSeconds, TimeUnit.SECONDS);
+			try {
+				raw = geometryPlannerService.planStreaming(modelIntent, op -> {
+					checkCancellation(jobId);
+					firstOperationReceived.set(true);
+					collected.add(op);
+					// Progreso honesto basado en operaciones REALES ya vistas --
+					// no se conoce el total hasta que el stream termina (a
+					// diferencia del modo heartbeat, que sí conoce
+					// `operations.size()` de entrada), así que se acerca
+					// asintóticamente a 89% en vez de una fracción exacta de un
+					// total desconocido.
+					int progressPct = Math.min(89, 40 + collected.size());
+					previewBox[0] = applyStepAndEmit(jobId, seq, emptyModel, collected, previewBox[0], op, progressPct);
+				});
+			} finally {
+				heartbeat.cancel(true);
+			}
+		}
 		return new GeometryPlanExecution(raw.operations(), raw.providerResponse());
 	}
 
