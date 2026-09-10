@@ -50,21 +50,55 @@ export interface TextureDocument {
   storageKey: string | null
 }
 
+/**
+ * Ticket 040. UNPAINTED: sin arte real todavía (default de una región
+ * nueva y de cualquier revisión legacy de Fase 1+2, que no tiene este
+ * campo). PAINTED: al menos un píxel editado a mano o compuesto por IA --
+ * flag explícito que la app actualiza en el mismo commit que pinta, nunca
+ * derivado por diff de píxeles. ORPHAN: cuboidId ya no existe en
+ * MobProjectModel.cuboids (cuboid eliminado) -- se conserva solo para
+ * bookkeeping de espacio ocupado, su rect original nunca se mueve.
+ */
+export type UvRegionStatus = 'unpainted' | 'painted' | 'orphan'
+
 export interface UvRegion {
   cuboidId: string
   face: FaceName
   rect: [number, number, number, number]
+  status: UvRegionStatus
+}
+
+/** Ticket 040. Único valor este ciclo: el rect que una cara PAINTED ocupaba antes de un resize destructivo confirmado que la reubicó. */
+export type UvReservationReason = 'resize_abandoned'
+
+/**
+ * Tombstone explícito de espacio de atlas abandonado que NO puede
+ * describirse como UvRegion porque ya no corresponde a ningún
+ * (cuboidId, face) vivo o vigente (ticket 040). sourceCuboidId/sourceFace
+ * son solo trazabilidad para debug/QA, no se usan para resolver ocupación
+ * (eso lo hace rect). Sin lógica de negocio todavía que cree/consuma
+ * reservas -- eso es StableUvStrategy (ticket 041).
+ */
+export interface UvReservation {
+  id: string
+  rect: [number, number, number, number]
+  reason: UvReservationReason
+  sourceCuboidId: string
+  sourceFace: FaceName
 }
 
 /**
  * Bookkeeping del atlas a nivel de mob -- lo puebla AutoUv (ticket 006/007).
  * La UV real por cara ya vive en Cuboid.faces[x].uv; esto es el índice de
  * qué región del atlas está ocupada, para que el packing no genere overlaps.
+ * `reservations` (ticket 040) son tombstones explícitos de espacio
+ * abandonado por un resize destructivo confirmado.
  */
 export interface UvLayout {
   textureWidth: number
   textureHeight: number
   regions: UvRegion[]
+  reservations: UvReservation[]
 }
 
 export type AnimationChannel = 'rotation' | 'position' | 'scale'

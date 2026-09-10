@@ -140,7 +140,10 @@ export function layoutUv(cuboids: Cuboid[], textureWidth: number, textureHeight:
     const faces = boxUnwrapFaces(cuboid, placement.x, placement.y)
     updatedCuboids.push({ ...cuboid, faces })
     for (const faceName of FACE_NAMES) {
-      regions.push({ cuboidId: cuboid.id, face: faceName, rect: faces[faceName].uv })
+      // status: 'unpainted' -- AutoUv siempre recomputa desde cero (Fase 1+2,
+      // sin cambios este ticket), nunca preserva contenido pintado; mismo
+      // default que el constructor de conveniencia de UvRegion.java (ticket 040).
+      regions.push({ cuboidId: cuboid.id, face: faceName, rect: faces[faceName].uv, status: 'unpainted' })
     }
   })
 

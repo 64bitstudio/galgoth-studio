@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { Bone, Cuboid, MobProjectModel } from '../../domain/MobProjectModel'
+import type { Bone, Cuboid, MobProjectModel, UvRegion, UvReservation } from '../../domain/MobProjectModel'
 import { useDraftModelStore } from '../draftModelStore'
 
 const EMPTY_FACES = {
@@ -30,7 +30,7 @@ function modelWith(bones: Bone[], cuboids: Cuboid[]): MobProjectModel {
     bones,
     cuboids,
     texture: { width: 64, height: 64, storageKey: null },
-    uv: { textureWidth: 64, textureHeight: 64, regions: [] },
+    uv: { textureWidth: 64, textureHeight: 64, regions: [], reservations: [] },
     animations: [],
     exportSettings: { preferredFormatVersion: 'v5' },
     referenceImages: [],
@@ -341,6 +341,43 @@ describe('useDraftModelStore', () => {
 
       expect(store.canUndo).toBe(false)
       expect(store.canRedo).toBe(false)
+    })
+
+    it('Undo sobre un cambio que agregó una UvReservation la hace desaparecer junto con el resto del cambio -- ticket 040 AC #4, sin lógica de Undo específica para reservations', () => {
+      const store = useDraftModelStore()
+      const regionsIn3States: UvRegion[] = [
+        { cuboidId: 'c', face: 'north', rect: [0, 0, 8, 8], status: 'unpainted' },
+        { cuboidId: 'c', face: 'south', rect: [8, 0, 16, 8], status: 'painted' },
+        { cuboidId: 'deleted-cuboid', face: 'east', rect: [16, 0, 24, 8], status: 'orphan' },
+      ]
+      const reservation: UvReservation = {
+        id: 'reservation-1',
+        rect: [8, 0, 16, 8],
+        reason: 'resize_abandoned',
+        sourceCuboidId: 'c',
+        sourceFace: 'south',
+      }
+      const before: MobProjectModel = {
+        ...modelWith([bone('b', null)], [cuboid('c', 'b')]),
+        uv: { textureWidth: 64, textureHeight: 64, regions: regionsIn3States, reservations: [] },
+      }
+      const afterResizeConfirmation: MobProjectModel = {
+        ...before,
+        uv: { ...before.uv, reservations: [reservation] },
+      }
+      store.load(before)
+
+      // `commitExternalModel` es el mecanismo GENÉRICO de Command (igual que
+      // cualquier otra operación) -- el store no sabe ni le importa que lo
+      // que cambió fue `uv.reservations`.
+      store.commitExternalModel(afterResizeConfirmation)
+      expect(store.model?.uv.reservations).toEqual([reservation])
+
+      store.undo()
+
+      expect(store.model?.uv.reservations).toEqual([])
+      expect(store.model?.uv.regions).toEqual(regionsIn3States)
+      expect(store.canRedo).toBe(true)
     })
   })
 })

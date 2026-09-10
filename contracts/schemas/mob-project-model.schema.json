@@ -133,10 +133,15 @@
         }
       }
     },
+    "uvRegionStatus": {
+      "description": "Ticket 040. UNPAINTED: sin arte real todavía (default legacy). PAINTED: con al menos un píxel editado/generado. ORPHAN: cuboidId ya no existe en model.cuboids().",
+      "type": "string",
+      "enum": ["unpainted", "painted", "orphan"]
+    },
     "uvRegion": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["cuboidId", "face", "rect"],
+      "required": ["cuboidId", "face", "rect", "status"],
       "properties": {
         "cuboidId": { "type": "string" },
         "face": { "$ref": "#/$defs/faceName" },
@@ -145,20 +150,48 @@
           "items": { "type": "number" },
           "minItems": 4,
           "maxItems": 4
-        }
+        },
+        "status": { "$ref": "#/$defs/uvRegionStatus" }
+      }
+    },
+    "uvReservationReason": {
+      "description": "Ticket 040. Único valor este ciclo: el rect que una cara PAINTED ocupaba antes de un resize destructivo confirmado que la reubicó.",
+      "type": "string",
+      "enum": ["resize_abandoned"]
+    },
+    "uvReservation": {
+      "description": "Ticket 040. Tombstone explícito de espacio de atlas abandonado que ya no corresponde a ninguna fila viva de uvRegion. sourceCuboidId/sourceFace son solo trazabilidad de debug/QA -- no se usan para resolver ocupación (eso lo hace rect).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "rect", "reason", "sourceCuboidId", "sourceFace"],
+      "properties": {
+        "id": { "type": "string" },
+        "rect": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "reason": { "$ref": "#/$defs/uvReservationReason" },
+        "sourceCuboidId": { "type": "string" },
+        "sourceFace": { "$ref": "#/$defs/faceName" }
       }
     },
     "uvLayout": {
-      "description": "Bookkeeping del atlas a nivel de mob -- lo puebla AutoUv (ticket 006/007), no este ticket. La UV real por cara ya vive en cuboid.faces[x].uv; esto es el índice de qué región del atlas está ocupada, para que el packing no genere overlaps.",
+      "description": "Bookkeeping del atlas a nivel de mob -- lo puebla AutoUv (ticket 006/007), no este ticket. La UV real por cara ya vive en cuboid.faces[x].uv; esto es el índice de qué región del atlas está ocupada, para que el packing no genere overlaps. `reservations` (ticket 040) son tombstones explícitos de espacio abandonado por un resize destructivo confirmado.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["textureWidth", "textureHeight", "regions"],
+      "required": ["textureWidth", "textureHeight", "regions", "reservations"],
       "properties": {
         "textureWidth": { "type": "integer", "minimum": 1 },
         "textureHeight": { "type": "integer", "minimum": 1 },
         "regions": {
           "type": "array",
           "items": { "$ref": "#/$defs/uvRegion" }
+        },
+        "reservations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/uvReservation" }
         }
       }
     },

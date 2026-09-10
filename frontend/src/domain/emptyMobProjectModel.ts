@@ -22,7 +22,7 @@ export function emptyMobProjectModel(mobId: string, projectId: string, name: str
     bones: [],
     cuboids: [],
     texture: { width: TEXTURE_SIZE, height: TEXTURE_SIZE, storageKey: null },
-    uv: { textureWidth: TEXTURE_SIZE, textureHeight: TEXTURE_SIZE, regions: [] },
+    uv: { textureWidth: TEXTURE_SIZE, textureHeight: TEXTURE_SIZE, regions: [], reservations: [] },
     animations: [],
     exportSettings: { preferredFormatVersion: 'v5' },
     referenceImages: [],
