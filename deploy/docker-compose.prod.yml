@@ -44,6 +44,13 @@ services:
       # de Anthropic en cualquier generación/edición que se dispare
       # contra este PROD.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?falta ANTHROPIC_API_KEY en deploy/.env.prod}
+      # Ticket 059 -- hallazgo real: el proveedor de generación de imagen
+      # está fijo en "openai" (ai.image-provider, application.properties),
+      # una cuenta DISTINTA a la de ANTHROPIC_API_KEY de arriba (esa cubre
+      # análisis de paleta/mapeo de caras vía Claude, no la generación de
+      # imagen en sí) -- sin esta key la etapa "generando_textura" del
+      # pipeline de IA de textura falla siempre, en cualquier mob.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?falta OPENAI_API_KEY en deploy/.env.prod}
     ports:
       - "8089:8080"
     networks:
