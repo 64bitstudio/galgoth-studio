@@ -20,4 +20,9 @@ describe('GButton', () => {
     const wrapper = mount(GButton, { props: { disabled: true } })
     expect(wrapper.attributes('disabled')).toBeDefined()
   })
+
+  it('la variante accent (CTA de IA, corrección post-058) usa su propia clase modificadora', () => {
+    const wrapper = mount(GButton, { props: { variant: 'accent' } })
+    expect(wrapper.classes()).toContain('g-button--accent')
+  })
 })

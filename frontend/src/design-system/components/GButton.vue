@@ -5,7 +5,7 @@
  */
 withDefaults(
   defineProps<{
-    variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
+    variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'accent'
     disabled?: boolean
     type?: 'button' | 'submit'
   }>(),
@@ -86,5 +86,18 @@ defineEmits<{ click: [MouseEvent] }>()
 .g-button--ghost:hover:not(:disabled) {
   color: var(--text);
   background: var(--surface-2);
+}
+
+/* Corrección visual post-058 -- CTA de IA (ej. "Generar con IA"), fidelidad
+   al mockup 07 v2 (`.btn--ai` de docs/definiciones/mockups/058-texture-editor-redesign-reference.html):
+   contorno en --accent, no un botón "fantasma" más (ese ya es el rol de
+   `ghost`, reservado para acciones secundarias tipo "Cancelar"). */
+.g-button--accent {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.g-button--accent:hover:not(:disabled) {
+  background: var(--accent-soft);
 }
 </style>

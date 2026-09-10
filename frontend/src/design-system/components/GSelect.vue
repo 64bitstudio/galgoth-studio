@@ -25,6 +25,12 @@
  * serializan trivialmente a uno; mantiene el componente simple sin
  * genéricos de TypeScript sobre `<script setup>` (limitación real de Vue
  * SFC con `defineProps` genérico + `withDefaults`).
+ *
+ * Corrección visual post-058 -- `.g-select__list` usa `app-scroll` (misma
+ * utilidad del design system del ticket 039) para que su scroll interno
+ * (listas largas, ej. todas las caras UV) use la scrollbar delgada/oscura
+ * del proyecto en vez de la nativa del navegador, que desentonaba con el
+ * resto de la UI.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
@@ -139,7 +145,7 @@ onBeforeUnmount(() => document.removeEventListener('click', handleDocumentClick)
         <path d="M5 7.5l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
     </button>
-    <div v-if="isOpen" ref="listRef" class="g-select__list" role="listbox" :aria-label="label" @keydown="handleListKeydown">
+    <div v-if="isOpen" ref="listRef" class="g-select__list app-scroll" role="listbox" :aria-label="label" @keydown="handleListKeydown">
       <button
         v-for="(option, index) in options"
         :key="option.value"
