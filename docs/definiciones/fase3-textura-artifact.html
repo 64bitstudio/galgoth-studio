@@ -235,15 +235,15 @@
 </style>
 
 <header class="doc-header">
-  <div class="eyebrow">Galgoth Studio <span class="sep">·</span> Documento de definición <span class="sep">·</span> v2 — correcciones del PO, 9 sep 2026</div>
+  <div class="eyebrow">Galgoth Studio <span class="sep">·</span> Documento de definición <span class="sep">·</span> v3 — VoBo final, 10 sep 2026</div>
   <h1>Fase 3 — Editor de textura/UV y generación de textura por IA</h1>
-  <p class="lede">Reemplaza la textura placeholder del Technical Alpha por arte real: pintado a mano sobre el atlas, generación por IA con OpenAI (una sola imagen coherente por bone), y una estrategia de UV estable con reservas explícitas que protege el trabajo pintado. El exportador pasa a ser un serializador puro.</p>
+  <p class="lede">Reemplaza la textura placeholder del Technical Alpha por arte real: pintado a mano sobre el atlas, generación por IA con OpenAI (una sola imagen coherente por bone, con aislamiento espacial garantizado), y una estrategia de UV estable con reservas explícitas que protege el trabajo pintado. El exportador pasa a ser un serializador puro.</p>
   <div class="version-note">
-    <strong>Estado de esta versión:</strong> la dirección conceptual fue aprobada por el PO. Tras la primera revisión, el PO dio 13 correcciones técnicas precisas (9 sep 2026) — todas incorporadas en este documento. Queda pendiente el <strong>VoBo final</strong> sobre esta versión antes de crear tickets.
+    <strong>VoBo FINAL del Product Owner: 10 sep 2026.</strong> Incorpora 13 correcciones técnicas del 9 sep + 3 correcciones finales del 10 sep (densidad de texel x1/x2, modelo de OpenAI actualizado a snapshot fechado, aislamiento espacial del pipeline por bone). Fase 3 queda <strong>aprobada para desglose de tickets</strong>.
   </div>
   <div class="status-row">
     <span class="chip chip--done"><span class="dot"></span> Fase 1 + Fase 2 (Technical Alpha) — cerradas, 9 sep 2026</span>
-    <span class="chip chip--pending"><span class="dot"></span> Fase 3 — 13 correcciones aplicadas, VoBo final pendiente</span>
+    <span class="chip chip--done"><span class="dot"></span> Fase 3 — VoBo final, 10 sep 2026</span>
   </div>
 </header>
 
@@ -366,13 +366,14 @@
       </div>
 
       <div class="hu-card">
-        <span class="hu-tag">HU-29<span class="new-badge">revisado</span></span>
+        <span class="hu-tag">HU-29<span class="new-badge">cerrado v3</span></span>
         <p class="hu-story">Como creador de contenido, quiero que la resolución del atlas se recomiende antes de pintar y quede protegida una vez que empiezo a pintar.</p>
         <p class="ac-label">Criterios de aceptación</p>
         <ul>
-          <li><strong>Antes de pintar</strong>: para presets Minecraft, "x1" es la dimensión que <code class="mono">AlphaAutoPackStrategy</code> calcula para esa geometría, con "x2" como upgrade explícito (mismo layout, doble resolución lineal); para custom, se recomienda la potencia de 2 superior al footprint real. Si no cabe, upgrade explícito — nunca crecimiento silencioso.</li>
-          <li><strong>Después de pintar</strong>: width/height quedan <strong>congelados</strong>; una región que no cabe dispara <code class="mono">UvAtlasOverflowException</code> — el atlas nunca crece para hacerle espacio.</li>
-          <li>El campo del wizard deja de ser vinculante — a lo sumo dispara el upgrade explícito antes de pintar.</li>
+          <li><strong>x1/x2 = densidad de texel, no dimensión de atlas</strong> (cerrado por el PO): x1 = 1 texel/unidad de modelo, x2 = 2 texels/unidad. Una cara de 8×8 unidades produce un footprint de 8×8 texels a x1, o 16×16 a x2.</li>
+          <li><strong>Antes de pintar</strong>: AutoUv calcula el footprint de cada cara a la densidad elegida y empaqueta todo — <strong>el atlas es consecuencia del packing</strong>, nunca un valor elegido de antemano. Custom: footprint a densidad estándar (x1), atlas = potencia de 2 superior. Si no cabe, upgrade explícito de densidad — nunca crecimiento silencioso.</li>
+          <li><strong>Después de pintar</strong>: densidad de texel Y width/height quedan <strong>congelados</strong>; una región que no cabe dispara <code class="mono">UvAtlasOverflowException</code> — nunca crece ni recalcula densidad.</li>
+          <li>El campo del wizard deja de ser vinculante — a lo sumo dispara el upgrade explícito de densidad antes de pintar.</li>
         </ul>
       </div>
 
@@ -603,14 +604,15 @@ public record UvLayout(int textureWidth, int textureHeight,
         <p>El frontend puede calcular SHA-256 como optimización, pero NUNCA es la fuente de verdad. En <code class="mono">PUT /api/mobs/{mobId}/texture</code>: el backend decodifica/valida el PNG, calcula él mismo el SHA-256, sube a MinIO, y devuelve el <code class="mono">storageKey</code> oficial — el cliente usa exactamente ese valor, nunca uno propio.</p>
         <p><strong>Flush obligatorio antes de crear una Revision</strong>: "Guardar"/"Apply" esperan la respuesta del <code class="mono">PUT /texture</code> pendiente antes de invocar la creación de la <code class="mono">mob_revision</code>. Como defensa en profundidad, el servicio que crea la Revision verifica la existencia del <code class="mono">storageKey</code> en MinIO antes de escribir.</p>
 
-        <h4>7. Resolución del atlas — dos estados <span class="new-badge">reescritura completa</span></h4>
+        <h4>7. Resolución del atlas — densidad de texel (x1/x2) <span class="new-badge">cerrado definitivamente por el PO</span></h4>
+        <p><strong>x1/x2 es densidad de texel, NUNCA una dimensión de atlas</strong>: x1 = 1 texel por unidad de modelo Minecraft/Blockbench; x2 = 2 texels por unidad. Una cara física de 8×8 unidades produce un footprint de 8×8 texels a x1, o 16×16 texels a x2 — el mismo cuboid empaquetado a densidades distintas produce footprints de tamaño distinto.</p>
       </div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Estado</th><th>Regla</th></tr></thead>
           <tbody>
-            <tr><td><strong>A — antes de <code class="mono">PAINTED</code></strong></td><td>Minecraft: "x1" = lo que <code class="mono">AlphaAutoPackStrategy</code> calcula para esa geometría; "x2" = upgrade explícito, doble resolución lineal, mismo layout. Custom: potencia de 2 superior al footprint real. Si no cabe, upgrade explícito — nunca crecimiento silencioso.</td></tr>
-            <tr><td><strong>B — después de <code class="mono">PAINTED</code></strong></td><td><code class="mono">width</code>/<code class="mono">height</code> quedan CONGELADOS. <code class="mono">StableUvStrategy</code> nunca crece el atlas. Si no cabe una región nueva → <code class="mono">UvAtlasOverflowException</code>.</td></tr>
+            <tr><td><strong>A — antes de <code class="mono">PAINTED</code></strong></td><td><code class="mono">AutoUv</code> calcula el footprint de CADA cara a la densidad de texel elegida (<code class="mono">BoxUvMath.footprintOf(cuboid, texelDensity)</code>), empaqueta todos los footprints, y <strong>el tamaño del atlas resulta de ese packing</strong> — se elige el menor atlas (potencia de 2) que los contenga. Minecraft: x1 default, x2 upgrade explícito (recalcula footprints y reempaqueta). Custom: densidad estándar x1, atlas = potencia de 2 superior al footprint empaquetado. Si no cabe, upgrade explícito — nunca crecimiento silencioso.</td></tr>
+            <tr><td><strong>B — después de <code class="mono">PAINTED</code></strong></td><td>La densidad de texel Y <code class="mono">width</code>/<code class="mono">height</code> quedan CONGELADOS. <code class="mono">StableUvStrategy</code> nunca crece el atlas ni recalcula densidad. Si no cabe una región nueva → <code class="mono">UvAtlasOverflowException</code>.</td></tr>
           </tbody>
         </table>
       </div>
@@ -660,14 +662,14 @@ public record CuboidFacePlacement(
       <p class="prose">UNA sola llamada de imagen por bone cuando es técnicamente posible. <strong>Fallback/batching explícito</strong> (nunca el camino por defecto): si el bone excede los límites del modelo configurado, se divide en N sub-sheets, cada una visible en el SSE (<code class="mono">generando_bone_X (parte 2/3)</code>).</p>
 
       <div class="prose">
-        <h4>12. Modelo de OpenAI configurable <span class="new-badge">nuevo</span></h4>
+        <h4>12. Modelo de OpenAI configurable <span class="new-badge">default actualizado v3</span></h4>
       </div>
       <div class="table-wrap">
         <p class="code-label">application.properties</p>
         <pre class="code-block"><code>ai.openai.api-key=${OPENAI_API_KEY:}
-ai.openai.image-model=${OPENAI_IMAGE_MODEL:gpt-image-1}</code></pre>
+ai.openai.image-model=${OPENAI_IMAGE_MODEL:gpt-image-2.5-sunburst-2026-09-08}</code></pre>
       </div>
-      <p class="prose">Ningún literal hardcodeado en dominio/lógica de negocio. <code class="mono">ai_jobs.model</code> registra el valor REAL usado en cada llamada — nunca un literal fijo en el código.</p>
+      <p class="prose">Ningún literal hardcodeado en dominio/lógica de negocio. Default fijado como <strong>snapshot fechado</strong> (preferido sobre un alias flotante, por reproducibilidad). <code class="mono">ai_jobs.model</code> persiste EXACTAMENTE el model ID real usado en cada llamada — verificar contra la documentación vigente de OpenAI al implementar el ticket.</p>
 
       <div class="prose">
         <h4>13. SSE — esquema formal de <code class="mono">preview_texture_patch</code> <span class="new-badge">formalizado</span></h4>
@@ -694,9 +696,22 @@ ai.openai.image-model=${OPENAI_IMAGE_MODEL:gpt-image-1}</code></pre>
         <p>El chequeo de 409 (<code class="mono">base_revision_number</code>/<code class="mono">base_draft_version</code>) corre ANTES del flujo de atomicidad del §10. Revisiones legacy deserializan con default <code class="mono">UNPAINTED</code> y <code class="mono">reservations=[]</code>. Única columna nueva: <code class="mono">ai_jobs.target_bone_id</code> (nullable) + nuevos <code class="mono">job_type</code>.</p>
       </div>
 
+      <div class="callout callout--finding">
+        <span class="callout-label">20. Semántica x1/x2 — cerrada, sin preguntas pendientes</span>
+        <p>La pregunta abierta de la ronda anterior queda resuelta (§7): x1/x2 son perfiles de densidad de texel, nunca una dimensión de atlas ni una tabla fija por especie vanilla. El atlas es siempre consecuencia del packing a esa densidad.</p>
+      </div>
+
       <div class="callout callout--decision">
-        <span class="callout-label">20. Pregunta abierta genuina de esta revisión</span>
-        <p>La única interpretación que de verdad requiere al PO: la <strong>semántica exacta de "x1/x2"</strong> para presets Minecraft (§7) — este diseño asume "x1" = dimensión calculada por <code class="mono">AlphaAutoPackStrategy</code> para la geometría real (no una tabla fija por especie vanilla, concepto que el dominio no modela hoy). Ver Riesgos #1.</p>
+        <span class="callout-label">21. Aislamiento espacial de <code class="mono">TextureGenerationSheet</code> <span class="new-badge">nuevo</span></span>
+        <p>DoD obligatorio, verificable con tests, para el ticket que implemente <code class="mono">TextureGenerationSheetPlanner</code>/<code class="mono">TextureSheetSlicer</code>/<code class="mono">TextureCompositorService</code>:</p>
+        <ul style="margin:0.4rem 0 0; padding-left:1.1rem; max-width:none;">
+          <li>Los <code class="mono">sheetRect</code> de un bone <strong>nunca se solapan</strong> — gutters/padding explícitos entre caras adyacentes.</li>
+          <li>El prompt incluye un <strong>background/mask determinista</strong> que delimita cada <code class="mono">sheetRect</code> para la IA.</li>
+          <li><code class="mono">TextureSheetSlicer</code> aplica <strong>clipping obligatorio</strong>: solo lee píxeles dentro del rect asignado.</li>
+          <li>Cualquier <strong>bleed</strong> fuera de un <code class="mono">sheetRect</code> se descarta silenciosamente en el slicing — nunca se compone, nunca es un error visible.</li>
+          <li><code class="mono">TextureCompositorService</code> compone cada slice exclusivamente sobre su <code class="mono">atlasUvRect</code> — <strong>ningún píxel de un placement modifica otra región del atlas</strong>.</li>
+        </ul>
+        <p style="margin-top:0.6rem;"><strong>La IA propone contenido visual dentro de fronteras ya decididas por la app; el slicer + compositor son la única autoridad espacial.</strong></p>
       </div>
     </section>
 
@@ -922,15 +937,15 @@ flowchart LR
 
     <section id="riesgos">
       <h2><span class="num">06</span> Riesgos y preguntas abiertas</h2>
-      <p class="section-kicker">No bloquean el VoBo de este documento — salvo el punto 1, marcado explícitamente como bloqueante para el ticket de HU-29.</p>
+      <p class="section-kicker">Ninguno bloquea el VoBo — la semántica x1/x2 (antes riesgo bloqueante) fue cerrada definitivamente el 10 sep 2026.</p>
       <ul class="risk-list">
-        <li class="risk--blocking"><strong>Semántica exacta de "x1/x2" para presets Minecraft</strong> (§7, HU-29) — este documento asume que "x1" es la dimensión calculada por <code class="mono">AlphaAutoPackStrategy</code> para la geometría real, no una tabla fija por especie vanilla. <strong>Requiere confirmación explícita del PO</strong> antes de desglosar el ticket de Épica J/HU-29.</li>
         <li>Convención exacta de etiquetado de regiones UV cuando los bones tienen nombres libres — se define con <code class="mono">ux-ui-designer</code>.</li>
         <li>Formatos de imagen de referencia adicionales para el análisis de paleta — ticket de <code class="mono">ai-orchestrator</code>.</li>
-        <li>Límite absoluto de tamaño/resolución de textura (distinto de la semántica x1/x2) — ticket de <code class="mono">AutoUv</code>.</li>
+        <li>Límite absoluto de tamaño/resolución de textura (distinto de la densidad de texel x1/x2) — ticket de <code class="mono">AutoUv</code>.</li>
         <li>Cuotas/rate-limiting y control de costo de llamadas a OpenAI.</li>
         <li>Control de contenido/moderación sobre las imágenes generadas.</li>
-        <li>Límites técnicos exactos de dimensión del modelo de OpenAI configurado — se verifica al implementar.</li>
+        <li>Límites técnicos exactos de dimensión del modelo de OpenAI configurado (<code class="mono">gpt-image-2.5-sunburst-2026-09-08</code> vigente a la fecha de este documento) — se verifica al implementar.</li>
+        <li>Constante exacta de gutter/padding entre caras dentro de un <code class="mono">TextureGenerationSheet</code> (§21) — valor a fijar en el ticket.</li>
         <li>Retención/GC de bitmaps huérfanos y reservas en MinIO — sin política de poda este ciclo.</li>
       </ul>
     </section>
@@ -942,7 +957,7 @@ flowchart LR
         <li><code class="mono">MobProjectModel</code>: <code class="mono">UvRegion</code>/<code class="mono">UvRegionStatus</code> + <code class="mono">UvReservation</code> nuevos, contratos TS/Java/JSON Schema (HU-24, HU-29, HU-33/34/35).</li>
         <li><code class="mono">UvLayoutSelector</code> + <code class="mono">StableUvStrategy</code> (regiones y reservas) — inyectado solo en los 3 llamadores de motor, nunca en el exportador (HU-33/34/35).</li>
         <li><code class="mono">POST /geometry/apply</code> + confirmación, con preview local en <code class="mono">pointermove</code> y commit único en <code class="mono">pointerup</code> (HU-33).</li>
-        <li>Resolución de atlas en dos estados (x1/x2 Minecraft, power-of-two custom) — <strong>bloqueado en confirmación del PO (Riesgos #1)</strong> (HU-29).</li>
+        <li>Resolución de atlas: densidad de texel x1/x2 alimentando el footprint de <code class="mono">AutoUv</code> (<code class="mono">BoxUvMath.footprintOf</code> con parámetro de densidad), atlas resultante del packing (Minecraft) o power-of-two (custom) (HU-29).</li>
         <li>Persistencia con backend como autoridad de hash, flush obligatorio antes de Revision, migración de <code class="mono">ai_jobs</code> (HU-30/31/39).</li>
         <li><code class="mono">TexturePatchCommand</code> + pila de Undo independiente por patches (HU-27, HU-32).</li>
         <li>Editor de textura/UV manual: canvas, herramientas (HU-27).</li>
@@ -951,7 +966,7 @@ flowchart LR
         <li>Pantalla del editor de textura, mockup 07 (HU-41).</li>
         <li><code class="mono">OpenAiImageProvider</code> con modelo configurable + <code class="mono">MockImageProvider</code> real (HU-39, HU-40).</li>
         <li><code class="mono">TexturePlan</code> vía Claude (HU-36).</li>
-        <li><code class="mono">TextureGenerationSheetPlanner</code> + <code class="mono">TextureSheetSlicer</code> + <code class="mono">TextureCompositorService</code> — generación por bone (HU-37, HU-40).</li>
+        <li><code class="mono">TextureGenerationSheetPlanner</code> + <code class="mono">TextureSheetSlicer</code> + <code class="mono">TextureCompositorService</code> — generación por bone, con DoD de aislamiento espacial (sin solapes, clipping obligatorio por rect, bleed descartado, ningún píxel cruza a otra región — §21) (HU-37, HU-40).</li>
         <li>Pipeline completo + SSE con <code class="mono">preview_texture_patch</code> formal + Apply atómico con 409 (HU-36/37/38).</li>
         <li>Pantalla del generador IA, mockup 08 (HU-42).</li>
         <li><code class="mono">BBModelExporterV5</code>/<code class="mono">V4</code>: firma <code class="mono">export(model)</code> + <code class="mono">LegacyUvNormalizationService</code> + fixtures con textura pintada (HU-43).</li>
@@ -963,5 +978,5 @@ flowchart LR
 </div>
 
 <footer class="doc-footer">
-  Documento guardado en <code class="mono">docs/definiciones/galgoth-studio-fase3-textura.md</code> · v2, incorpora 13 correcciones técnicas del PO (9 sep 2026) sobre el diseño de business-analyst/architect/solution-designer · pendiente de VoBo final antes de crear tickets.
+  Documento guardado en <code class="mono">docs/definiciones/galgoth-studio-fase3-textura.md</code> · v3, incorpora 13 correcciones técnicas (9 sep 2026) + 3 correcciones finales (10 sep 2026) del PO sobre el diseño de business-analyst/architect/solution-designer · <strong>VoBo final otorgado el 10 sep 2026</strong> — desglose de tickets en curso.
 </footer>

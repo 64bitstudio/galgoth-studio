@@ -6,7 +6,7 @@
 
 Fase 3 agrega al Technical Alpha ya aprobado la capacidad de **pintar y generar por IA la textura real de un mob**, reemplazando la textura placeholder checkerboard que hoy garantiza únicamente que el export sea válido. Cubre: un editor de textura/UV manual tipo pixel-art sobre el atlas ya calculado por `AutoUv`, con selección cruzada cuboid↔UV y preview 3D en vivo; la integración de ese trabajo con el sistema ya existente de Draft/Command/Revision, con Undo/Redo basado en patches (nunca snapshots completos del bitmap) y el bitmap persistido content-addressed con el backend como única autoridad del hash; la resolución del riesgo abierto #7 heredado de Fase 1+2 (qué pasa con una UV que ya no puede reempaquetarse libremente porque tiene textura pintada encima, vía una `StableUvStrategy` nueva con reservas explícitas de espacio abandonado); y un pipeline de generación de textura por IA usando **OpenAI** (modelo configurable, no hardcodeado) como `ImageGenerationProvider`, generando una sola imagen coherente por bone (nunca por cuboid) y con el mismo patrón "IA propone, la app valida y aplica con diff" ya probado en geometría (ticket 031). El exportador (`BBModelExporterV5`/`V4`) es, a partir de esta fase, un serializador puro — nunca calcula ni reempaqueta UV, solo serializa la UV canónica que ya quedó fijada en la Revision.
 
-> **Estado de este documento**: la dirección conceptual está aprobada por el PO; el diseño técnico incorpora 13 correcciones precisas dadas el 9 sep 2026 tras la primera revisión. Queda pendiente el VoBo final sobre esta versión.
+> **VoBo FINAL del Product Owner: 10 sep 2026.** El diseño técnico incorpora 13 correcciones precisas del 9 sep 2026 (primera revisión) más 3 correcciones finales del 10 sep 2026 (semántica de densidad de texel x1/x2 — Diseño técnico §7; modelo de OpenAI configurable actualizado a un snapshot fechado — §12; aislamiento espacial del pipeline de generación por bone — §21). Con estas, Fase 3 queda **aprobada para desglose de tickets**.
 
 ## Objetivo de negocio
 
@@ -147,12 +147,12 @@ quiero que la resolución del atlas de mi mob se recomiende automáticamente ant
 para no perder trabajo por un cambio de tamaño posterior
 
 Criterios de aceptación:
-- (Antes de pintar) Dado un mob sin ninguna región PAINTED todavía, cuando se calcula el atlas, entonces el sistema recomienda una resolución adecuada a la geometría real: para presets Minecraft (baseType ≠ custom) la dimensión "x1" es la que AlphaAutoPackStrategy calcula para esa geometría, con un perfil "x2" disponible como upgrade explícito (mismo layout UV, atlas al doble de resolución lineal); para modelos custom, se recomienda la potencia de 2 inmediatamente superior al footprint real.
-- (Antes de pintar) Dado que el AutoUv inicial no cabe en la resolución vigente, cuando esto ocurre, entonces se permite un upgrade explícito (x1→x2, o la siguiente potencia de 2 para custom) — nunca un crecimiento silencioso.
-- (Después de pintar) Dado que existe al menos una región PAINTED, cuando se intenta cambiar width/height del atlas, entonces la operación no tiene efecto — quedan congelados mientras exista contenido pintado (ver Diseño técnico §7).
-- (Después de pintar) Dado que una región nueva no cabe en el espacio libre del atlas ya congelado, cuando esto ocurre, entonces se lanza UvAtlasOverflowException — el atlas nunca crece para hacerle espacio.
-- El campo "Resolución de textura" del wizard IA (ticket 027) deja de ser un parámetro vinculante enviado al backend — a lo sumo dispara el upgrade explícito descrito arriba, antes de que exista contenido pintado. El detalle de copy/UX es un handoff a `ux-ui-designer` al desglosar el ticket.
-- **Pregunta abierta para el PO antes de desglosar este ticket** (ver Riesgos): confirmar si "x1" para presets Minecraft debe ser el tamaño calculado por AutoUv para la geometría real de ese mob (lectura asumida en el diseño técnico), o una tabla de dimensiones canónicas fijas por especie vanilla — cambia la UX del paso de Configuración.
+- **`x1`/`x2` son perfiles de DENSIDAD DE TEXEL, nunca una dimensión de atlas** (cerrado definitivamente por el PO, 10 sep 2026): `x1` = 1 texel por unidad de modelo Minecraft/Blockbench; `x2` = 2 texels por unidad. Ejemplo: una cara física de 8×8 unidades produce un footprint de 8×8 texels a `x1`, o 16×16 texels a `x2`.
+- (Antes de pintar) Dado un mob sin ninguna región PAINTED todavía, cuando se calcula el atlas, entonces AutoUv calcula el footprint de CADA cara aplicando la densidad de texel elegida (`x1` por defecto para presets Minecraft, `x2` como upgrade explícito), empaqueta todos los footprints, y **el tamaño del atlas resulta del packing** — nunca un valor elegido de antemano. Para modelos custom, el footprint se calcula a densidad estándar (`x1`) y el atlas es la potencia de 2 inmediatamente superior al footprint empaquetado.
+- (Antes de pintar) Dado que el footprint empaquetado no cabe en la resolución vigente, cuando esto ocurre, entonces se permite un upgrade explícito (recalcular a `x2`, o la siguiente potencia de 2 para custom) — nunca un crecimiento silencioso.
+- (Después de pintar) Dado que existe al menos una región PAINTED, cuando se intenta cambiar la densidad de texel o width/height del atlas, entonces la operación no tiene efecto — ambos quedan congelados mientras exista contenido pintado (ver Diseño técnico §7).
+- (Después de pintar) Dado que una región nueva no cabe en el espacio libre del atlas ya congelado, cuando esto ocurre, entonces se lanza UvAtlasOverflowException — el atlas nunca crece ni recalcula densidad para hacerle espacio.
+- El campo "Resolución de textura" del wizard IA (ticket 027) deja de ser un parámetro vinculante enviado al backend — a lo sumo dispara el upgrade explícito de densidad descrito arriba, antes de que exista contenido pintado. El detalle de copy/UX es un handoff a `ux-ui-designer` al desglosar el ticket.
 ```
 
 ### Épica K: Persistencia y revisiones de textura
@@ -334,7 +334,7 @@ Criterios de aceptación:
 
 ## Diseño técnico
 
-> **Nota de versión**: esta sección reemplaza por completo la versión anterior, tras 13 correcciones técnicas precisas del PO (aprueba la dirección conceptual, VoBo final todavía pendiente). Donde una corrección revierte una decisión previa se dice explícitamente — no se disimula. Ningún punto de la lista "sin cambios" del PO (§18) fue reabierto.
+> **Nota de versión**: esta sección incorpora, sobre las 13 correcciones técnicas de la ronda anterior, 3 correcciones finales del PO (10 sep 2026, ver puntos 7/12/21) — **con estas, el PO dio VoBo FINAL a Fase 3**. Donde una corrección revierte una decisión previa se dice explícitamente — no se disimula. Ningún punto de la lista "sin cambios" del PO (§19) fue reabierto.
 
 Dos hallazgos de Fase 1+2 seguían pendientes de cierre en el diseño anterior:
 
@@ -471,26 +471,30 @@ byte[] bbmodel = bbModelExporterV5.export(normalized);
 
 **Flush obligatorio antes de crear una Revision** (mismo criterio para "Guardar" y para "Apply" de una propuesta de IA — punto 10): la acción de guardar/aplicar debe esperar (await) la respuesta del `PUT /texture` pendiente y su `storageKey` oficial ANTES de invocar el endpoint que crea la `mob_revision`. Una Revision jamás debe apuntar a un `storageKey` que todavía no está confirmado persistido en MinIO. Como defensa en profundidad (contra un cliente que por bug no respete ese orden), el servicio que crea la Revision (`DraftPersistenceService.saveRevision` y el nuevo método de Apply de textura, punto 10) verifica la existencia del `storageKey` referenciado en MinIO antes de escribir la fila — si no existe, lanza un error explícito en vez de escribir una referencia colgante.
 
-### 7. Resolución del atlas — dos estados: pre-pintado y post-pintado
+### 7. Resolución del atlas — densidad de texel (x1/x2), dos estados: pre-pintado y post-pintado
 
-**Reescritura completa — corrección #3.** El diseño anterior mantenía la frase ambigua "128×128 y crece/rechaza" sin diferenciar dos momentos con reglas distintas.
+**Cerrado definitivamente por el PO, 10 sep 2026.** La semántica de `x1`/`x2` NO es una dimensión de atlas — es un perfil de **densidad de texel** que alimenta el cálculo de footprint de `AutoUv`, y el atlas es una CONSECUENCIA del packing resultante, nunca un valor elegido de antemano.
+
+- **`x1`** = 1 texel por unidad de modelo Minecraft/Blockbench.
+- **`x2`** = 2 texels por unidad (el doble de densidad lineal).
+- Ejemplo: una cara física de 8×8 unidades produce un footprint de 8×8 texels a `x1`, o 16×16 texels a `x2` — el mismo cuboid, empaquetado a densidades distintas, produce footprints de tamaño distinto (NO "el mismo layout UV al doble de resolución", como decía una versión anterior de este documento).
 
 **Estado A — ANTES de que exista contenido `PAINTED`** (mob recién creado, o con geometría pero sin ningún píxel pintado/generado todavía):
 
-- El sistema recomienda/selecciona una resolución de atlas adecuada a la geometría real ya calculada por `AutoUv` — no un valor fijo global.
-- **Presets Minecraft** (`BaseType` ≠ `CUSTOM`: `HUMANOID`, `ARACHNID`, `QUADRUPED`, `FLYING`): la dimensión canónica ("x1") es el tamaño que `AlphaAutoPackStrategy` calcula para esa geometría concreta (no una tabla fija por especie — este dominio no modela mobs vanilla específicos, solo arquetipos). Se permite un perfil "x2" como upgrade explícito: mismo layout UV (mismos rects relativos), atlas al doble de resolución lineal (ancho y alto ×2) — más espacio por píxel para detalle, sin tocar el packing. El upgrade es una acción explícita del usuario en el paso de Configuración, nunca automático.
-- **Modelos `CUSTOM`**: se recomienda la dimensión power-of-two inmediatamente superior al footprint real calculado por `AutoUv` (p. ej. footprint de 100×70 → recomienda 128×128).
-- Si el `AutoUv` inicial no cabe en la resolución por defecto, se permite un upgrade explícito (mismo mecanismo x1→x2, o a la siguiente potencia de 2 para `CUSTOM`) — nunca un crecimiento silencioso.
-- El campo "Resolución de textura" del wizard IA dejó de ser vinculante desde el diseño anterior; sigue así — es, cuando mucho, la forma de disparar este upgrade explícito antes de pintar, nunca un valor que el backend reciba como parámetro ciego.
+- `AutoUv` (`AlphaAutoPackStrategy`/`StableUvStrategy`, vía el helper compartido `BoxUvMath`) calcula el footprint de CADA cara aplicando la densidad de texel elegida, empaqueta TODOS los footprints, y **el tamaño del atlas resulta de ese packing** — se elige el menor atlas permitido (potencia de 2) que pueda contenerlos. `BoxUvMath.footprintOf(cuboid, texelDensity)` gana el parámetro de densidad como entrada explícita.
+- **Presets Minecraft** (`BaseType` ≠ `CUSTOM`: `HUMANOID`, `ARACHNID`, `QUADRUPED`, `FLYING`): el usuario elige `x1` (default) o `x2` como densidad de texel en el paso de Configuración, ANTES de que exista geometría pintada. `x2` es un upgrade explícito (recalcula footprints al doble de densidad y vuelve a empaquetar) — nunca automático.
+- **Modelos `CUSTOM`**: footprint calculado a densidad estándar (`x1`, 1 texel/unidad); el atlas resultante es la potencia de 2 inmediatamente superior al footprint empaquetado.
+- Si el footprint empaquetado a la densidad vigente no cabe en la resolución actual, se permite un upgrade explícito (recalcular a `x2`, o la siguiente potencia de 2 para `CUSTOM`) — nunca un crecimiento silencioso.
+- El campo "Resolución de textura" del wizard IA dejó de ser vinculante desde el diseño anterior; sigue así — es, cuando mucho, la forma de disparar este upgrade explícito de densidad antes de pintar, nunca un valor de atlas que el backend reciba como parámetro ciego.
 
 **Estado B — DESPUÉS del primer contenido `PAINTED`** (al menos una región tiene `status=PAINTED`):
 
-- `TextureDocument.width`/`height` quedan **congelados** — inmutables mientras exista al menos una región `PAINTED` en la Revision/draft activo.
-- `StableUvStrategy` **nunca** crece el atlas para hacerle espacio a nada, bajo ninguna circunstancia.
-- Si una región nueva (Add de cuboid, o el upgrade de resolución) no cabe en el "espacio verdaderamente libre" (definición del punto 2), se lanza `UvAtlasOverflowException` — mismo tipo ya existente, mismo criterio que el caso "Add sin espacio libre".
-- El picker de resolución del wizard/editor deja de tener efecto alguno una vez cruzado este umbral — UX debe reflejar esto (deshabilitado o informativo), detalle de `ux-ui-designer` al desglosar el ticket.
+- La **densidad de texel** (`x1`/`x2`) y `TextureDocument.width`/`height` quedan **congelados** — inmutables mientras exista al menos una región `PAINTED` en la Revision/draft activo.
+- `StableUvStrategy` **nunca** crece el atlas ni recalcula la densidad de texel para hacerle espacio a nada, bajo ninguna circunstancia.
+- Si una región nueva (Add de cuboid) no cabe en el "espacio verdaderamente libre" (definición del punto 2), se lanza `UvAtlasOverflowException` — mismo tipo ya existente, mismo criterio que el caso "Add sin espacio libre".
+- El picker de resolución/densidad del wizard/editor deja de tener efecto alguno una vez cruzado este umbral — UX debe reflejar esto (deshabilitado o informativo), detalle de `ux-ui-designer` al desglosar el ticket.
 
-La transición A→B es unidireccional dentro de un mismo ciclo de vida del mob: una vez que existe `PAINTED`, no hay vuelta atrás a "atlas mutable" salvo que TODO el contenido pintado se elimine (fuera de alcance diseñar ese caso — no hay mecanismo de "despintar todo" en esta fase).
+La transición A→B es unidireccional dentro de un mismo ciclo de vida del mob: una vez que existe `PAINTED`, no hay vuelta atrás a "atlas/densidad mutable" salvo que TODO el contenido pintado se elimine (fuera de alcance diseñar ese caso — no hay mecanismo de "despintar todo" en esta fase).
 
 ### 8. Importación de PNG — contrato técnico de HU-28 (región seleccionada + atlas completo)
 
@@ -601,18 +605,18 @@ public interface ImageGenerationProvider {
 
 ### 12. Configuración del modelo de imagen de OpenAI
 
-**Corrección #8.** Ningún literal `gpt-image-1` en dominio ni en lógica de negocio. Mismo patrón de configuración ya usado para Claude (`ai.claude.model`), pero explícitamente sobreescribible por variable de entorno (a diferencia de `ai.claude.model`, que hoy es un literal fijo en `application.properties` — aquí se pide explícitamente que sea configurable):
+**Corrección #8, valor default actualizado en la ronda de VoBo final (10 sep 2026).** Ningún literal de modelo en dominio ni en lógica de negocio. Mismo patrón de configuración ya usado para Claude (`ai.claude.model`), pero explícitamente sobreescribible por variable de entorno (a diferencia de `ai.claude.model`, que hoy es un literal fijo en `application.properties` — aquí se pide explícitamente que sea configurable). El PO fija el default/documentado vigente como un **snapshot fechado** (preferido sobre un alias flotante, por reproducibilidad — mismo criterio que fijar versiones de imagen Docker por dígest en vez de `:latest`):
 
 ```properties
 # application.properties
 ai.openai.api-key=${OPENAI_API_KEY:}
-ai.openai.image-model=${OPENAI_IMAGE_MODEL:gpt-image-1}
+ai.openai.image-model=${OPENAI_IMAGE_MODEL:gpt-image-2.5-sunburst-2026-09-08}
 ai.openai.base-url=https://api.openai.com
 ```
 
 - `OpenAiImageProvider` lee `ai.openai.image-model` (vía `@Value` o `@ConfigurationProperties`, mismo mecanismo ya usado) y lo usa como el modelo en toda llamada a `/v1/images/generations` y `/v1/images/edits` — nunca hardcodeado en el cuerpo de la petición.
-- `ai_jobs.model` (columna `text not null` ya existente, sin cambio de esquema) registra el VALOR REAL configurado en el momento de la llamada — nunca un literal fijo en el código que arma la fila de `ai_jobs`. Si mañana `OPENAI_IMAGE_MODEL` cambia, jobs viejos y nuevos siguen siendo auditables porque cada uno guardó lo que realmente se usó.
-- Ambos endpoints (`/v1/images/generations` para la primera pasada sin región existente que preservar, `/v1/images/edits` con máscara/imagen base para inpaint) se mantienen según las capacidades vigentes del modelo configurado — verificar contra la documentación real de OpenAI al momento de implementar el ticket, la arquitectura se compromete a la familia de modelos vía configuración, no a una versión de string congelada aquí.
+- `ai_jobs.model` (columna `text not null` ya existente, sin cambio de esquema) persiste EXACTAMENTE el model ID real usado en cada llamada — nunca un literal fijo en el código que arma la fila de `ai_jobs`. Si `OPENAI_IMAGE_MODEL` cambia a un snapshot fechado más nuevo, jobs viejos y nuevos siguen siendo auditables porque cada uno guardó lo que realmente se usó.
+- Ambos endpoints (`/v1/images/generations` para la primera pasada sin región existente que preservar, `/v1/images/edits` con máscara/imagen base para inpaint) se mantienen según las capacidades vigentes del modelo configurado — verificar contra la documentación real de OpenAI al momento de implementar el ticket, y actualizar la documentación del proyecto con el modelo vigente en ese momento; la arquitectura se compromete a la familia de modelos vía configuración, no a un string congelado en el dominio.
 
 ### 13. Progreso de generación de textura vía SSE — esquema formal de `preview_texture_patch`
 
@@ -699,11 +703,20 @@ Ninguno de estos se reabre — se listan para que el documento sea autocontenido
 - Animación permanece "Próximamente".
 - El export final abre en Blockbench sin reparación — reforzado, no debilitado, por el punto 3 (el exportador ya no reempaqueta nada que pudiera introducir una UV distinta a la que Blockbench ya validó al guardarse).
 
-### 20. Preguntas abiertas nuevas de esta revisión (para el "Riesgos y preguntas abiertas" del documento)
+### 20. Semántica de x1/x2 — cerrada, sin preguntas pendientes
 
-Las 13 correcciones fueron precisas; solo queda genuinamente ambigua una interpretación con impacto de producto real:
+**Resuelto por el PO, 10 sep 2026 (ver punto 7).** La pregunta abierta que dejó la revisión anterior queda cerrada: `x1`/`x2` son perfiles de densidad de texel (1 o 2 texels por unidad de modelo), no una dimensión de atlas ni una tabla de dimensiones fijas por especie vanilla. El atlas es siempre una consecuencia del packing a esa densidad. Sin preguntas pendientes de esta revisión.
 
-1. **Semántica exacta de "perfiles x1/x2" para presets Minecraft (punto 7)**: este diseño asume que "x1" es la dimensión que `AlphaAutoPackStrategy` calcula para la geometría real de ESE mob (no una tabla fija por especie — el dominio actual no modela mobs vanilla específicos, solo arquetipos `HUMANOID`/`ARACHNID`/`QUADRUPED`/`FLYING`) y que "x2" es el mismo layout UV al doble de resolución lineal. La lectura alternativa —una tabla de dimensiones canónicas fijas por tipo de mob vanilla real (ej. 64×32 para esqueleto)— no encaja con el modelo de dominio actual y requeriría agregar ese concepto desde cero. Se pide confirmación explícita del PO sobre cuál de las dos lecturas es la intención antes de tickets de Épica J/HU-29, porque cambia UX del paso de Configuración del wizard.
+### 21. Aislamiento espacial de `TextureGenerationSheet` — la IA propone contenido, la app es la autoridad espacial
+
+**Nuevo — corrección #3 de la ronda de VoBo final (10 sep 2026).** El pipeline de generación por bone (punto 11) necesita garantías espaciales explícitas para que un `TextureGenerationSheet` con varios `CuboidFacePlacement` nunca permita que el contenido de una cara invada/corrompa la de otra, ni que el bitmap final incluya nada fuera de lo que la app decidió. Estas garantías son parte del Definition of Done del ticket de Épica M que implemente `TextureGenerationSheetPlanner`/`TextureSheetSlicer`/`TextureCompositorService`, verificables con tests:
+
+- `TextureGenerationSheetPlanner` calcula los `sheetRect` de todos los `CuboidFacePlacement` de un bone de forma que **nunca se solapan entre sí** — incluye gutters/padding explícitos entre caras adyacentes dentro de la sheet (constante de diseño, valor exacto a fijar en el ticket).
+- El prompt compuesto para `ImageGenerationProvider.generateTextureSheet(...)` incluye un **background/mask determinista** que delimita visualmente cada `sheetRect` para la IA — la IA propone el contenido visual dentro de esas fronteras, nunca decide dónde empieza o termina cada cara.
+- `TextureSheetSlicer` aplica **clipping obligatorio por `sheetRect`**: al recortar cada slice de la imagen generada, **solo lee píxeles dentro del rect asignado** a ese `CuboidFacePlacement` — nunca un píxel fuera de ese rect, sin excepción.
+- Cualquier "bleed" (contenido que la IA generó fuera de los límites esperados de un `sheetRect`, p. ej. por imprecisión del modelo de imagen) se **descarta silenciosamente en el slicing** — nunca se compone en el atlas, nunca dispara un error visible al usuario (la limpieza es responsabilidad determinista del slicer, no un caso de error).
+- `TextureCompositorService` compone cada slice EXCLUSIVAMENTE sobre su `atlasUvRect` de destino — **ningún píxel de un placement puede modificar otra región del atlas**, ni siquiera por accidente de redondeo (el compositor recorta/clampa al rect exacto antes de escribir).
+- En una frase que resume el principio: **la IA propone contenido visual dentro de fronteras ya decididas por la app; `TextureSheetSlicer` + `TextureCompositorService` son la única autoridad espacial** — nunca al revés.
 
 ## Diagramas
 
@@ -942,15 +955,15 @@ flowchart LR
 
 ## Riesgos y preguntas abiertas
 
-Documentadas para resolverse a nivel de ticket — no bloquean el VoBo de este documento porque no cambian alcance ni arquitectura (mismo criterio que Fase 1+2):
+Documentadas para resolverse a nivel de ticket — no bloquean el VoBo de este documento porque no cambian alcance ni arquitectura (mismo criterio que Fase 1+2). La semántica de x1/x2 (antes riesgo #1, bloqueante) fue cerrada definitivamente por el PO el 10 sep 2026 (ver Diseño técnico §7) y se retira de esta lista.
 
-1. **Semántica exacta de "perfiles x1/x2" para presets Minecraft** (Diseño técnico §7, HU-29) — este documento asume que "x1" es la dimensión que `AlphaAutoPackStrategy` calcula para la geometría real de ese mob (no una tabla fija de dimensiones canónicas por especie vanilla, concepto que el dominio actual no modela). La lectura alternativa (tabla fija por tipo de mob) cambiaría la UX del wizard y requeriría agregar ese concepto desde cero. **Requiere confirmación explícita del PO** antes de desglosar el ticket de Épica J/HU-29 — es la única pregunta genuinamente nueva que dejó la revisión de correcciones del 9 sep 2026.
-2. **Convención exacta de etiquetado de regiones UV** (HU-24) cuando los bones tienen nombres libres/arbitrarios (asignados por la IA o por el usuario, no un esqueleto fijo tipo vanilla Minecraft) — se define con `ux-ui-designer` al crear el ticket del editor.
-3. **Formatos de imagen de referencia adicionales soportados** para el análisis de material/paleta — se define en el ticket de `ai-orchestrator`/Épica M.
-4. **Límite absoluto de tamaño/resolución de textura** (tope superior, distinto de la semántica x1/x2 del punto 1) — se define en el ticket de `AutoUv`/Épica J.
-5. **Cuotas/rate-limiting y control de costo de llamadas a OpenAI** por mob y/o por sesión — extiende el riesgo #3 ya abierto en Fase 1+2 (equivalente para Claude) a este nuevo proveedor; se define en el ticket de `ai-orchestrator`.
-6. **Control de contenido/moderación** sobre las imágenes generadas por OpenAI — se define en el ticket de `ai-orchestrator`.
-7. **Límites técnicos exactos de dimensión/resolución del modelo de OpenAI configurado** (Diseño técnico §11, umbral de fallback/batching de `TextureGenerationSheet`) — se verifica contra la documentación real del proveedor al implementar el ticket de Épica M.
+1. **Convención exacta de etiquetado de regiones UV** (HU-24) cuando los bones tienen nombres libres/arbitrarios (asignados por la IA o por el usuario, no un esqueleto fijo tipo vanilla Minecraft) — se define con `ux-ui-designer` al crear el ticket del editor.
+2. **Formatos de imagen de referencia adicionales soportados** para el análisis de material/paleta — se define en el ticket de `ai-orchestrator`/Épica M.
+3. **Límite absoluto de tamaño/resolución de textura** (tope superior, distinto de la densidad de texel x1/x2) — se define en el ticket de `AutoUv`/Épica J.
+4. **Cuotas/rate-limiting y control de costo de llamadas a OpenAI** por mob y/o por sesión — extiende el riesgo #3 ya abierto en Fase 1+2 (equivalente para Claude) a este nuevo proveedor; se define en el ticket de `ai-orchestrator`.
+5. **Control de contenido/moderación** sobre las imágenes generadas por OpenAI — se define en el ticket de `ai-orchestrator`.
+6. **Límites técnicos exactos de dimensión/resolución del modelo de OpenAI configurado** (Diseño técnico §11, umbral de fallback/batching de `TextureGenerationSheet`) — se verifica contra la documentación real del proveedor al implementar el ticket de Épica M. Valor de configuración vigente al momento de este documento: `OPENAI_IMAGE_MODEL=gpt-image-2.5-sunburst-2026-09-08` (snapshot fechado, ver Diseño técnico §12) — verificar que siga siendo el snapshot recomendado al implementar.
+7. **Constante exacta de gutter/padding entre caras** dentro de un `TextureGenerationSheet` (Diseño técnico §21) — valor a fijar en el ticket de Épica M, no cambia el principio de aislamiento ya decidido.
 8. **Retención/GC de bitmaps huérfanos en MinIO** (incluye ahora también `UvReservation` sin reclamo de espacio) — sin política de poda este ciclo (mismo criterio que la retención de `mob_revisions` en Fase 1+2).
 
 ## Impacto estimado
@@ -960,7 +973,7 @@ Lista tentativa de tickets a desglosar con el skill `nuevo-ticket` tras el VoBo 
 1. `MobProjectModel`: extensión de `UvRegion`/`UvRegionStatus` + `UvReservation`/`UvReservationReason` nuevos, contratos TS + DTOs Java + JSON Schemas actualizados en `contracts/` (HU-24, HU-29, HU-33/34/35).
 2. `UvLayoutSelector` + `StableUvStrategy` (considera regiones y reservas) + `BoxUvMath` compartido + `PaintedRegionResizeConfirmationRequiredException` — inyectado SOLO en `GeometryEngine.apply`/`GeometryPlannerService`/`AiGeometryEditPlannerService`, nunca en el exportador (HU-33, HU-34, HU-35).
 3. `POST /api/mobs/{mobId}/geometry/apply` (nuevo `MobGeometryController`/`project/geometry`) + wiring del flujo de confirmación en el editor manual, con preview local en `pointermove` y commit único en `pointerup` (HU-33).
-4. Resolución de atlas en dos estados: recomendación/upgrade explícito x1↔x2 (Minecraft) o power-of-two (custom) antes de pintar, congelado + `UvAtlasOverflowException` después (HU-29) — **bloqueado en la confirmación del PO sobre semántica x1/x2 (Riesgos #1)**.
+4. Resolución de atlas: densidad de texel x1/x2 (1 o 2 texels/unidad) alimentando el footprint de `AutoUv` — `BoxUvMath.footprintOf` gana el parámetro de densidad, atlas resultante del packing (Minecraft) o power-of-two (custom), congelado + `UvAtlasOverflowException` tras el primer `PAINTED` (HU-29).
 5. Persistencia content-addressed de textura con el backend como autoridad de hash (`PUT /api/mobs/{mobId}/texture` decodifica/valida/calcula SHA-256 server-side), dirty-check por `storageKey`, flush obligatorio antes de crear Revision + migración `V3__ai_jobs_texture_job_types.sql` (HU-30, HU-31, HU-39).
 6. `TexturePatchCommand` (Undo/Redo de textura por patches, nunca snapshot completo) + `textureEditorStore.ts` con pila independiente — brush/erase/fill/paste/import producen patches acotados a su `rect` (HU-27, HU-32).
 7. Editor de textura/UV manual: canvas 2D/OffscreenCanvas, herramientas (brush/eraser/fill/eyedropper/selection/copy-paste/grid) (HU-27).
@@ -969,7 +982,7 @@ Lista tentativa de tickets a desglosar con el skill `nuevo-ticket` tras el VoBo 
 10. Pantalla del editor de textura (mockup 07), tab "Textura" pasa a funcional (HU-41).
 11. `OpenAiImageProvider` con modelo configurable (`OPENAI_IMAGE_MODEL`, nunca hardcodeado) — interfaz extendida `ImageGenerationProvider.generateTextureSheet` + `MockImageProvider` real de tests (HU-39, HU-40).
 12. `TexturePlan` (contrato + validación de schema) vía `StructuredReasoningProvider`/Claude (HU-36).
-13. `TextureGenerationSheetPlanner` + `TextureSheetSlicer` + `TextureCompositorService` — generación por bone (una sola llamada de imagen cuando es posible, fallback/batching explícito si no) (HU-37, HU-40).
+13. `TextureGenerationSheetPlanner` + `TextureSheetSlicer` + `TextureCompositorService` — generación por bone (una sola llamada de imagen cuando es posible, fallback/batching explícito si no) (HU-37, HU-40). **DoD obligatorio de aislamiento espacial** (Diseño técnico §21, verificable con tests): placements sin solapes + gutters entre caras, clipping obligatorio por `sheetRect`, bleed fuera de rect descartado en el slicing, ningún píxel de un placement modifica otra región del atlas — la IA propone contenido visual, el slicer/compositor son la única autoridad espacial.
 14. Pipeline completo de generación/regeneración de textura por IA + SSE con nuevos `stage` y esquema formal de `preview_texture_patch` (umbral inline/asset) + diff Antes/Después + Apply/Reject **atómico** con conflicto 409 (HU-36, HU-37, HU-38).
 15. Pantalla del generador IA de textura (mockup 08) (HU-42).
 16. `BBModelExporterV5`/`V4`: cambio de firma a `export(model)` — nunca invoca ninguna `UvLayoutStrategy`, serializa `model.uv()` tal cual + `LegacyUvNormalizationService` (paso explícito previo, solo para revisiones legacy seguras) + fixtures nuevas contra Blockbench real con textura pintada (HU-43).
