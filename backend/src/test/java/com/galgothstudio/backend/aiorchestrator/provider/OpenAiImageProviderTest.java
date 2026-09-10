@@ -109,6 +109,54 @@ class OpenAiImageProviderTest {
 		serverBox[0].verify();
 	}
 
+	/**
+	 * Ticket 059 (hallazgo real, verificación en vivo contra `studio-dev`):
+	 * la API real de OpenAI rechazó un sheet real de 58x8 con
+	 * {@code "Invalid size '58x8'. Width and height must both be divisible
+	 * by 16."} -- ningún test anterior de esta clase lo detectó porque
+	 * TODOS usaban dimensiones ya múltiplos de 16 (64x32/128x128/16x16),
+	 * el mismo patrón de fixture-no-realista ya encontrado en
+	 * `TextureGenerationSheetPlanner`. Este test usa las dimensiones
+	 * EXACTAS del caso real que falló.
+	 */
+	@Test
+	void generateTextureSheet_con_dimensiones_no_multiplo_de_16_las_redondea_hacia_arriba_AC_hallazgo_real() {
+		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];
+		OpenAiImageProvider provider = newProviderWithMockServer(serverBox, TEST_API_KEY, GENERIC_MODEL);
+
+		serverBox[0]
+				.expect(requestTo(BASE_URL + "/v1/images/generations"))
+				.andExpect(jsonPath("$.size").value("64x16")) // 58->64, 8->16
+				.andRespond(withSuccess(
+						"""
+						{"data":[{"b64_json":"%s"}]}
+						""".formatted(base64Png(new byte[] {1})),
+						MediaType.APPLICATION_JSON));
+
+		provider.generateTextureSheet(new TextureGenerationSheetRequest("prompt", null, 58, 8, null));
+
+		serverBox[0].verify();
+	}
+
+	@Test
+	void generateTextureSheet_con_dimensiones_ya_multiplo_de_16_no_las_altera() {
+		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];
+		OpenAiImageProvider provider = newProviderWithMockServer(serverBox, TEST_API_KEY, GENERIC_MODEL);
+
+		serverBox[0]
+				.expect(requestTo(BASE_URL + "/v1/images/generations"))
+				.andExpect(jsonPath("$.size").value("32x32"))
+				.andRespond(withSuccess(
+						"""
+						{"data":[{"b64_json":"%s"}]}
+						""".formatted(base64Png(new byte[] {1})),
+						MediaType.APPLICATION_JSON));
+
+		provider.generateTextureSheet(new TextureGenerationSheetRequest("prompt", null, 32, 32, null));
+
+		serverBox[0].verify();
+	}
+
 	@Test
 	void generateTextureSheet_con_bytes_de_referencia_vacios_se_trata_como_sin_referencia() {
 		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];

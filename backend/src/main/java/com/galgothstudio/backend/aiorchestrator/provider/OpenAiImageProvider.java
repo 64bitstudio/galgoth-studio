@@ -86,11 +86,43 @@ public class OpenAiImageProvider implements ImageGenerationProvider {
 	@Override
 	public byte[] generateTextureSheet(TextureGenerationSheetRequest request) {
 		String prompt = composePrompt(request.prompt(), request.style());
-		String size = request.sheetWidth() + "x" + request.sheetHeight();
+		String size = sizeParam(request.sheetWidth(), request.sheetHeight());
 		if (request.referenceImageBytes() != null && request.referenceImageBytes().length > 0) {
 			return callEdits(prompt, size, request.referenceImageBytes());
 		}
 		return callGenerations(prompt, size);
+	}
+
+	/**
+	 * Hallazgo real (ticket 059, verificación en vivo contra `studio-dev`):
+	 * la API real de OpenAI rechaza tamaños no múltiplos de 16 (confirmado
+	 * con la respuesta real de la API: {@code "Invalid size '58x8'. Width
+	 * and height must both be divisible by 16."} para un sheet de una
+	 * cara pequeña de {@code TextureGenerationSheetPlanner}) -- ningún
+	 * test de esta clase lo detectó porque, por casualidad, TODOS usaban
+	 * dimensiones ya múltiplos de 16 (64x32/128x128/16x16), el mismo
+	 * patrón de "el fixture de test no refleja la forma real de los
+	 * datos" ya documentado en {@code TextureGenerationSheetPlanner}.
+	 *
+	 * <p>Se redondea CADA lado hacia arriba al múltiplo de 16 más cercano
+	 * -- nunca se ajusta {@code sheet.sheetWidth()/sheetHeight()} ni
+	 * ningún otro punto del pipeline (`ShelfBinPacker`/`CuboidFacePlacement`
+	 * siguen pensando en las dimensiones EXACTAS del sheet): la imagen
+	 * resultante puede llegar más grande que lo pedido, y eso es seguro
+	 * por diseño -- {@link com.galgothstudio.backend.aiorchestrator.texture.TextureSheetSlicer}
+	 * ya recorta cada placement por su {@code sheetRect} exacto de la imagen decodificada, sea cual
+	 * sea su tamaño real (ver su Javadoc, "cualquier bleed... queda
+	 * simplemente fuera de la subimagen pedida") -- ningún placement
+	 * excede nunca `sheetWidth`/`sheetHeight` (garantía de
+	 * `ShelfBinPacker`), así que el redondeo hacia arriba nunca recorta
+	 * contenido real, solo agrega margen inerte que el slicer ya ignora.
+	 */
+	private static String sizeParam(int width, int height) {
+		return roundUpToMultipleOf16(width) + "x" + roundUpToMultipleOf16(height);
+	}
+
+	private static int roundUpToMultipleOf16(int value) {
+		return ((value + 15) / 16) * 16;
 	}
 
 	/** `style` no es un parámetro propio de `/v1/images/*` para esta familia de modelos (ver Javadoc de {@link ImageGenerationProvider.TextureGenerationSheetRequest}) -- se agrega como instrucción de texto explícita al final del prompt. */
