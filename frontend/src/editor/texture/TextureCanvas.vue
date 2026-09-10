@@ -247,7 +247,7 @@ function beginStroke(point: { x: number; y: number }): void {
   strokeWorking = strokeBeforeFull.slice()
   strokeBounds = createEmptyBounds()
   lastPoint = point
-  stampSquare(strokeWorking, atlas.width, atlas.height, point.x, point.y, brushSize.value, activeColor(), strokeBounds)
+  stampSquare({ pixels: strokeWorking, width: atlas.width, height: atlas.height }, point, brushSize.value, activeColor(), strokeBounds)
   redraw(strokeWorking)
 }
 
@@ -256,7 +256,14 @@ function continueStroke(point: { x: number; y: number }): void {
   if (!atlas || !strokeWorking || !lastPoint) {
     return
   }
-  stampLine(strokeWorking, atlas.width, atlas.height, lastPoint.x, lastPoint.y, point.x, point.y, brushSize.value, activeColor(), strokeBounds)
+  stampLine(
+    { pixels: strokeWorking, width: atlas.width, height: atlas.height },
+    lastPoint,
+    point,
+    brushSize.value,
+    activeColor(),
+    strokeBounds,
+  )
   lastPoint = point
   redraw(strokeWorking)
 }
@@ -267,7 +274,7 @@ function finishStroke(): void {
   if (atlas && strokeBeforeFull && strokeWorking && rect) {
     const before = readRectFrom(strokeBeforeFull, atlas.width, rect)
     const after = readRectFrom(strokeWorking, atlas.width, rect)
-    textureEditorStore.recordPatch(rect, before, after) // ÚNICA llamada de todo el trazo
+    textureEditorStore.recordPatch(rect, before, after) // ÚNICA llamada del trazo completo
     // Llamada explícita (no vía watcher): un shallowRef de Pinia mutado
     // in-place + triggerRef() no siempre re-dispara un watch() externo
     // de forma confiable entre el store y este componente -- se refresca
@@ -290,7 +297,7 @@ function handlePointerDown(event: PointerEvent): void {
   }
 
   if (activeTool.value === 'eyedropper') {
-    const color = pickColorAt(atlas.pixels, atlas.width, atlas.height, point.x, point.y)
+    const color = pickColorAt(atlas, point.x, point.y)
     if (color) {
       activeColorHex.value = rgbaToHex(color)
     }
@@ -298,7 +305,7 @@ function handlePointerDown(event: PointerEvent): void {
   }
 
   if (activeTool.value === 'fill') {
-    const result = computeFloodFill(atlas.pixels, atlas.width, atlas.height, point.x, point.y, hexToRgba(activeColorHex.value))
+    const result = computeFloodFill(atlas, point, hexToRgba(activeColorHex.value))
     if (result) {
       textureEditorStore.recordPatch(result.rect, result.beforePixels, result.afterPixels) // ÚNICA llamada del fill
       syncDataTexture()
@@ -348,22 +355,24 @@ function handlePointerUp(event: PointerEvent): void {
         </select>
       </label>
 
-      <div class="texture-canvas__tool-row" role="group" aria-label="Herramientas de pintado">
+      <fieldset class="texture-canvas__tool-row">
+        <legend class="texture-canvas__sr-only">Herramientas de pintado</legend>
         <IconButton label="Pincel" :active="activeTool === 'brush'" @click="activeTool = 'brush'"><IconBrush /></IconButton>
         <IconButton label="Borrador" :active="activeTool === 'eraser'" @click="activeTool = 'eraser'"><IconEraser /></IconButton>
         <IconButton label="Cubeta" :active="activeTool === 'fill'" @click="activeTool = 'fill'"><IconBucket /></IconButton>
         <IconButton label="Selector de color (eyedropper)" :active="activeTool === 'eyedropper'" @click="activeTool = 'eyedropper'"><IconEyedropper /></IconButton>
         <IconButton label="Cuadrícula" :active="showGrid" @click="showGrid = !showGrid"><IconGrid /></IconButton>
-      </div>
+      </fieldset>
 
       <label class="texture-canvas__field" aria-label="Color activo">
         Color activo
         <input v-model="activeColorHex" type="color" class="texture-canvas__color-input" aria-label="Color activo" />
       </label>
 
-      <div class="texture-canvas__palette" role="group" aria-label="Paleta de colores">
+      <fieldset class="texture-canvas__palette">
+        <legend class="texture-canvas__sr-only">Paleta de colores</legend>
         <button v-for="color in PALETTE" :key="color" type="button" class="texture-canvas__swatch" :class="{ 'texture-canvas__swatch--active': color.toLowerCase() === activeColorHex.toLowerCase() }" :style="{ backgroundColor: color }" :aria-label="swatchLabel(color)" :aria-pressed="color.toLowerCase() === activeColorHex.toLowerCase()" @click="activeColorHex = color"></button>
-      </div>
+      </fieldset>
 
       <label class="texture-canvas__field" aria-label="Tamaño de pincel en píxeles del atlas">
         Tamaño de pincel (píxeles del atlas)
@@ -373,7 +382,13 @@ function handlePointerUp(event: PointerEvent): void {
 
     <div class="texture-canvas__stage-wrapper">
       <div class="texture-canvas__stage" :style="{ aspectRatio: `${atlasWidth} / ${atlasHeight}` }">
-        <canvas ref="canvasRef" :width="atlasWidth" :height="atlasHeight" class="texture-canvas__bitmap" role="img" aria-label="Atlas de textura del mob" @pointerdown="handlePointerDown" @pointermove="handlePointerMove" @pointerup="handlePointerUp" @pointercancel="handlePointerUp"></canvas>
+        <!-- S6819/S6843: sin `role="img"` -- este canvas es una superficie de
+             dibujo interactiva (pointerdown/move/up), no una imagen estática,
+             así que asignarle el rol "img" es semánticamente incorrecto y
+             Sonar lo marca (rol no-interactivo sobre un elemento con
+             handlers de puntero reales). `aria-label` describe el contenido
+             igual, sin reclamar un rol que no le corresponde. -->
+        <canvas ref="canvasRef" :width="atlasWidth" :height="atlasHeight" class="texture-canvas__bitmap" aria-label="Atlas de textura del mob -- superficie de pintado" @pointerdown="handlePointerDown" @pointermove="handlePointerMove" @pointerup="handlePointerUp" @pointercancel="handlePointerUp"></canvas>
         <svg class="texture-canvas__overlay" :viewBox="`0 0 ${atlasWidth} ${atlasHeight}`" preserveAspectRatio="none" aria-hidden="true">
           <g v-if="showGrid" class="texture-canvas__grid">
             <line v-for="x in gridLinesX" :key="`gx-${x}`" :x1="x" y1="0" :x2="x" :y2="atlasHeight" />
@@ -439,6 +454,16 @@ function handlePointerUp(event: PointerEvent): void {
   cursor: pointer;
 }
 
+/* `<fieldset>` real (S6819/S6843, en vez de role="group" sobre un div) --
+   resetea el borde/padding por defecto del navegador para conservar
+   exactamente el layout que ya tenían estos contenedores como <div>. */
+.texture-canvas__tool-row,
+.texture-canvas__palette {
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
 .texture-canvas__tool-row {
   display: flex;
   flex-wrap: wrap;
@@ -449,6 +474,21 @@ function handlePointerUp(event: PointerEvent): void {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* `<legend>` de cada fieldset -- visible para lectores de pantalla, fuera
+   del flujo visual (el nombre del grupo ya es evidente por las herramientas
+   que contiene, mismo criterio que un aria-label ya usaba antes). */
+.texture-canvas__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .texture-canvas__swatch {
