@@ -8,10 +8,12 @@
  * SOLO en memoria de este componente -- se descarta al desmontar, nunca
  * toca `useDraftModelStore`/`mob_drafts`/`mob_revisions` (AC #2).
  *
- * Solo 4 etapas reales (a diferencia de las 6 del mockup -- ver la nota
- * en `GenerationStage.java` del backend: "Preparando UV"/"Generando
- * textura" no existen este ciclo, UV es determinista y la textura
- * pintada es Fase 3).
+ * Ticket 038 (bugfix del progreso IA): 6 etapas reales -- las 4
+ * originales más `preparando_resultado`/`validando_geometria`, que el
+ * backend ahora emite de verdad ANTES de `completado` (ver
+ * `MobGenerationService.runPipeline`). Las otras 2 del mockup
+ * ("Preparando UV"/"Generando textura") siguen sin existir a propósito:
+ * UV es determinista y la textura pintada es Fase 3, fuera de alcance.
  *
  * Al completar (ticket 030), emite `completed` con el `jobId` real --
  * `AiMobWizard.vue` es quien busca el resultado (`GET /api/jobs/{jobId}/result`)
@@ -23,6 +25,19 @@
  * SSE, nunca un dato nuevo del backend) para que "Resultado" pueda
  * mostrar el modelo real en vez de solo números -- puramente frontend,
  * sin tocar ningún contrato/endpoint.
+ *
+ * Ticket 038 -- recuperación tras refresh de página: el `jobId` de una
+ * generación en curso se persiste en `sessionStorage` (clave por mob) en
+ * cuanto se conoce. Si este componente se vuelve a montar (refresh real
+ * del browser, `AiMobWizard.vue` restaura `step='generation'` con el
+ * mismo mob) y encuentra un `jobId` pendiente para este `mobId`, NO
+ * dispara un `POST /generate` nuevo (evita duplicar el job) -- reconecta
+ * directo al stream existente. El backend siempre re-envía el backlog
+ * completo desde `seq=1` a una conexión SIN `Last-Event-ID` (`GenerationJobController`),
+ * así que reconectar reconstruye el estado real completo (etapa/%/preview)
+ * reproduciendo los mismos eventos por el mismo `handleProgressEvent` de
+ * siempre -- nunca arranca visualmente desde 0% si el job ya había
+ * avanzado de verdad.
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { BaseType } from '../../projects/mobsApi'
@@ -34,18 +49,12 @@ import GButton from '../../design-system/components/GButton.vue'
 import IconCheck from '../../design-system/icons/IconCheck.vue'
 import IconWarning from '../../design-system/icons/IconWarning.vue'
 import GenerationPreviewViewport from '../GenerationPreviewViewport.vue'
+import { STAGE_ORDER, outcomeForStage, findStageIndex, stageStatusFor, type GenerationOutcome } from '../generationStages'
 
 const props = defineProps<{ mobId: string; projectId: string; mobName: string; baseType: BaseType }>()
 const emit = defineEmits<{ 'back-to-project': []; completed: [jobId: string, finalModel: MobProjectModel] }>()
 
-const STAGE_ORDER = [
-  { key: 'analizando_referencia', label: 'Analizando referencia…' },
-  { key: 'detectando_silueta', label: 'Detectando silueta…' },
-  { key: 'creando_rig', label: 'Creando rig…' },
-  { key: 'generando_cuboides', label: 'Generando cuboides…' },
-] as const
-
-type Outcome = 'running' | 'completed' | 'failed' | 'cancelled'
+type Outcome = GenerationOutcome
 
 const jobId = ref<string | null>(null)
 const currentPipelineStage = ref<string>(STAGE_ORDER[0].key)
@@ -57,33 +66,60 @@ const startError = ref<string | null>(null)
 const previewModel = ref<MobProjectModel>(emptyPreviewModel(props.mobId, props.projectId, props.mobName, props.baseType))
 const cancelRequested = ref(false)
 const cancelling = ref(false)
+/** Ticket 038 -- true mientras el `EventSource` reporta un error de conexión y el navegador todavía no reestableció el stream (reintenta solo, `Last-Event-ID`). */
+const reconnecting = ref(false)
 
 let eventSource: EventSource | null = null
 const seenSeqs = new Set<number>()
 
-const currentStageIndex = computed(() => STAGE_ORDER.findIndex((s) => s.key === currentPipelineStage.value))
-const hasGeometry = computed(() => previewModel.value.cuboids.length > 0)
-
-function stageStatus(index: number): 'done' | 'current' | 'pending' {
-  if (outcome.value !== 'running') {
-    return index <= currentStageIndex.value ? 'done' : 'pending'
-  }
-  if (index < currentStageIndex.value) {
-    return 'done'
-  }
-  return index === currentStageIndex.value ? 'current' : 'pending'
+/** Ticket 038 -- una entrada por mob alcanza (un wizard activo por pestaña). */
+function jobStorageKey(mobId: string): string {
+  return `galgoth:ai-job:${mobId}`
 }
 
-/** `null` mientras la etapa no es una de las 3 terminales -- evita un ternario anidado (Sonar S3358) al traducir `stage` a `Outcome`. */
-function outcomeForStage(stage: string): Outcome | null {
-  if (stage === 'completado') return 'completed'
-  if (stage === 'fallido') return 'failed'
-  if (stage === 'cancelado') return 'cancelled'
-  return null
+function persistJobId(id: string): void {
+  try {
+    sessionStorage.setItem(jobStorageKey(props.mobId), id)
+  } catch {
+    // Modo privado/cuota agotada -- nunca bloquea la generación, solo se pierde la recuperación tras refresh.
+  }
+}
+
+function readPersistedJobId(): string | null {
+  try {
+    return sessionStorage.getItem(jobStorageKey(props.mobId))
+  } catch {
+    return null
+  }
+}
+
+function clearPersistedJobId(): void {
+  try {
+    sessionStorage.removeItem(jobStorageKey(props.mobId))
+  } catch {
+    // Ver persistJobId.
+  }
+}
+
+/** Logging de debug estructurado, SOLO en dev (ticket 038) -- `import.meta.env.DEV` es `false` en cualquier build de producción de Vite, nunca llega a un usuario real. */
+function debugLog(message: string): void {
+  if (import.meta.env.DEV) {
+    console.log(message)
+  }
+}
+
+const currentStageIndex = computed(() => findStageIndex(currentPipelineStage.value))
+const hasGeometry = computed(() => previewModel.value.cuboids.length > 0)
+const currentStageHint = computed(() => STAGE_ORDER[currentStageIndex.value]?.hint ?? null)
+
+function stageStatus(index: number): 'done' | 'current' | 'pending' {
+  return stageStatusFor(index, currentStageIndex.value, outcome.value)
 }
 
 function handleProgressEvent(raw: MessageEvent): void {
   const event = JSON.parse(raw.data) as GenerationEvent
+  debugLog(`[AI JOB EVENT] seq=${event.seq} stage=${event.stage} progress=${event.progressPct}`)
+  reconnecting.value = false // cualquier evento real (backlog o en vivo) confirma que el stream está sano de nuevo.
   if (seenSeqs.has(event.seq)) {
     return // reconexión con solape de backlog/en-vivo, ver GenerationJobController -- idempotente
   }
@@ -107,6 +143,7 @@ function handleProgressEvent(raw: MessageEvent): void {
       failureMessage.value = event.message
     }
     closeStream()
+    clearPersistedJobId() // el job llegó a un estado terminal -- ya no hay nada que resumir tras un refresh.
     if (terminalOutcome === 'completed' && jobId.value) {
       emit('completed', jobId.value, previewModel.value)
     }
@@ -120,20 +157,58 @@ function closeStream(): void {
   eventSource = null
 }
 
+function openEventStream(id: string): void {
+  eventSource = new EventSource(eventsUrl(id))
+  eventSource.addEventListener('progress', handleProgressEvent)
+  eventSource.onerror = () => {
+    // El navegador reintenta solo (Last-Event-ID, ver GenerationJobController)
+    // -- un error de red transitorio no es un fallo del job. Mientras el
+    // job sigue "running" y el stream no reestableció, se lo comunica al
+    // usuario en vez de dejar la pantalla congelada en silencio sin
+    // ninguna señal (el propio bug original de este ticket).
+    if (outcome.value === 'running') {
+      reconnecting.value = true
+    }
+  }
+}
+
 async function beginGeneration(): Promise<void> {
+  startError.value = null
+  const persistedJobId = readPersistedJobId()
+  if (persistedJobId) {
+    // Ticket 038 -- refresh de página con un job ya en curso para este mob:
+    // reconectar en vez de arrancar un `POST /generate` nuevo (evitaría
+    // duplicar el job real). El backlog completo llega igual por la
+    // reconexión (ver el comentario de cabecera de este archivo).
+    debugLog(`[AI JOB] connected jobId=${persistedJobId} (resumido tras refresh)`)
+    jobId.value = persistedJobId
+    openEventStream(persistedJobId)
+    return
+  }
   try {
     const response = await startGeneration(props.mobId)
     jobId.value = response.jobId
-    eventSource = new EventSource(eventsUrl(response.jobId))
-    eventSource.addEventListener('progress', handleProgressEvent)
-    eventSource.onerror = () => {
-      // El navegador reintenta solo (Last-Event-ID) -- un error de red
-      // transitorio no es un fallo del job, solo se refleja si el propio
-      // stream nunca vuelve a avanzar (sin timeout artificial acá).
-    }
+    persistJobId(response.jobId)
+    debugLog(`[AI JOB] connected jobId=${response.jobId}`)
+    openEventStream(response.jobId)
   } catch (error) {
     startError.value = error instanceof ApiError ? error.message : 'No se pudo iniciar la generación.'
   }
+}
+
+/** Ticket 038 -- estado de error explícito (AC del bugfix): reintentar dispara una generación COMPLETAMENTE nueva (el job fallido nunca se reutiliza), reseteando el estado local completo primero. */
+async function retryGeneration(): Promise<void> {
+  closeStream()
+  clearPersistedJobId()
+  seenSeqs.clear()
+  jobId.value = null
+  currentPipelineStage.value = STAGE_ORDER[0].key
+  currentMessage.value = null
+  progressPct.value = 0
+  outcome.value = 'running'
+  failureMessage.value = null
+  previewModel.value = emptyPreviewModel(props.mobId, props.projectId, props.mobName, props.baseType)
+  await beginGeneration()
 }
 
 function requestCancel(): void {
@@ -201,14 +276,24 @@ onBeforeUnmount(closeStream)
           </div>
           <progress class="generation-step__progress" :value="progressPct" max="100">{{ progressPct }}%</progress>
           <p v-if="currentMessage" class="generation-step__message">{{ currentMessage }}</p>
+          <p v-if="outcome === 'running' && currentStageHint" class="generation-step__hint">{{ currentStageHint }}</p>
         </div>
 
+        <p v-if="outcome === 'running' && reconnecting" class="generation-step__notice">
+          <span class="generation-step__spinner" /> Reconectando al proceso…
+        </p>
         <p v-if="outcome === 'completed'" class="generation-step__notice generation-step__notice--ok">
           <IconCheck :size="16" /> Generación completada.
         </p>
-        <p v-else-if="outcome === 'failed'" class="generation-step__notice generation-step__notice--error">
-          <IconWarning :size="16" /> La generación falló: {{ failureMessage }}
-        </p>
+        <div v-else-if="outcome === 'failed'" class="generation-step__failed">
+          <p class="generation-step__notice generation-step__notice--error">
+            <IconWarning :size="16" /> La generación falló: {{ failureMessage }}
+          </p>
+          <div class="generation-step__failed-actions">
+            <GButton variant="primary" @click="retryGeneration">Reintentar</GButton>
+            <GButton variant="secondary" @click="$emit('back-to-project')">Volver a configuración</GButton>
+          </div>
+        </div>
         <p v-else-if="outcome === 'cancelled'" class="generation-step__notice">Generación cancelada -- no se guardó ningún resultado.</p>
 
         <div v-if="outcome === 'running' && !cancelRequested" class="generation-step__actions">
@@ -222,13 +307,7 @@ onBeforeUnmount(closeStream)
           </div>
         </div>
 
-        <GButton
-          v-if="outcome === 'failed' || outcome === 'cancelled'"
-          variant="secondary"
-          @click="$emit('back-to-project')"
-        >
-          Ir al proyecto
-        </GButton>
+        <GButton v-if="outcome === 'cancelled'" variant="secondary" @click="$emit('back-to-project')"> Ir al proyecto </GButton>
       </div>
 
       <div class="generation-step__panel generation-step__panel--preview">
@@ -455,6 +534,24 @@ onBeforeUnmount(closeStream)
   margin: 0;
   color: var(--muted);
   font-size: var(--text-sm);
+}
+
+.generation-step__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-style: italic;
+}
+
+.generation-step__failed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.generation-step__failed-actions {
+  display: flex;
+  gap: var(--space-2);
 }
 
 .generation-step__notice {

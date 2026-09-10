@@ -11,7 +11,9 @@ import com.galgothstudio.backend.domain.geometry.GeometryValidationException;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.ModelIntent;
 import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import org.springframework.stereotype.Service;
 
 /**
@@ -109,6 +111,48 @@ public class GeometryPlannerService {
 		}
 
 		return new RawOperationsResult(operations, response);
+	}
+
+	/**
+	 * Ticket 038 -- variante streaming de {@link #requestOperations}: en
+	 * vez de esperar el array completo, consume la respuesta del
+	 * proveedor incrementalmente ({@link StructuredReasoningProvider#reasonStreaming})
+	 * y entrega cada {@link GeometryOperation} real a {@code onOperation}
+	 * EN CUANTO el modelo termina de emitirla -- nunca es un replay
+	 * post-hoc de una lista ya completa. Con un proveedor que no soporta
+	 * streaming real (Mock), {@code reasonStreaming} cae a su default (una
+	 * sola entrega con la respuesta completa) y este método sigue
+	 * funcionando idéntico, solo sin el beneficio de incrementalidad.
+	 */
+	public RawOperationsResult planStreaming(ModelIntent modelIntent, Consumer<GeometryOperation> onOperation) {
+		String userPrompt;
+		try {
+			userPrompt = "ModelIntent:\n" + objectMapper.writeValueAsString(modelIntent) + "\n\nDevolvé el array de operaciones.";
+		} catch (Exception e) {
+			throw new IllegalStateException("No se pudo serializar un ModelIntent ya validado.", e);
+		}
+
+		ReasoningRequest request = new ReasoningRequest(SYSTEM_PROMPT, userPrompt, PROMPT_VERSION, SCHEMA_VERSION);
+		List<GeometryOperation> collected = new ArrayList<>();
+		StreamingOperationsParser parser = new StreamingOperationsParser(objectMapper, op -> {
+			collected.add(op);
+			onOperation.accept(op);
+		});
+
+		AiProviderResponse response;
+		try {
+			response = reasoningProvider.reasonStreaming(request, parser::feed);
+		} catch (StreamingOperationParseException e) {
+			throw new InvalidGeometryProposalException(
+					"El StructuredReasoningProvider (streaming) devolvió una operación inválida: " + e.getMessage(), null, e);
+		}
+
+		if (collected.isEmpty()) {
+			throw new InvalidGeometryProposalException(
+					"El StructuredReasoningProvider (streaming) no devolvió ninguna operación válida.", response, null);
+		}
+
+		return new RawOperationsResult(List.copyOf(collected), response);
 	}
 
 	/** Aplicación final CON UV (ticket 006) de un batch ya obtenido de {@link #requestOperations} -- nunca vuelve a llamar al proveedor. */

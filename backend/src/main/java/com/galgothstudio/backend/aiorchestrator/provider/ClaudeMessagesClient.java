@@ -1,10 +1,17 @@
 package com.galgothstudio.backend.aiorchestrator.provider;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -45,6 +52,8 @@ public class ClaudeMessagesClient {
 	 * un rig humanoide puede ser largo).
 	 */
 	private static final int MAX_TOKENS = 16000;
+	/** Nombre real del campo JSON (`body.put`) y del `stop_reason` que Anthropic devuelve -- una sola constante, no 3 literales repetidos (Sonar S1192). */
+	private static final String MAX_TOKENS_FIELD = "max_tokens";
 
 	private final RestClient restClient;
 	private final ObjectMapper objectMapper;
@@ -87,9 +96,98 @@ public class ClaudeMessagesClient {
 		return call(systemPrompt, userPrompt);
 	}
 
-	private String call(String systemPrompt, Object userContent) {
+	/**
+	 * Ticket 038 -- misma llamada que {@link #callWithText}, pero con
+	 * {@code "stream": true} (API de mensajes de Anthropic): en vez de
+	 * esperar el bloque completo, lee la respuesta como SSE y entrega cada
+	 * fragmento de texto real (`content_block_delta`/`text_delta`) al
+	 * callback EN CUANTO llega -- nunca inventa ni interpola nada entre
+	 * fragmentos. Filtra explícitamente los deltas de tipo
+	 * `thinking_delta` (ver el hallazgo real de `MAX_TOKENS` en esta
+	 * misma clase: `claude-sonnet-5` emite un bloque de razonamiento
+	 * extendido ANTES del bloque de texto real) -- mismo criterio que
+	 * {@link #extractText} en el modo no-streaming, solo que acá filtrando
+	 * delta por delta en vez de bloque por bloque al final.
+	 */
+	public String callWithTextStreaming(String systemPrompt, String userPrompt, Consumer<String> onTextDelta) {
 		requireApiKeyConfigured();
+		ObjectNode body = buildBody(systemPrompt, userPrompt);
+		body.put("stream", true);
 
+		log.info("Llamando a Anthropic Messages API (streaming) -- model={}", model);
+
+		StringBuilder fullText = new StringBuilder();
+		String[] stopReasonBox = new String[1];
+		try {
+			restClient
+					.post()
+					.uri("/v1/messages")
+					.header("x-api-key", apiKey)
+					.header("anthropic-version", ANTHROPIC_VERSION)
+					.contentType(MediaType.APPLICATION_JSON)
+					.body(body)
+					.exchange((req, res) -> {
+						readSseStream(res.getBody(), fullText, stopReasonBox, onTextDelta);
+						return null;
+					});
+		} catch (RestClientException e) {
+			throw new AiProviderException("Llamada de streaming a la API de Anthropic falló: " + e.getMessage(), e);
+		}
+
+		if (fullText.isEmpty()) {
+			if (MAX_TOKENS_FIELD.equals(stopReasonBox[0])) {
+				throw new AiProviderException(
+						"Respuesta de Anthropic (streaming) truncada por max_tokens antes de emitir ningún bloque de "
+								+ "texto (probable razonamiento extendido consumiendo todo el presupuesto) -- subir MAX_TOKENS.");
+			}
+			throw new AiProviderException("Respuesta de streaming de Anthropic sin ningún bloque de texto.");
+		}
+		return stripMarkdownCodeFence(fullText.toString());
+	}
+
+	/** Lee línea por línea el `text/event-stream` crudo -- formato SSE estándar (`event: <tipo>` / `data: <json>`, eventos separados por línea en blanco). */
+	private void readSseStream(InputStream body, StringBuilder fullText, String[] stopReasonBox, Consumer<String> onTextDelta) {
+		try (BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
+			String line;
+			String currentEvent = null;
+			while ((line = reader.readLine()) != null) {
+				if (line.startsWith("event:")) {
+					currentEvent = line.substring("event:".length()).trim();
+				} else if (line.startsWith("data:")) {
+					handleSseDataLine(currentEvent, line.substring("data:".length()).trim(), fullText, stopReasonBox, onTextDelta);
+				}
+			}
+		} catch (IOException e) {
+			throw new AiProviderException("Error leyendo el stream SSE de Anthropic: " + e.getMessage(), e);
+		}
+	}
+
+	private void handleSseDataLine(String eventType, String data, StringBuilder fullText, String[] stopReasonBox, Consumer<String> onTextDelta) {
+		if ("error".equals(eventType)) {
+			throw new AiProviderException("Anthropic devolvió un evento de error en el stream: " + data);
+		}
+		try {
+			if ("content_block_delta".equals(eventType)) {
+				JsonNode delta = objectMapper.readTree(data).path("delta");
+				if ("text_delta".equals(delta.path("type").asText())) {
+					String textDelta = delta.path("text").asText();
+					fullText.append(textDelta);
+					onTextDelta.accept(textDelta);
+				}
+				// "thinking_delta" (razonamiento extendido) se ignora a propósito
+				// -- mismo criterio que extractText() en el modo no-streaming.
+			} else if ("message_delta".equals(eventType)) {
+				String stopReason = objectMapper.readTree(data).path("delta").path("stop_reason").asText(null);
+				if (stopReason != null) {
+					stopReasonBox[0] = stopReason;
+				}
+			}
+		} catch (JsonProcessingException e) {
+			throw new AiProviderException("No se pudo parsear un evento SSE de Anthropic: " + data, e);
+		}
+	}
+
+	private ObjectNode buildBody(String systemPrompt, Object userContent) {
 		ObjectNode message = objectMapper.createObjectNode();
 		message.put("role", "user");
 		message.putPOJO("content", userContent);
@@ -99,9 +197,15 @@ public class ClaudeMessagesClient {
 
 		ObjectNode body = objectMapper.createObjectNode();
 		body.put("model", model);
-		body.put("max_tokens", MAX_TOKENS);
+		body.put(MAX_TOKENS_FIELD, MAX_TOKENS);
 		body.put("system", systemPrompt);
 		body.set("messages", messages);
+		return body;
+	}
+
+	private String call(String systemPrompt, Object userContent) {
+		requireApiKeyConfigured();
+		ObjectNode body = buildBody(systemPrompt, userContent);
 
 		log.info("Llamando a Anthropic Messages API -- model={}", model);
 
@@ -143,7 +247,7 @@ public class ClaudeMessagesClient {
 		}
 		if (text.isEmpty()) {
 			String stopReason = response.path("stop_reason").asText("");
-			if ("max_tokens".equals(stopReason)) {
+			if (MAX_TOKENS_FIELD.equals(stopReason)) {
 				// Hallazgo real (ticket 028): el modelo consumió el presupuesto
 				// completo de max_tokens en un bloque "thinking" antes de llegar
 				// a emitir texto -- un error específico ahorra tener que releer

@@ -6,12 +6,20 @@ package com.galgothstudio.backend.aiorchestrator.progress;
  * cual como el campo `stage` de `ai_job_events`/`GenerationEventView`,
  * consumidos por el frontend como texto plano.
  *
- * <p>El mockup 03 del wizard (ticket 027) muestra 6 etapas, incluyendo
- * "Preparando UV…"/"Generando textura…" -- esas dos NO existen acá a
- * propósito: UV es determinista/automática (`AutoUv`, 006, nunca
- * decidida por IA) y la textura pintada es Fase 3, explícitamente fuera
- * de alcance de este ciclo (ver `docs/definiciones/galgoth-studio-mvp.md`).
- * Solo las 4 etapas que el AC de este ticket nombra existen de verdad.
+ * <p>El mockup 03 del wizard (ticket 027) muestra 7 etapas, incluyendo
+ * "Preparando UV…"/"Generando textura…"/"Optimizando modelo…" -- esas
+ * TRES NO existen acá a propósito: UV es determinista/automática
+ * (`AutoUv`, 006, nunca decidida por IA) y la textura pintada es Fase 3,
+ * explícitamente fuera de alcance de este ciclo (ver
+ * `docs/definiciones/galgoth-studio-mvp.md`).
+ *
+ * <p><b>Ticket 038 (bugfix del progreso IA)</b>: agrega
+ * {@link #VALIDANDO_GEOMETRIA}/{@link #PREPARANDO_RESULTADO} como dos
+ * etapas reales más, insertadas en el pipeline real ANTES de
+ * `completado` (ver `MobGenerationService.runPipeline`) -- ya no son
+ * solo etiquetas del mockup sin contraparte real: envuelven trabajo que
+ * el pipeline ya hacía en silencio (aplicar UV final, correr
+ * `FmmCompatibilityValidator`).
  */
 public final class GenerationStage {
 
@@ -19,6 +27,8 @@ public final class GenerationStage {
 	public static final String DETECTANDO_SILUETA = "detectando_silueta";
 	public static final String CREANDO_RIG = "creando_rig";
 	public static final String GENERANDO_CUBOIDES = "generando_cuboides";
+	public static final String PREPARANDO_RESULTADO = "preparando_resultado";
+	public static final String VALIDANDO_GEOMETRIA = "validando_geometria";
 	public static final String COMPLETADO = "completado";
 	public static final String FALLIDO = "fallido";
 	public static final String CANCELADO = "cancelado";
