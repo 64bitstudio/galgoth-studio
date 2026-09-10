@@ -117,7 +117,10 @@ class OpenAiImageProviderTest {
 	 * TODOS usaban dimensiones ya múltiplos de 16 (64x32/128x128/16x16),
 	 * el mismo patrón de fixture-no-realista ya encontrado en
 	 * `TextureGenerationSheetPlanner`. Este test usa las dimensiones
-	 * EXACTAS del caso real que falló.
+	 * EXACTAS del caso real que falló -- el resultado final es 64x32, no
+	 * 64x16, porque el REDONDEO a múltiplo de 16 por sí solo produce un
+	 * ratio 4:1 que la misma API real rechaza por separado (ver ticket 060
+	 * / el siguiente test, aspect ratio máximo 3:1).
 	 */
 	@Test
 	void generateTextureSheet_con_dimensiones_no_multiplo_de_16_las_redondea_hacia_arriba_AC_hallazgo_real() {
@@ -126,7 +129,7 @@ class OpenAiImageProviderTest {
 
 		serverBox[0]
 				.expect(requestTo(BASE_URL + "/v1/images/generations"))
-				.andExpect(jsonPath("$.size").value("64x16")) // 58->64, 8->16
+				.andExpect(jsonPath("$.size").value("64x32")) // 58->64, 8->16->32 (ratio 4:1 excedía el máximo 3:1)
 				.andRespond(withSuccess(
 						"""
 						{"data":[{"b64_json":"%s"}]}
@@ -134,6 +137,80 @@ class OpenAiImageProviderTest {
 						MediaType.APPLICATION_JSON));
 
 		provider.generateTextureSheet(new TextureGenerationSheetRequest("prompt", null, 58, 8, null));
+
+		serverBox[0].verify();
+	}
+
+	/**
+	 * Ticket 060 (segundo hallazgo real, misma verificación en vivo): con
+	 * 58x8 ya redondeado a múltiplo de 16 (64x16), la API real rechazó la
+	 * llamada con {@code "Invalid size '64x16'. The maximum supported
+	 * aspect ratio is 3:1."} -- este test aísla específicamente el ajuste
+	 * de aspect ratio (dimensiones YA múltiplos de 16, para no mezclar los
+	 * dos hallazgos en un solo caso).
+	 */
+	@Test
+	void generateTextureSheet_con_aspect_ratio_mayor_a_3_a_1_agranda_el_lado_mas_chico_AC_hallazgo_real() {
+		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];
+		OpenAiImageProvider provider = newProviderWithMockServer(serverBox, TEST_API_KEY, GENERIC_MODEL);
+
+		serverBox[0]
+				.expect(requestTo(BASE_URL + "/v1/images/generations"))
+				.andExpect(jsonPath("$.size").value("64x32")) // 64x16 (ratio 4:1) -> alto agrandado a 32 (ratio 2:1)
+				.andRespond(withSuccess(
+						"""
+						{"data":[{"b64_json":"%s"}]}
+						""".formatted(base64Png(new byte[] {1})),
+						MediaType.APPLICATION_JSON));
+
+		provider.generateTextureSheet(new TextureGenerationSheetRequest("prompt", null, 64, 16, null));
+
+		serverBox[0].verify();
+	}
+
+	/** Mismo ajuste que el test anterior, orientación invertida (alto > ancho) -- confirma que el clamp de aspect ratio es simétrico. */
+	@Test
+	void generateTextureSheet_con_aspect_ratio_mayor_a_3_a_1_en_vertical_agranda_el_ancho() {
+		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];
+		OpenAiImageProvider provider = newProviderWithMockServer(serverBox, TEST_API_KEY, GENERIC_MODEL);
+
+		serverBox[0]
+				.expect(requestTo(BASE_URL + "/v1/images/generations"))
+				.andExpect(jsonPath("$.size").value("32x64")) // 16x64 (ratio 1:4) -> ancho agrandado a 32 (ratio 1:2)
+				.andRespond(withSuccess(
+						"""
+						{"data":[{"b64_json":"%s"}]}
+						""".formatted(base64Png(new byte[] {1})),
+						MediaType.APPLICATION_JSON));
+
+		provider.generateTextureSheet(new TextureGenerationSheetRequest("prompt", null, 16, 64, null));
+
+		serverBox[0].verify();
+	}
+
+	/**
+	 * Un ratio 3:1 exacto (el límite mismo) NO debe alterarse -- confirma
+	 * que el clamp es "> 3", no "3 inclusive". Nota: la API real solo
+	 * confirmó que 4:1 (64x16) se rechaza; que 3:1 exacto SÍ se acepta es
+	 * una lectura razonable de "maximum supported aspect ratio is 3:1"
+	 * (límite inclusive), no verificada en vivo -- si un futuro intento
+	 * real muestra lo contrario, este test/la constante deben ajustarse.
+	 */
+	@Test
+	void generateTextureSheet_con_aspect_ratio_exactamente_3_a_1_no_lo_altera() {
+		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];
+		OpenAiImageProvider provider = newProviderWithMockServer(serverBox, TEST_API_KEY, GENERIC_MODEL);
+
+		serverBox[0]
+				.expect(requestTo(BASE_URL + "/v1/images/generations"))
+				.andExpect(jsonPath("$.size").value("48x16"))
+				.andRespond(withSuccess(
+						"""
+						{"data":[{"b64_json":"%s"}]}
+						""".formatted(base64Png(new byte[] {1})),
+						MediaType.APPLICATION_JSON));
+
+		provider.generateTextureSheet(new TextureGenerationSheetRequest("prompt", null, 48, 16, null));
 
 		serverBox[0].verify();
 	}

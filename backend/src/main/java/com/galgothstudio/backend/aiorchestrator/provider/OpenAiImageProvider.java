@@ -116,13 +116,36 @@ public class OpenAiImageProvider implements ImageGenerationProvider {
 	 * excede nunca `sheetWidth`/`sheetHeight` (garantía de
 	 * `ShelfBinPacker`), así que el redondeo hacia arriba nunca recorta
 	 * contenido real, solo agrega margen inerte que el slicer ya ignora.
+	 *
+	 * <p><b>Ticket 060 (segundo hallazgo real, misma verificación en
+	 * vivo)</b>: redondear a múltiplo de 16 no bastó -- el siguiente
+	 * intento real con esos mismos 58x8 (redondeados a 64x16, ratio 4:1)
+	 * lo rechazó la API con {@code "Invalid size '64x16'. The maximum
+	 * supported aspect ratio is 3:1."} Mismo criterio que arriba: nunca se
+	 * ENCOGE el lado más grande (perdería contenido real), se AGRANDA el
+	 * lado más chico hasta que el ratio quede dentro de 3:1 -- otra vez
+	 * margen inerte que {@code TextureSheetSlicer} ignora, nunca un
+	 * recorte de placements reales.
 	 */
+	private static final int MAX_ASPECT_RATIO = 3;
+
 	private static String sizeParam(int width, int height) {
-		return roundUpToMultipleOf16(width) + "x" + roundUpToMultipleOf16(height);
+		int w = roundUpToMultipleOf16(width);
+		int h = roundUpToMultipleOf16(height);
+		if (w > h * MAX_ASPECT_RATIO) {
+			h = roundUpToMultipleOf16(ceilDiv(w, MAX_ASPECT_RATIO));
+		} else if (h > w * MAX_ASPECT_RATIO) {
+			w = roundUpToMultipleOf16(ceilDiv(h, MAX_ASPECT_RATIO));
+		}
+		return w + "x" + h;
 	}
 
 	private static int roundUpToMultipleOf16(int value) {
 		return ((value + 15) / 16) * 16;
+	}
+
+	private static int ceilDiv(int numerator, int denominator) {
+		return (numerator + denominator - 1) / denominator;
 	}
 
 	/** `style` no es un parámetro propio de `/v1/images/*` para esta familia de modelos (ver Javadoc de {@link ImageGenerationProvider.TextureGenerationSheetRequest}) -- se agrega como instrucción de texto explícita al final del prompt. */
