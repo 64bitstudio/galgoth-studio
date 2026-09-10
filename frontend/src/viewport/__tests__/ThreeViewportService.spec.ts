@@ -1,3 +1,4 @@
+import { DataTexture, Mesh, MeshStandardMaterial } from 'three'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Cuboid, MobProjectModel } from '../../domain/MobProjectModel'
 
@@ -229,6 +230,36 @@ describe('ThreeViewportService', () => {
     const secondMesh = service.transformControls.object
     expect(secondMesh).not.toBe(firstMesh) // buildMobGroup siempre crea meshes nuevos
     expect(secondMesh).toBeDefined()
+  })
+
+  it('ticket 047: setModel forwardea atlasTexture a buildMobGroup -- el mesh usa esa textura como map', () => {
+    const model = emptyModel('mob-uno')
+    const cuboid: Cuboid = {
+      id: 'cube-1',
+      name: 'cube-1',
+      boneId: 'bone-1',
+      from: [-1, -1, -1],
+      to: [1, 1, 1],
+      origin: [0, 0, 0],
+      rotation: [0, 0, 0],
+      faces: {
+        north: { uv: [0, 0, 0, 0], texture: null },
+        south: { uv: [0, 0, 0, 0], texture: null },
+        east: { uv: [0, 0, 0, 0], texture: null },
+        west: { uv: [0, 0, 0, 0], texture: null },
+        up: { uv: [0, 0, 0, 0], texture: null },
+        down: { uv: [0, 0, 0, 0], texture: null },
+      },
+    }
+    const modelWithCuboid = { ...model, cuboids: [cuboid] }
+    const atlasTexture = new DataTexture(new Uint8ClampedArray(64 * 64 * 4), 64, 64)
+
+    service.setModel(modelWithCuboid, null, atlasTexture)
+
+    const mobGroup = service.scene.children.find((c) => c.name === 'mob-uno')!
+    const cubeMesh = mobGroup.children.find((c) => c.name === 'cube-1') as InstanceType<typeof Mesh>
+    const material = cubeMesh.material as InstanceType<typeof MeshStandardMaterial>
+    expect(material.map).toBe(atlasTexture)
   })
 
   it('ticket 018: setTransformMode delega en transformControls.setMode', () => {

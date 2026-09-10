@@ -178,6 +178,16 @@ Pasada de producto/UX pedida explícitamente por el PO tras la fidelidad visual 
 - **Jerarquía**: nombres truncados ahora muestran el nombre completo en hover (`title` nativo sobre el `<span>` de texto -- caso apropiado para `title`, a diferencia de un icon button: el texto completo ya está en el DOM, accesible a un lector de pantalla independientemente del recorte visual).
 - Ver `## Hecho` del ticket `039` para la lista completa de hallazgos/decisiones.
 
+## Editor de textura/UV manual -- canvas y herramientas (ticket `047`, HU-24/HU-26/HU-27)
+
+`TextureCanvas.vue` (`frontend/src/editor/texture/`): pixel editor real sobre el atlas del mob, montado sobre el mecanismo de Undo/Redo del ticket `046` (`textureEditorStore`). No ensambla la pantalla completa del mockup 07 (eso es el ticket `050`, que montará este componente en el tab "Textura", hoy "Próximamente") ni incluye selección cruzada cuboid-UV (`049`) ni import de PNG (`048`) -- ver `## Hecho` del ticket `047` para el detalle completo, decisiones y hallazgos.
+
+- **Dos capas superpuestas**: un `<canvas>` bitmap (resolución intrínseca exacta al atlas, escalado solo por CSS para visibilidad -- nunca un zoom interactivo) y un `<svg>` overlay `pointer-events: none` (guía de regiones UV, resaltado de la región elegida, grid) que nunca toca los píxeles reales del atlas -- la grilla no puede filtrarse al bitmap por construcción.
+- **Herramientas**: Pincel/Borrador (comparten `stampSquare`/`stampLine` de `pixelTools.ts`, Borrador = mismo trazo con alfa 0), Cubeta (flood-fill real, `computeFloodFill`), Eyedropper, color picker + paleta fija, toggle de cuadrícula. Toda la manipulación de píxeles es pura (sin `<canvas>`/DOM) -- jsdom no implementa un contexto 2D real, así que el pintado pixel-perfect solo es testable escribiendo bytes RGBA directo sobre el `Uint8ClampedArray` del atlas.
+- **Un solo `TexturePatchCommand` por trazo/fill**: cada trazo de Pincel/Borrador pinta sobre una copia de trabajo entre `pointerdown`/`pointerup` y llama `textureEditorStore.recordPatch()` UNA sola vez al soltar; la Cubeta es atómica.
+- **Preview 3D real por primera vez**: `buildMobScene.ts`/`ThreeViewportService.setModel` ganan un parámetro opcional `atlasTexture` (`THREE.DataTexture` envolviendo directo el buffer del atlas) + `textureUvMapping.ts` (mapeo UV real por cara, sin tocar `materialIndex`/picking -- eso es `049`) -- antes de este ticket, el viewport SIEMPRE mostraba un color gris plano, nunca la textura real.
+- Selector de región (`<select>`): etiqueta cada región como `"${cuboid.name} (${face})"`, misma convención que el modal de pérdida de pintura de `MobEditor.vue` (`043`).
+
 ## Pantallas previstas (12, ver mockups/00_all_views.png del build pack)
 
 1. Inicio / Mis proyectos
