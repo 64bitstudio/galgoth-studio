@@ -382,12 +382,12 @@ function handlePointerUp(event: PointerEvent): void {
 
     <div class="texture-canvas__stage-wrapper">
       <div class="texture-canvas__stage" :style="{ aspectRatio: `${atlasWidth} / ${atlasHeight}` }">
-        <!-- S6819/S6843: sin `role="img"` -- este canvas es una superficie de
-             dibujo interactiva (pointerdown/move/up), no una imagen estática,
-             así que asignarle el rol "img" es semánticamente incorrecto y
-             Sonar lo marca (rol no-interactivo sobre un elemento con
-             handlers de puntero reales). `aria-label` describe el contenido
-             igual, sin reclamar un rol que no le corresponde. -->
+        <!-- S6819/S6843: este canvas es una superficie de dibujo interactiva
+             (pointerdown/move/up), no una imagen estática -- por eso no
+             lleva un rol de tipo imagen: sería semánticamente incorrecto
+             asignar un rol no interactivo a un elemento con handlers de
+             puntero reales. El aria-label describe el contenido igual,
+             sin reclamar un rol que no le corresponde. -->
         <canvas ref="canvasRef" :width="atlasWidth" :height="atlasHeight" class="texture-canvas__bitmap" aria-label="Atlas de textura del mob -- superficie de pintado" @pointerdown="handlePointerDown" @pointermove="handlePointerMove" @pointerup="handlePointerUp" @pointercancel="handlePointerUp"></canvas>
         <svg class="texture-canvas__overlay" :viewBox="`0 0 ${atlasWidth} ${atlasHeight}`" preserveAspectRatio="none" aria-hidden="true">
           <g v-if="showGrid" class="texture-canvas__grid">
