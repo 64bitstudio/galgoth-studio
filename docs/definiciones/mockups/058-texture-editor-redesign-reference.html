@@ -1,0 +1,1041 @@
+<title>Galgoth Texture Editor</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+  /* ---- Galgoth Studio Visual Contract -- tokens tomados 1:1 de
+     frontend/src/design-system/tokens/tokens.css. Producto oscuro por
+     diseño (sin modo claro en su alcance) -- este mockup hereda esa
+     decisión, no la reinterpreta. ---- */
+  :root {
+    --bg: #0b0f14;
+    --panel: #111820;
+    --surface: #171f29;
+    --surface-2: #1c2631;
+    --border: #293540;
+
+    --text: #f3f6f8;
+    --muted: #93a0aa;
+
+    --accent: #48e5a0;
+    --accent-hover: #65f2b5;
+    --accent-ink: #06120d;
+    --accent-soft: rgba(72, 229, 160, 0.12);
+
+    --danger: #f46b6b;
+    --danger-soft: rgba(244, 107, 107, 0.12);
+    --warning: #f2c66d;
+    --warning-soft: rgba(242, 198, 109, 0.12);
+
+    --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+    --text-xs: 12px;
+    --text-sm: 13px;
+    --text-base: 14px;
+    --text-md: 15px;
+    --text-lg: 18px;
+
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 10px;
+    --border-width: 1px;
+
+    --shadow-md: 0 4px 16px -4px rgba(0, 0, 0, 0.4);
+    --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+    --hit-target-min: 40px;
+    --transition-fast: 120ms ease;
+
+    --scrollbar-thumb: #33404d;
+    --scrollbar-thumb-hover: #465564;
+
+    --toolbar-h: 52px;
+    --header-h: 52px;
+    --statusbar-h: 30px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  button { font-family: inherit; }
+  ::selection { background: var(--accent-soft); color: var(--text); }
+
+  ::-webkit-scrollbar { width: 12px; height: 12px; }
+  ::-webkit-scrollbar-track { background: var(--panel); }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 999px; border: 3px solid var(--panel); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+  ::-webkit-scrollbar-corner { background: var(--panel); }
+
+  .app { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+  .header {
+    height: var(--header-h); flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 var(--space-5); border-bottom: var(--border-width) solid var(--border); background: var(--panel);
+  }
+  .breadcrumb { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--muted); }
+  .breadcrumb strong { color: var(--text); font-weight: 600; }
+  .breadcrumb .sep { color: var(--border); }
+
+  .tabs { display: flex; gap: var(--space-1); background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-md); padding: 3px; }
+  .tab { appearance: none; border: none; background: transparent; color: var(--muted); font-size: var(--text-sm); font-weight: 600; padding: var(--space-2) var(--space-4); border-radius: var(--radius-sm); cursor: pointer; transition: var(--transition-fast); min-height: 32px; }
+  .tab:hover { color: var(--text); }
+  .tab--active { background: var(--accent); color: var(--accent-ink); }
+  .tab--disabled { cursor: not-allowed; color: #4d5a66; }
+  .tab--disabled:hover { color: #4d5a66; }
+  .tab-note { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; margin-left: var(--space-1); opacity: 0.8; }
+
+  .toolbar { flex: 0 0 auto; min-height: var(--toolbar-h); display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); background: var(--panel); border-bottom: var(--border-width) solid var(--border); flex-wrap: wrap; }
+  .tb-group { display: flex; align-items: center; gap: 2px; background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-md); padding: 3px; }
+  .tb-sep { width: var(--border-width); align-self: stretch; margin: var(--space-1) 2px; background: var(--border); }
+  .tb-grow { flex: 1 1 auto; }
+
+  .tbtn { appearance: none; border: none; background: transparent; color: var(--muted); width: 36px; height: 36px; border-radius: var(--radius-sm); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; position: relative; transition: var(--transition-fast); }
+  .tbtn:hover { color: var(--text); background: var(--surface-2); }
+  .tbtn:focus-visible { box-shadow: var(--focus-ring); outline: none; }
+  .tbtn--active { color: var(--accent-ink); background: var(--accent); }
+  .tbtn--active:hover { color: var(--accent-ink); background: var(--accent-hover); }
+  .tbtn svg { width: 18px; height: 18px; }
+
+  .tbtn[data-tip]::after {
+    content: attr(data-tip); position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+    background: var(--surface-2); color: var(--text); border: var(--border-width) solid var(--border);
+    padding: 3px 8px; border-radius: var(--radius-sm); font-size: var(--text-xs); white-space: nowrap;
+    opacity: 0; pointer-events: none; transition: opacity 100ms ease 200ms; z-index: 40;
+  }
+  .tbtn[data-tip]:hover::after { opacity: 1; }
+
+  .btn { appearance: none; border: var(--border-width) solid transparent; cursor: pointer; display: inline-flex; align-items: center; gap: var(--space-2); height: 36px; padding: 0 var(--space-3); border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: 600; transition: var(--transition-fast); white-space: nowrap; }
+  .btn svg { width: 16px; height: 16px; flex: none; }
+  .btn:focus-visible { box-shadow: var(--focus-ring); outline: none; }
+  .btn--secondary { background: var(--surface); border-color: var(--border); color: var(--text); }
+  .btn--secondary:hover { border-color: var(--accent); }
+  .btn--primary { background: var(--accent); color: var(--accent-ink); }
+  .btn--primary:hover { background: var(--accent-hover); }
+  .btn--ai { background: var(--surface); border-color: var(--accent); color: var(--accent); }
+  .btn--ai:hover { background: var(--accent-soft); }
+
+  .gsel { position: relative; }
+  .gsel__trigger { appearance: none; display: inline-flex; align-items: center; gap: var(--space-2); height: 36px; padding: 0 var(--space-2) 0 var(--space-3); background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-md); color: var(--text); font-size: var(--text-sm); font-weight: 500; cursor: pointer; transition: var(--transition-fast); min-width: 0; }
+  .gsel__trigger:hover { border-color: #3a4956; background: var(--surface-2); }
+  .gsel__trigger:focus-visible { box-shadow: var(--focus-ring); outline: none; }
+  .gsel--open .gsel__trigger { border-color: var(--accent); background: var(--surface-2); }
+  .gsel__value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gsel__chevron { width: 14px; height: 14px; color: var(--muted); flex: none; transition: transform 140ms ease; }
+  .gsel--open .gsel__chevron { transform: rotate(180deg); color: var(--accent); }
+
+  .gsel__list { position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; min-width: 100%; background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-md); padding: var(--space-1); box-shadow: var(--shadow-md); max-height: 280px; overflow-y: auto; display: none; flex-direction: column; gap: 1px; }
+  .gsel--open .gsel__list { display: flex; }
+  .gsel__opt { appearance: none; border: none; background: transparent; text-align: left; color: var(--text); font-size: var(--text-sm); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+  .gsel__opt:hover, .gsel__opt--focus { background: var(--surface-2); }
+  .gsel__opt--active { color: var(--accent); font-weight: 600; background: var(--accent-soft); }
+  .gsel__opt--active .gsel__check { opacity: 1; }
+  .gsel__check { margin-left: auto; width: 14px; height: 14px; opacity: 0; flex: none; }
+
+  .zoomctl { display: flex; align-items: center; gap: 2px; }
+  .zoomctl .gsel__trigger { min-width: 74px; justify-content: space-between; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  .savestat { display: flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--muted); padding: 0 var(--space-2); }
+  .savestat__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+  .savestat--saved .savestat__dot { background: var(--accent); }
+  .savestat--dirty .savestat__dot { background: var(--warning); }
+  .savestat--saving .savestat__dot { background: var(--accent); animation: pulse 900ms ease-in-out infinite; }
+  .savestat--error .savestat__dot { background: var(--danger); }
+  .savestat--error { color: var(--danger); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+  .main { flex: 1; display: grid; grid-template-columns: 1fr minmax(300px, 360px); min-height: 0; }
+
+  .canvas-panel { position: relative; min-width: 0; display: flex; flex-direction: column; background: var(--bg); border-right: var(--border-width) solid var(--border); }
+  .canvas-viewport {
+    flex: 1; overflow: auto; position: relative;
+    background-image: linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 24px 24px; cursor: crosshair;
+  }
+  .canvas-viewport.is-panning { cursor: grabbing; }
+  .canvas-viewport.pan-ready { cursor: grab; }
+
+  .canvas-stage { position: absolute; top: var(--space-6); left: var(--space-6); box-shadow: 0 0 0 1px var(--border), var(--shadow-md); }
+  .canvas-stage canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+  .canvas-grid { position: absolute; inset: 0; pointer-events: none; }
+  .canvas-region { position: absolute; border: 2px dashed var(--accent); background: var(--accent-soft); pointer-events: none; border-radius: 1px; }
+  .canvas-hint {
+    position: absolute; bottom: var(--space-3); left: 50%; transform: translateX(-50%);
+    background: rgba(17, 24, 32, 0.92); border: var(--border-width) solid var(--border); color: var(--muted);
+    font-size: var(--text-xs); padding: 6px 12px; border-radius: 999px; pointer-events: none;
+    display: flex; align-items: center; gap: 6px; opacity: 0; transition: opacity 200ms ease;
+  }
+  .canvas-hint.is-visible { opacity: 1; }
+  .canvas-hint kbd { background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-family: var(--font-mono); font-size: 10px; }
+
+  .preview-panel { display: flex; flex-direction: column; background: var(--panel); min-width: 0; }
+  .preview-head { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-4); border-bottom: var(--border-width) solid var(--border); flex: 0 0 auto; }
+  .preview-head h2 { font-size: var(--text-sm); font-weight: 600; margin: 0; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .preview-stage { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; background: radial-gradient(ellipse at 50% 30%, #16202b 0%, var(--panel) 70%); perspective: 900px; min-height: 0; cursor: grab; touch-action: none; }
+  .preview-stage.is-dragging { cursor: grabbing; }
+  .cube-rig { width: 128px; height: 128px; transform-style: preserve-3d; will-change: transform; }
+  .cube-face { position: absolute; width: 128px; height: 128px; image-rendering: pixelated; image-rendering: crisp-edges; background-repeat: no-repeat; border: 1px solid rgba(0,0,0,0.35); background-color: #2b2f33; }
+  .cube-face--front  { transform: translateZ(64px); }
+  .cube-face--back   { transform: rotateY(180deg) translateZ(64px); }
+  .cube-face--right  { transform: rotateY(90deg) translateZ(64px); }
+  .cube-face--left   { transform: rotateY(-90deg) translateZ(64px); }
+  .cube-face--top    { transform: rotateX(90deg) translateZ(64px); }
+  .cube-face--bottom { transform: rotateX(-90deg) translateZ(64px); }
+  .preview-foot { display: flex; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-top: var(--border-width) solid var(--border); flex: 0 0 auto; }
+  .ghost-btn { appearance: none; background: transparent; border: none; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-xs); padding: 4px 8px; border-radius: var(--radius-sm); }
+  .ghost-btn:hover { color: var(--text); background: var(--surface-2); }
+  .ghost-btn svg { width: 14px; height: 14px; }
+
+  .statusbar { flex: 0 0 auto; height: var(--statusbar-h); display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-4); background: var(--panel); border-top: var(--border-width) solid var(--border); font-size: var(--text-xs); color: var(--muted); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .statusbar .sep { color: var(--border); font-family: var(--font-sans); }
+  .statusbar strong { color: var(--text); font-weight: 600; }
+
+  .swatches { display: flex; gap: 5px; padding: var(--space-2); flex-wrap: wrap; width: 164px; }
+  .swatch { width: 20px; height: 20px; border-radius: var(--radius-sm); cursor: pointer; border: 2px solid transparent; padding: 0; }
+  .swatch--active { border-color: var(--accent); }
+  .palette-custom-row { display: flex; align-items: center; gap: 6px; padding: 4px var(--space-2) 6px; border-top: var(--border-width) solid var(--border); margin-top: 2px; }
+  .swatch--custom { background: conic-gradient(from 180deg, #f46b6b, #f2c66d, #48e5a0, #3f6f8f, #a35bd6, #f46b6b); position: relative; flex: none; }
+  .swatch--custom::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.3); }
+  .hex-input { flex: 1; min-width: 0; height: 26px; padding: 0 8px; background: var(--surface-2); border: var(--border-width) solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-family: var(--font-mono); font-size: 12px; }
+  .hex-input:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+  .hex-input:hover { border-color: #3a4956; }
+
+  .scrim { position: fixed; inset: 0; background: rgba(6, 10, 14, 0.6); z-index: 90; opacity: 0; pointer-events: none; transition: opacity 160ms ease; }
+  .scrim.is-open { opacity: 1; pointer-events: auto; }
+  .ai-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: 92vw; background: var(--panel); border-left: var(--border-width) solid var(--border); z-index: 91; transform: translateX(100%); transition: transform 220ms ease; display: flex; flex-direction: column; box-shadow: -8px 0 32px rgba(0,0,0,0.5); }
+  .ai-drawer.is-open { transform: translateX(0); }
+  .ai-head { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4); border-bottom: var(--border-width) solid var(--border); }
+  .ai-head h2 { font-size: var(--text-md); margin: 0; display: flex; align-items: center; gap: var(--space-2); }
+  .ai-head h2 svg { width: 18px; height: 18px; color: var(--accent); }
+  .ai-close { appearance: none; background: transparent; border: none; color: var(--muted); cursor: pointer; width: 32px; height: 32px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; }
+  .ai-close:hover { background: var(--surface-2); color: var(--text); }
+  .ai-body { flex: 1; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
+  .ai-field label { display: block; font-size: var(--text-xs); color: var(--muted); margin-bottom: var(--space-1); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+  .ai-field .gsel__trigger { width: 100%; justify-content: space-between; }
+  .ai-diff { border: var(--border-width) solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
+  .ai-diff-img { aspect-ratio: 1; background: repeating-conic-gradient(#20293380 0% 25%, transparent 0% 50%) 0 0/16px 16px, var(--bg); display: flex; align-items: center; justify-content: center; }
+  .ai-diff-img canvas { image-rendering: pixelated; width: 100%; height: 100%; }
+  .ai-toggle { display: flex; border-bottom: var(--border-width) solid var(--border); }
+  .ai-toggle button { flex: 1; background: transparent; border: none; color: var(--muted); padding: var(--space-2); font-size: var(--text-sm); font-weight: 600; cursor: pointer; }
+  .ai-toggle button.is-active { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+  .ai-foot { display: flex; gap: var(--space-2); padding: var(--space-4); border-top: var(--border-width) solid var(--border); }
+  .ai-foot .btn { flex: 1; justify-content: center; }
+  .ai-progress { display: none; flex-direction: column; gap: var(--space-2); }
+  .ai-progress.is-active { display: flex; }
+  .ai-stage { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--muted); }
+  .ai-stage--done { color: var(--text); }
+  .ai-stage svg { width: 14px; height: 14px; flex: none; }
+  .ai-stage--current svg { color: var(--accent); animation: spin2 1s linear infinite; }
+  .ai-stage--done svg { color: var(--accent); }
+  @keyframes spin2 { to { transform: rotate(360deg); } }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+</style>
+
+<div class="app">
+
+  <header class="header">
+    <div class="breadcrumb">
+      <span>Galgoth Studio</span>
+      <span class="sep">/</span>
+      <strong id="mobName">TEST</strong>
+    </div>
+    <nav class="tabs" aria-label="Secciones del editor">
+      <button type="button" class="tab">Modelo</button>
+      <button type="button" class="tab tab--active" aria-current="page">Textura</button>
+      <button type="button" class="tab tab--disabled" disabled>Animación<span class="tab-note">Próximamente</span></button>
+    </nav>
+  </header>
+
+  <div class="toolbar" id="toolbar">
+
+    <fieldset class="tb-group" style="border:none;padding:3px;margin:0;display:flex;">
+      <legend class="sr-only">Región UV</legend>
+      <div class="gsel" id="selRegion" style="min-width:168px;">
+        <button type="button" class="gsel__trigger" aria-haspopup="listbox" aria-expanded="false"><span class="gsel__value">Todas las caras</span><svg class="gsel__chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 7.5l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="gsel__list" role="listbox">
+          <button type="button" class="gsel__opt gsel__opt--active" role="option" aria-selected="true">Todas las caras<svg class="gsel__check" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button type="button" class="gsel__opt" role="option">Cabeza (frente)<svg class="gsel__check" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button type="button" class="gsel__opt" role="option">Cabeza (arriba)<svg class="gsel__check" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button type="button" class="gsel__opt" role="option">Torso (frente)<svg class="gsel__check" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button type="button" class="gsel__opt" role="option">Brazo izq. (frente)<svg class="gsel__check" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button type="button" class="gsel__opt" role="option">Pierna der. (frente)<svg class="gsel__check" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="tb-sep"></div>
+
+    <fieldset class="tb-group" id="toolGroup" style="border:none;padding:3px;margin:0;display:flex;">
+      <legend class="sr-only">Herramientas de pintado</legend>
+      <button type="button" class="tbtn tbtn--active" data-tool="brush" data-tip="Pincel (B)" aria-label="Pincel" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15.5 3.5l5 5-9 9-6 1 1-6 9-9z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M4 20l1.5-1.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+      <button type="button" class="tbtn" data-tool="eraser" data-tip="Borrador (E)" aria-label="Borrador" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="11" width="14" height="7" rx="1.2" transform="rotate(-15 12 14)" stroke="currentColor" stroke-width="1.7"/><path d="M8 18h11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+      <button type="button" class="tbtn" data-tool="fill" data-tip="Cubeta (G)" aria-label="Cubeta" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12l7-7 8 8-7 7-8-8z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M15 8l3 3" stroke="currentColor" stroke-width="1.7"/><path d="M18 15c1.2 1.4 1.6 2.3 1.6 3.1 0 1.1-.9 1.9-1.9 1.9s-1.9-.8-1.9-1.9c0-.8.4-1.7 2.2-3.1z" fill="currentColor"/></svg></button>
+      <button type="button" class="tbtn" data-tool="eyedropper" data-tip="Cuentagotas (I)" aria-label="Cuentagotas" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14.5 5.5l4 4-8 8-4.5 1 1-4.5 8-8z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M18 3.5a2.1 2.1 0 013 3l-1.5 1.5-3-3L18 3.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></button>
+    </fieldset>&#8203;
+
+    <div class="tb-group">
+      <button type="button" class="tbtn" id="gridToggle" data-tip="Cuadrícula (Shift+G)" aria-label="Alternar cuadrícula" aria-pressed="true" style="color:var(--accent)"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="1.5" stroke="currentColor" stroke-width="1.7"/><path d="M4 9.3h16M4 14.6h16M9.3 4v16M14.6 4v16" stroke="currentColor" stroke-width="1.3"/></svg></button>
+    </div>&#8203;
+
+    <div class="gsel" id="selBrush" style="width:104px;">
+      <button type="button" class="gsel__trigger" aria-haspopup="listbox" aria-expanded="false" style="width:100%; justify-content:space-between;"><span class="gsel__value">Brush: 2px</span><svg class="gsel__chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 7.5l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <div class="gsel__list" role="listbox">
+        <button type="button" class="gsel__opt" role="option" data-val="1">1px<svg class="gsel__check" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button type="button" class="gsel__opt gsel__opt--active" role="option" data-val="2">2px<svg class="gsel__check" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button type="button" class="gsel__opt" role="option" data-val="4">4px<svg class="gsel__check" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button type="button" class="gsel__opt" role="option" data-val="8">8px<svg class="gsel__check" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+    </div>&#8203;
+
+    <div class="tb-group" id="paletteBtn" style="position:relative;">
+      <button type="button" class="tbtn" data-tip="Color activo" aria-label="Color activo" id="colorTrigger" aria-haspopup="true" aria-expanded="false"><span id="colorSwatchMain" aria-hidden="true" style="width:18px;height:18px;border-radius:5px;background:#caa06f;border:1px solid rgba(255,255,255,0.25);display:block;"></span></button>&#8203;
+      <div class="gsel__list" id="paletteList" role="menu" style="width:196px;">
+        <div class="swatches" id="swatchRow"></div>&#8203;
+        <div class="palette-custom-row">
+          <button type="button" class="swatch swatch--custom" id="customColorSwatch" aria-label="Elegir cualquier color" data-tip="Personalizado"></button>&#8203;
+          <input type="text" id="hexInput" class="hex-input" value="#e2b483" maxlength="7" aria-label="Código hexadecimal del color activo" />
+        </div>
+        <input type="color" id="nativeColorInput" value="#e2b483" aria-hidden="true" tabindex="-1" style="position:absolute; width:1px; height:1px; opacity:0; pointer-events:none;" />
+      </div>
+    </div>&#8203;
+
+    <div class="tb-sep"></div>&#8203;
+
+    <div class="zoomctl">
+      <button type="button" class="tbtn" id="zoomOut" data-tip="Alejar (-)" aria-label="Alejar zoom"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.7"/><path d="M21 21l-4.3-4.3M8 11h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+      <div class="gsel" id="selZoom">
+        <button type="button" class="gsel__trigger" aria-haspopup="listbox" aria-expanded="false"><span class="gsel__value" id="zoomLabel">100%</span><svg class="gsel__chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 7.5l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="gsel__list" role="listbox" id="zoomList">
+          <button type="button" class="gsel__opt" role="option" data-val="50">50%</button>
+          <button type="button" class="gsel__opt gsel__opt--active" role="option" data-val="100">100%</button>
+          <button type="button" class="gsel__opt" role="option" data-val="200">200%</button>
+          <button type="button" class="gsel__opt" role="option" data-val="400">400%</button>
+          <button type="button" class="gsel__opt" role="option" data-val="800">800%</button>
+          <button type="button" class="gsel__opt" role="option" data-val="1600">1600%</button>
+        </div>
+      </div>&#8203;
+      <button type="button" class="tbtn" id="zoomIn" data-tip="Acercar (+)" aria-label="Acercar zoom"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+      <button type="button" class="tbtn" id="zoomReset" data-tip="Restablecer zoom (0)" aria-label="Restablecer zoom"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 9V4h5M20 15v5h-5M4 4l6 6M20 20l-6-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>
+
+    <div class="tb-grow"></div>
+
+    <button type="button" class="btn btn--secondary" id="importBtn">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      Importar PNG
+    </button>
+
+    <button type="button" class="btn btn--ai" id="aiBtn">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z" fill="currentColor"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" fill="currentColor"/></svg>
+      Generar con IA
+    </button>
+
+    <div class="savestat savestat--saved" id="saveStatus">
+      <span class="savestat__dot" aria-hidden="true"></span>
+      <span id="saveStatusLabel">Guardado</span>
+    </div>
+
+    <button type="button" class="btn btn--primary" id="saveBtn">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 4h11l3 3v13H5V4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 4v5h8V4M8 20v-6h8v6" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+      Guardar
+    </button>
+  </div>
+
+  <div class="main">
+    <section class="canvas-panel" aria-label="Lienzo de textura">
+      <div class="canvas-viewport" id="viewport">
+        <div class="canvas-stage" id="stage">
+          <canvas id="atlasCanvas" role="img" aria-label="Atlas de textura del mob, editable con las herramientas de pintado"></canvas>
+          <svg class="canvas-grid" id="gridOverlay" aria-hidden="true"></svg>
+          <div class="canvas-region" id="regionOverlay" aria-hidden="true" style="display:none;"></div>
+        </div>
+        <div class="canvas-hint" id="canvasHint" aria-hidden="true"><kbd>Espacio</kbd> + arrastrar para desplazar &nbsp;·&nbsp; <kbd>Ctrl</kbd> + rueda para zoom</div>
+        <div class="canvas-hint" id="toolToast" aria-live="polite" style="bottom:auto; top: var(--space-3);"></div>
+      </div>
+    </section>
+
+    <aside class="preview-panel" aria-label="Preview 3D">
+      <div class="preview-head">
+        <h2>Preview 3D</h2>
+        <button type="button" class="ghost-btn" id="spinToggle">
+          <svg viewBox="0 0 24 24" fill="none" id="spinIcon" aria-hidden="true"><rect x="6" y="6" width="4" height="12" rx="1" fill="currentColor"/><rect x="14" y="6" width="4" height="12" rx="1" fill="currentColor"/></svg>
+          <span id="spinLabel">Pausar giro</span>
+        </button>
+      </div>
+      <div class="preview-stage" id="previewStage">
+        <!-- S6819/S6843: sin rol de imagen -- este bloque ahora es
+             arrastrable con el puntero para orbitar la cámara, así que
+             asignarle un rol no interactivo sería semánticamente
+             incorrecto; el panel ya está descrito por el aria-label del
+             <aside> que lo contiene. -->
+        <div class="cube-rig" id="cubeRig" aria-hidden="true">
+          <div class="cube-face cube-face--front"></div>
+          <div class="cube-face cube-face--back"></div>
+          <div class="cube-face cube-face--right"></div>
+          <div class="cube-face cube-face--left"></div>
+          <div class="cube-face cube-face--top"></div>
+          <div class="cube-face cube-face--bottom"></div>
+        </div>
+        <div class="canvas-hint" id="orbitHint" aria-hidden="true">Arrastra para orbitar</div>
+      </div>
+      <div class="preview-foot">
+        <span style="font-size:12px;color:var(--muted);">Se actualiza en tiempo real al pintar</span>
+      </div>
+    </aside>
+  </div>
+
+  <div class="statusbar">
+    <span>Región: <strong id="statRegion">Todas las caras</strong></span>
+    <span class="sep">|</span>
+    <span>Zoom: <strong id="statZoom">100%</strong></span>
+    <span class="sep">|</span>
+    <span>Herramienta: <strong id="statTool">Pincel</strong></span>
+    <span class="sep">|</span>
+    <span>Atlas: <strong>64×64</strong></span>
+    <span style="flex:1"></span>
+    <span id="statSave">Guardado ✓</span>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="ai-drawer" id="aiDrawer" role="dialog" aria-label="Generar textura con IA">
+  <div class="ai-head">
+    <h2>
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z" fill="currentColor"/></svg>
+      Generar textura con IA
+    </h2>
+    <button type="button" class="ai-close" id="aiClose" aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+  </div>
+  <div class="ai-body">
+    <div class="ai-field">
+      <label id="lblStyle">Estilo</label>
+      <div class="gsel" id="selStyle">
+        <button type="button" class="gsel__trigger" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="lblStyle"><span class="gsel__value">Fiel a la referencia</span><svg class="gsel__chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 7.5l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="gsel__list" role="listbox">
+          <button type="button" class="gsel__opt gsel__opt--active" role="option">Fiel a la referencia</button>
+          <button type="button" class="gsel__opt" role="option">Minecraft Vanilla</button>
+          <button type="button" class="gsel__opt" role="option">Pixel Art</button>
+          <button type="button" class="gsel__opt" role="option">Realista</button>
+        </div>
+      </div>
+    </div>
+    <div class="ai-field">
+      <label id="lblPart">Parte a generar</label>
+      <div class="gsel" id="selPart">
+        <button type="button" class="gsel__trigger" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="lblPart"><span class="gsel__value">Modelo completo</span><svg class="gsel__chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 7.5l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="gsel__list" role="listbox">
+          <button type="button" class="gsel__opt gsel__opt--active" role="option">Modelo completo</button>
+          <button type="button" class="gsel__opt" role="option">Cabeza</button>
+          <button type="button" class="gsel__opt" role="option">Torso</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-progress" id="aiProgress">
+      <div class="ai-stage ai-stage--done"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Analizando paleta</div>
+      <div class="ai-stage ai-stage--done"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Mapeando caras</div>
+      <div class="ai-stage ai-stage--current"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" stroke-dasharray="8 8"/></svg>Componiendo atlas…</div>
+      <div class="ai-stage"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5"/></svg>Limpiando píxeles</div>
+    </div>
+
+    <div id="aiDiffBlock" style="display:none;">
+      <div class="ai-toggle">
+        <button type="button" class="is-active" id="toggleBefore">Antes</button>
+        <button type="button" id="toggleAfter">Después</button>
+      </div>
+      <div class="ai-diff">
+        <div class="ai-diff-img"><canvas id="diffCanvas" width="64" height="64" role="img" aria-label="Comparación antes y después de la textura generada por IA"></canvas></div>
+      </div>
+    </div>
+  </div>
+  <div class="ai-foot">
+    <button type="button" class="btn btn--secondary" id="aiRejectBtn" style="display:none;">Rechazar</button>
+    <button type="button" class="btn btn--primary" id="aiPrimaryBtn">Generar</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var ATLAS_W = 64, ATLAS_H = 64;
+  var atlas = document.createElement("canvas");
+  atlas.width = ATLAS_W; atlas.height = ATLAS_H;
+  var actx = atlas.getContext("2d");
+  actx.imageSmoothingEnabled = false;
+
+  function seedAtlas() {
+    for (var y = 0; y < ATLAS_H; y++) {
+      for (var x = 0; x < ATLAS_W; x++) {
+        var light = ((x >> 2) + (y >> 2)) % 2 === 0;
+        actx.fillStyle = light ? "#232b34" : "#1b222a";
+        actx.fillRect(x, y, 1, 1);
+      }
+    }
+    function rect(x, y, w, h, color) { actx.fillStyle = color; actx.fillRect(x, y, w, h); }
+    rect(8, 8, 8, 8, "#e2b483");
+    rect(8, 8, 8, 2, "#5a3d2b");
+    rect(9, 12, 1, 1, "#20242a"); rect(13, 12, 1, 1, "#20242a");
+    rect(20, 20, 8, 12, "#3f6f8f");
+    rect(20, 20, 8, 3, "#2e5570");
+    rect(36, 52, 4, 12, "#e2b483");
+    rect(4, 20, 4, 12, "#33404d");
+    rect(32, 20, 8, 6, "#3f6f8f");
+  }
+  seedAtlas();
+
+  var TOOL_COLORS = ["#e2b483", "#5a3d2b", "#3f6f8f", "#2e5570", "#33404d", "#f3f6f8", "#f46b6b", "#48e5a0"];
+  var activeColor = TOOL_COLORS[0];
+
+  var BASE_SCALE = 6;
+  var zoom = 100;
+  var canvas = document.getElementById("atlasCanvas");
+  var cctx = canvas.getContext("2d");
+  cctx.imageSmoothingEnabled = false;
+  canvas.width = ATLAS_W; canvas.height = ATLAS_H;
+
+  var stage = document.getElementById("stage");
+  var viewport = document.getElementById("viewport");
+  var gridOverlay = document.getElementById("gridOverlay");
+
+  function displayScale() { return BASE_SCALE * (zoom / 100); }
+
+  function redrawAtlas() {
+    cctx.clearRect(0, 0, ATLAS_W, ATLAS_H);
+    cctx.drawImage(atlas, 0, 0);
+    syncSizes();
+    updateCube();
+  }
+
+  function syncSizes() {
+    var s = displayScale();
+    var w = Math.round(ATLAS_W * s), h = Math.round(ATLAS_H * s);
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+    stage.style.width = w + "px";
+    stage.style.height = h + "px";
+    drawGrid(w, h, s);
+  }
+
+  function drawGrid(w, h, s) {
+    gridOverlay.setAttribute("width", w);
+    gridOverlay.setAttribute("height", h);
+    gridOverlay.innerHTML = "";
+    if (!gridOn || s < 3) return;
+    var ns = "http://www.w3.org/2000/svg";
+    var group = document.createElementNS(ns, "g");
+    group.setAttribute("stroke", "rgba(255,255,255,0.14)");
+    group.setAttribute("stroke-width", "1");
+    for (var x = 0; x <= ATLAS_W; x++) {
+      var l = document.createElementNS(ns, "line");
+      l.setAttribute("x1", x * s); l.setAttribute("x2", x * s);
+      l.setAttribute("y1", 0); l.setAttribute("y2", h);
+      group.appendChild(l);
+    }
+    for (var y = 0; y <= ATLAS_H; y++) {
+      var l2 = document.createElementNS(ns, "line");
+      l2.setAttribute("y1", y * s); l2.setAttribute("y2", y * s);
+      l2.setAttribute("x1", 0); l2.setAttribute("x2", w);
+      group.appendChild(l2);
+    }
+    gridOverlay.appendChild(group);
+  }
+
+  var gridOn = true;
+
+  function setZoom(next, anchorClientX, anchorClientY) {
+    next = Math.max(25, Math.min(1600, Math.round(next)));
+    if (next === zoom) return;
+    var vpRect = viewport.getBoundingClientRect();
+    var beforeScale = displayScale();
+    var localX = (anchorClientX != null ? anchorClientX - vpRect.left + viewport.scrollLeft : viewport.scrollLeft + viewport.clientWidth / 2);
+    var localY = (anchorClientY != null ? anchorClientY - vpRect.top + viewport.scrollTop : viewport.scrollTop + viewport.clientHeight / 2);
+    var atlasX = localX / beforeScale, atlasY = localY / beforeScale;
+    zoom = next;
+    syncSizes();
+    var afterScale = displayScale();
+    viewport.scrollLeft = atlasX * afterScale - (anchorClientX != null ? anchorClientX - vpRect.left : viewport.clientWidth / 2);
+    viewport.scrollTop = atlasY * afterScale - (anchorClientY != null ? anchorClientY - vpRect.top : viewport.clientHeight / 2);
+    document.getElementById("zoomLabel").textContent = zoom + "%";
+    document.getElementById("statZoom").textContent = zoom + "%";
+    setSelectedOption(document.getElementById("zoomList"), String(zoom));
+  }
+
+  document.getElementById("zoomIn").addEventListener("click", function () { setZoom(zoom * 1.5); });
+  document.getElementById("zoomOut").addEventListener("click", function () { setZoom(zoom / 1.5); });
+  document.getElementById("zoomReset").addEventListener("click", function () { setZoom(100); });
+
+  viewport.addEventListener("wheel", function (e) {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    var factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    setZoom(zoom * factor, e.clientX, e.clientY);
+  }, { passive: false });
+
+  window.addEventListener("keydown", function (e) {
+    if (document.activeElement && /input|textarea/i.test(document.activeElement.tagName)) return;
+    if (aiDrawerOpen) return;
+    if (e.key === "+" || e.key === "=") { setZoom(zoom * 1.5); }
+    else if (e.key === "-" || e.key === "_") { setZoom(zoom / 1.5); }
+    else if (e.key === "0") { setZoom(100); }
+    else if (e.key.toLowerCase() === "b") selectTool("brush");
+    else if (e.key.toLowerCase() === "e") selectTool("eraser");
+    else if (e.key.toLowerCase() === "g" && !e.shiftKey) selectTool("fill");
+    else if (e.key.toLowerCase() === "i") selectTool("eyedropper");
+    else if (e.key === "G" && e.shiftKey) toggleGrid();
+  });
+
+  var spaceDown = false, panning = false, panStart = null;
+  window.addEventListener("keydown", function (e) { if (e.code === "Space") { spaceDown = true; viewport.classList.add("pan-ready"); } });
+  window.addEventListener("keyup", function (e) { if (e.code === "Space") { spaceDown = false; viewport.classList.remove("pan-ready"); } });
+
+  viewport.addEventListener("pointerdown", function (e) {
+    if (e.button === 1 || (e.button === 0 && spaceDown)) {
+      panning = true;
+      panStart = { x: e.clientX, y: e.clientY, sl: viewport.scrollLeft, st: viewport.scrollTop };
+      viewport.classList.add("is-panning");
+      viewport.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      document.getElementById("canvasHint").classList.add("is-visible");
+    }
+  });
+  window.addEventListener("pointermove", function (e) {
+    if (panning) {
+      viewport.scrollLeft = panStart.sl - (e.clientX - panStart.x);
+      viewport.scrollTop = panStart.st - (e.clientY - panStart.y);
+    }
+  });
+  window.addEventListener("pointerup", function () {
+    if (panning) { panning = false; viewport.classList.remove("is-panning"); document.getElementById("canvasHint").classList.remove("is-visible"); }
+  });
+
+  var activeTool = "brush";
+  var brushSize = 2;
+
+  function selectTool(tool) {
+    activeTool = tool;
+    document.querySelectorAll("#toolGroup .tbtn").forEach(function (b) {
+      var on = b.getAttribute("data-tool") === tool;
+      b.classList.toggle("tbtn--active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    var names = { brush: "Pincel", eraser: "Borrador", fill: "Cubeta", eyedropper: "Cuentagotas" };
+    document.getElementById("statTool").textContent = names[tool];
+  }
+  document.querySelectorAll("#toolGroup .tbtn").forEach(function (b) {
+    b.addEventListener("click", function () { selectTool(b.getAttribute("data-tool")); });
+  });
+
+  function toggleGrid() {
+    gridOn = !gridOn;
+    var btn = document.getElementById("gridToggle");
+    btn.setAttribute("aria-pressed", gridOn ? "true" : "false");
+    btn.style.color = gridOn ? "var(--accent)" : "";
+    syncSizes();
+  }
+  document.getElementById("gridToggle").addEventListener("click", toggleGrid);
+
+  function atlasCoordFromEvent(e) {
+    var r = canvas.getBoundingClientRect();
+    var s = displayScale();
+    var x = Math.floor((e.clientX - r.left) / s);
+    var y = Math.floor((e.clientY - r.top) / s);
+    return { x: x, y: y };
+  }
+
+  function stamp(x, y, color) {
+    var half = Math.floor((brushSize - 1) / 2);
+    actx.fillStyle = color;
+    for (var dx = 0; dx < brushSize; dx++) {
+      for (var dy = 0; dy < brushSize; dy++) {
+        var px = x - half + dx, py = y - half + dy;
+        if (px >= 0 && py >= 0 && px < ATLAS_W && py < ATLAS_H) actx.fillRect(px, py, 1, 1);
+      }
+    }
+  }
+
+  function floodFill(x, y, color) {
+    if (x < 0 || y < 0 || x >= ATLAS_W || y >= ATLAS_H) return;
+    var img = actx.getImageData(0, 0, ATLAS_W, ATLAS_H);
+    var data = img.data;
+    function idx(px, py) { return (py * ATLAS_W + px) * 4; }
+    var i0 = idx(x, y);
+    var target = [data[i0], data[i0 + 1], data[i0 + 2], data[i0 + 3]];
+    var c = hexToRgba(color);
+    if (target[0] === c[0] && target[1] === c[1] && target[2] === c[2]) return;
+    var stack = [[x, y]];
+    var seen = new Uint8Array(ATLAS_W * ATLAS_H);
+    while (stack.length) {
+      var p = stack.pop();
+      var px = p[0], py = p[1];
+      if (px < 0 || py < 0 || px >= ATLAS_W || py >= ATLAS_H) continue;
+      var key = py * ATLAS_W + px;
+      if (seen[key]) continue;
+      var ii = idx(px, py);
+      if (data[ii] !== target[0] || data[ii + 1] !== target[1] || data[ii + 2] !== target[2]) continue;
+      seen[key] = 1;
+      data[ii] = c[0]; data[ii + 1] = c[1]; data[ii + 2] = c[2]; data[ii + 3] = 255;
+      stack.push([px + 1, py], [px - 1, py], [px, py + 1], [px, py - 1]);
+    }
+    actx.putImageData(img, 0, 0);
+  }
+
+  function hexToRgba(hex) {
+    var v = hex.replace("#", "");
+    return [parseInt(v.substr(0, 2), 16), parseInt(v.substr(2, 2), 16), parseInt(v.substr(4, 2), 16), 255];
+  }
+
+  var toolToast = document.getElementById("toolToast");
+  var toolToastTimer = null;
+  function showToolToast(msg) {
+    toolToast.textContent = msg;
+    toolToast.classList.add("is-visible");
+    clearTimeout(toolToastTimer);
+    toolToastTimer = setTimeout(function () { toolToast.classList.remove("is-visible"); }, 1800);
+  }
+
+  function setSwatch(hex) {
+    activeColor = hex;
+    document.getElementById("colorSwatchMain").style.background = hex;
+    var hexInputEl = document.getElementById("hexInput");
+    if (hexInputEl && document.activeElement !== hexInputEl) hexInputEl.value = hex;
+    var nativeInput = document.getElementById("nativeColorInput");
+    if (nativeInput) nativeInput.value = hex;
+    refreshSwatchActiveStates();
+  }
+
+  function refreshSwatchActiveStates() {
+    var matched = false;
+    document.querySelectorAll("#swatchRow .swatch").forEach(function (s) {
+      var isMatch = s.getAttribute("data-hex") === activeColor;
+      s.classList.toggle("swatch--active", isMatch);
+      if (isMatch) matched = true;
+    });
+    document.getElementById("customColorSwatch").classList.toggle("swatch--active", !matched);
+  }
+
+  var painting = false;
+  canvas.addEventListener("pointerdown", function (e) {
+    if (e.button !== 0 || spaceDown) return;
+    var p = atlasCoordFromEvent(e);
+    if (activeTool === "eyedropper") {
+      var d = actx.getImageData(p.x, p.y, 1, 1).data;
+      var picked = "#" + [d[0], d[1], d[2]].map(function (n) { return n.toString(16).padStart(2, "0"); }).join("");
+      setSwatch(picked);
+      showToolToast("Cuentagotas: color capturado " + picked);
+      selectTool("brush");
+      return;
+    }
+    if (activeTool === "fill") { floodFill(p.x, p.y, activeColor); redrawAtlas(); markDirty(); return; }
+    painting = true;
+    canvas.setPointerCapture(e.pointerId);
+    if (activeTool === "eraser") { stampErase(p.x, p.y); } else { stamp(p.x, p.y, activeColor); }
+    redrawAtlas();
+    markDirty();
+  });
+  function stampErase(x, y) {
+    var half = Math.floor((brushSize - 1) / 2);
+    actx.clearRect(x - half, y - half, brushSize, brushSize);
+  }
+  canvas.addEventListener("pointermove", function (e) {
+    if (!painting) return;
+    var p = atlasCoordFromEvent(e);
+    if (activeTool === "eraser") stampErase(p.x, p.y); else stamp(p.x, p.y, activeColor);
+    redrawAtlas();
+  });
+  window.addEventListener("pointerup", function () { painting = false; });
+
+  function wireSelect(root, onPick) {
+    var trigger = root.querySelector(".gsel__trigger");
+    var list = root.querySelector(".gsel__list");
+    var opts = Array.prototype.slice.call(root.querySelectorAll(".gsel__opt"));
+    var focusIdx = -1;
+
+    function close() { root.classList.remove("gsel--open"); trigger.setAttribute("aria-expanded", "false"); focusIdx = -1; render(); }
+    function open() {
+      document.querySelectorAll(".gsel--open").forEach(function (o) { if (o !== root) o.classList.remove("gsel--open"); });
+      root.classList.add("gsel--open"); trigger.setAttribute("aria-expanded", "true");
+      focusIdx = opts.findIndex(function (o) { return o.classList.contains("gsel__opt--active"); });
+      render();
+    }
+    function render() { opts.forEach(function (o, i) { o.classList.toggle("gsel__opt--focus", i === focusIdx); }); }
+
+    trigger.addEventListener("click", function () { root.classList.contains("gsel--open") ? close() : open(); });
+    trigger.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); if (focusIdx < 0) focusIdx = 0; render(); }
+    });
+    list.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowDown") { e.preventDefault(); focusIdx = Math.min(opts.length - 1, focusIdx + 1); render(); opts[focusIdx].focus(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); focusIdx = Math.max(0, focusIdx - 1); render(); opts[focusIdx].focus(); }
+      else if (e.key === "Escape") { close(); trigger.focus(); }
+      else if (e.key === "Enter") { e.preventDefault(); opts[focusIdx] && opts[focusIdx].click(); }
+    });
+    opts.forEach(function (o) {
+      o.addEventListener("click", function () {
+        opts.forEach(function (x) { x.classList.remove("gsel__opt--active"); x.setAttribute("aria-selected", "false"); });
+        o.classList.add("gsel__opt--active"); o.setAttribute("aria-selected", "true");
+        trigger.querySelector(".gsel__value").textContent = o.textContent.trim();
+        close();
+        onPick && onPick(o);
+      });
+    });
+    document.addEventListener("click", function (e) { if (!root.contains(e.target)) close(); });
+  }
+
+  function setSelectedOption(list, val) {
+    Array.prototype.forEach.call(list.querySelectorAll(".gsel__opt"), function (o) {
+      var match = o.getAttribute("data-val") === val;
+      o.classList.toggle("gsel__opt--active", match);
+    });
+  }
+
+  wireSelect(document.getElementById("selRegion"), function (o) {
+    document.getElementById("statRegion").textContent = o.childNodes[0].textContent.trim();
+    var overlay = document.getElementById("regionOverlay");
+    if (o.textContent.indexOf("Todas") === 0) { overlay.style.display = "none"; return; }
+    overlay.style.display = "block";
+    var s = displayScale();
+    overlay.style.left = (8 * s) + "px"; overlay.style.top = (8 * s) + "px";
+    overlay.style.width = (8 * s) + "px"; overlay.style.height = (8 * s) + "px";
+  });
+  wireSelect(document.getElementById("selBrush"), function (o) { brushSize = parseInt(o.getAttribute("data-val"), 10); });
+  wireSelect(document.getElementById("selZoom"), function (o) { setZoom(parseInt(o.getAttribute("data-val"), 10)); });
+  wireSelect(document.getElementById("selStyle"));
+  wireSelect(document.getElementById("selPart"));
+
+  var swatchRow = document.getElementById("swatchRow");
+  TOOL_COLORS.forEach(function (c) {
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "swatch";
+    b.style.background = c;
+    b.setAttribute("data-hex", c);
+    b.setAttribute("aria-label", "Color " + c);
+    b.addEventListener("click", function () {
+      setSwatch(c);
+      document.getElementById("paletteBtn").classList.remove("gsel--open");
+      document.getElementById("paletteList").style.display = "none";
+    });
+    swatchRow.appendChild(b);
+  });
+  var colorTrigger = document.getElementById("colorTrigger");
+  var paletteList = document.getElementById("paletteList");
+  colorTrigger.addEventListener("click", function (e) {
+    e.stopPropagation();
+    var open = paletteList.style.display === "flex";
+    paletteList.style.display = open ? "none" : "flex";
+    colorTrigger.setAttribute("aria-expanded", open ? "false" : "true");
+  });
+  document.addEventListener("click", function (e) {
+    if (!document.getElementById("paletteBtn").contains(e.target)) paletteList.style.display = "none";
+  });
+
+  /* ---- color personalizado: input nativo oculto (única excepción
+     permitida a "sin controles nativos" -- necesario para elegir
+     CUALQUIER color, no solo la paleta fija de 8) + campo de texto hex
+     para entrada directa/precisa. ---- */
+  var nativeColorInput = document.getElementById("nativeColorInput");
+  var hexInput = document.getElementById("hexInput");
+  var customColorSwatch = document.getElementById("customColorSwatch");
+  var HEX_RE = /^#[0-9a-fA-F]{6}$/;
+
+  customColorSwatch.addEventListener("click", function () {
+    nativeColorInput.value = activeColor;
+    nativeColorInput.click();
+  });
+  nativeColorInput.addEventListener("input", function () { setSwatch(nativeColorInput.value); });
+
+  function commitHexInput() {
+    var v = hexInput.value.trim();
+    if (!v.startsWith("#")) v = "#" + v;
+    if (HEX_RE.test(v)) { setSwatch(v.toLowerCase()); }
+    else { hexInput.value = activeColor; }
+  }
+  hexInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { commitHexInput(); hexInput.blur(); }
+    else if (e.key === "Escape") { hexInput.value = activeColor; hexInput.blur(); }
+    e.stopPropagation();
+  });
+  hexInput.addEventListener("blur", commitHexInput);
+  hexInput.addEventListener("click", function (e) { e.stopPropagation(); });
+  refreshSwatchActiveStates();
+
+  var saveState = "saved";
+  var saveStatusEl = document.getElementById("saveStatus");
+  var saveStatusLabel = document.getElementById("saveStatusLabel");
+  var statSave = document.getElementById("statSave");
+  var LABELS = { saved: "Guardado", dirty: "Cambios sin guardar", saving: "Guardando…", error: "Error al guardar" };
+  function setSaveState(s) {
+    saveState = s;
+    saveStatusEl.className = "savestat savestat--" + s;
+    saveStatusLabel.textContent = LABELS[s];
+    statSave.textContent = s === "saved" ? "Guardado ✓" : LABELS[s];
+  }
+  function markDirty() { if (saveState !== "saving") setSaveState("dirty"); }
+  document.getElementById("saveBtn").addEventListener("click", function () {
+    if (saveState === "saving") return;
+    setSaveState("saving");
+    var willFail = Math.random() < 0.12;
+    setTimeout(function () { setSaveState(willFail ? "error" : "saved"); }, 900);
+  });
+
+  var faceCanvas = document.createElement("canvas");
+  faceCanvas.width = 128; faceCanvas.height = 128;
+  var fctx = faceCanvas.getContext("2d");
+  fctx.imageSmoothingEnabled = false;
+
+  function faceDataUrl(sx, sy, sw, sh) {
+    fctx.clearRect(0, 0, 128, 128);
+    fctx.drawImage(atlas, sx, sy, sw, sh, 0, 0, 128, 128);
+    return faceCanvas.toDataURL();
+  }
+  var faces = {
+    front: document.querySelector(".cube-face--front"),
+    back: document.querySelector(".cube-face--back"),
+    right: document.querySelector(".cube-face--right"),
+    left: document.querySelector(".cube-face--left"),
+    top: document.querySelector(".cube-face--top"),
+    bottom: document.querySelector(".cube-face--bottom")
+  };
+  function updateCube() {
+    faces.front.style.backgroundImage = "url(" + faceDataUrl(20, 20, 8, 12) + ")";
+    faces.back.style.backgroundImage = "url(" + faceDataUrl(32, 20, 8, 12) + ")";
+    faces.right.style.backgroundImage = "url(" + faceDataUrl(16, 20, 4, 12) + ")";
+    faces.left.style.backgroundImage = "url(" + faceDataUrl(28, 20, 4, 12) + ")";
+    faces.top.style.backgroundImage = "url(" + faceDataUrl(8, 8, 8, 2) + ")";
+    faces.bottom.style.backgroundImage = "url(" + faceDataUrl(16, 8, 8, 2) + ")";
+    faces.front.style.backgroundSize = "cover";
+    faces.back.style.backgroundSize = "cover";
+    faces.right.style.backgroundSize = "cover";
+    faces.left.style.backgroundSize = "cover";
+    faces.top.style.backgroundSize = "cover";
+    faces.bottom.style.backgroundSize = "cover";
+  }
+  /* ---- Preview 3D: orbit real con el puntero (arrastrar rota),
+     además del giro automático -- ambos conviven vía un solo loop de
+     rAF que aplica la transform; arrastrar pausa momentáneamente el
+     incremento automático, nunca lo cancela permanentemente (el
+     giro automático retoma solo al soltar, si seguía activado). ---- */
+  var cubeRig = document.getElementById("cubeRig");
+  var previewStage = document.getElementById("previewStage");
+  var orbitHint = document.getElementById("orbitHint");
+  var spinning = true;
+  var rotX = -18, rotY = 0;
+  var dragging = false, lastPX = 0, lastPY = 0, hasDraggedOnce = false;
+
+  function applyCubeTransform() {
+    cubeRig.style.transform = "rotateX(" + rotX + "deg) rotateY(" + rotY + "deg)";
+  }
+
+  previewStage.addEventListener("pointerdown", function (e) {
+    dragging = true;
+    lastPX = e.clientX; lastPY = e.clientY;
+    previewStage.classList.add("is-dragging");
+    previewStage.setPointerCapture(e.pointerId);
+    if (!hasDraggedOnce) { hasDraggedOnce = true; orbitHint.classList.remove("is-visible"); }
+  });
+  previewStage.addEventListener("pointermove", function (e) {
+    if (!dragging) return;
+    var dx = e.clientX - lastPX, dy = e.clientY - lastPY;
+    lastPX = e.clientX; lastPY = e.clientY;
+    rotY += dx * 0.5;
+    rotX = Math.max(-85, Math.min(70, rotX - dy * 0.5));
+    applyCubeTransform();
+  });
+  window.addEventListener("pointerup", function () {
+    if (dragging) { dragging = false; previewStage.classList.remove("is-dragging"); }
+  });
+
+  applyCubeTransform();
+  orbitHint.classList.add("is-visible");
+  setTimeout(function () { if (!hasDraggedOnce) orbitHint.classList.remove("is-visible"); }, 3200);
+
+  (function autoSpinLoop() {
+    if (spinning && !dragging) { rotY += 0.15; applyCubeTransform(); }
+    requestAnimationFrame(autoSpinLoop);
+  })();
+
+  document.getElementById("spinToggle").addEventListener("click", function () {
+    spinning = !spinning;
+    document.getElementById("spinLabel").textContent = spinning ? "Pausar giro" : "Reanudar giro";
+  });
+
+  var aiDrawerOpen = false;
+  var scrim = document.getElementById("scrim");
+  var aiDrawer = document.getElementById("aiDrawer");
+  function openAi() {
+    aiDrawerOpen = true;
+    scrim.classList.add("is-open"); aiDrawer.classList.add("is-open");
+    document.getElementById("aiProgress").classList.remove("is-active");
+    document.getElementById("aiDiffBlock").style.display = "none";
+    document.getElementById("aiRejectBtn").style.display = "none";
+    document.getElementById("aiPrimaryBtn").textContent = "Generar";
+    document.getElementById("aiPrimaryBtn").onclick = runAiDemo;
+  }
+  function closeAi() { aiDrawerOpen = false; scrim.classList.remove("is-open"); aiDrawer.classList.remove("is-open"); }
+  document.getElementById("aiBtn").addEventListener("click", openAi);
+  document.getElementById("aiClose").addEventListener("click", closeAi);
+  scrim.addEventListener("click", closeAi);
+
+  var diffCanvas = document.getElementById("diffCanvas");
+  var dctx = diffCanvas.getContext("2d");
+  dctx.imageSmoothingEnabled = false;
+  var showingAfter = false;
+  function paintDiff() {
+    dctx.clearRect(0, 0, 64, 64);
+    if (!showingAfter) { dctx.drawImage(atlas, 0, 0); return; }
+    dctx.drawImage(atlas, 0, 0);
+    dctx.fillStyle = "#8a5a3b"; dctx.fillRect(20, 20, 8, 12);
+    dctx.fillStyle = "#6e4730"; dctx.fillRect(20, 20, 8, 3);
+    dctx.fillStyle = "#caa06f"; dctx.fillRect(8, 8, 8, 8);
+  }
+  document.getElementById("toggleBefore").addEventListener("click", function () {
+    showingAfter = false;
+    this.classList.add("is-active"); document.getElementById("toggleAfter").classList.remove("is-active");
+    paintDiff();
+  });
+  document.getElementById("toggleAfter").addEventListener("click", function () {
+    showingAfter = true;
+    this.classList.add("is-active"); document.getElementById("toggleBefore").classList.remove("is-active");
+    paintDiff();
+  });
+
+  function runAiDemo() {
+    document.getElementById("aiProgress").classList.add("is-active");
+    document.getElementById("aiPrimaryBtn").textContent = "Generando…";
+    document.getElementById("aiPrimaryBtn").disabled = true;
+    setTimeout(function () {
+      document.getElementById("aiDiffBlock").style.display = "block";
+      document.getElementById("aiRejectBtn").style.display = "inline-flex";
+      document.getElementById("aiPrimaryBtn").textContent = "Aplicar";
+      document.getElementById("aiPrimaryBtn").disabled = false;
+      document.getElementById("aiPrimaryBtn").onclick = function () {
+        actx.fillStyle = "#8a5a3b"; actx.fillRect(20, 20, 8, 12);
+        actx.fillStyle = "#6e4730"; actx.fillRect(20, 20, 8, 3);
+        redrawAtlas(); markDirty();
+        closeAi();
+      };
+      showingAfter = true; document.getElementById("toggleAfter").click();
+    }, 1400);
+  }
+  document.getElementById("aiRejectBtn").addEventListener("click", closeAi);
+
+  redrawAtlas();
+  setSaveState("saved");
+})();
+</script>
