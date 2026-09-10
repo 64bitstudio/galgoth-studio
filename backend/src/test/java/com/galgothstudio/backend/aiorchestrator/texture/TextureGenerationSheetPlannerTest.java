@@ -134,15 +134,17 @@ class TextureGenerationSheetPlannerTest {
 	@Test
 	void unBoneQueNoExiste_lanzaExcepcionExplicita() {
 		MobProjectModel model = modelWith(List.of(), List.of());
+		TexturePlan plan = texturePlan();
 
-		assertThatThrownBy(() -> planner.plan(model, texturePlan(), "no-existe")).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> planner.plan(model, plan, "no-existe")).isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
 	void unBoneSinCuboids_lanzaExcepcionExplicita() {
 		MobProjectModel model = modelWith(List.of(), List.of());
+		TexturePlan plan = texturePlan();
 
-		assertThatThrownBy(() -> planner.plan(model, texturePlan(), BONE_ID)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> planner.plan(model, plan, BONE_ID)).isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
@@ -150,8 +152,9 @@ class TextureGenerationSheetPlannerTest {
 		List<Cuboid> cuboids = List.of(cuboidOf("cube-a", BONE_ID));
 		List<UvRegion> regionsSinDown = regionsFor("cube-a", 8).stream().filter(r -> r.face() != FaceName.DOWN).toList();
 		MobProjectModel model = modelWith(cuboids, regionsSinDown);
+		TexturePlan plan = texturePlan();
 
-		assertThatThrownBy(() -> planner.plan(model, texturePlan(), BONE_ID)).isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> planner.plan(model, plan, BONE_ID)).isInstanceOf(IllegalStateException.class);
 	}
 
 	@Test
@@ -163,8 +166,9 @@ class TextureGenerationSheetPlannerTest {
 				"mob-1", "project-1", "Test Mob", BaseType.HUMANOID, MobProjectModel.UNITS_MINECRAFT_PIXELS, List.of(head),
 				cuboids, texture, new UvLayout(64, 64, regionsFor("cube-a", 8)), List.of(), new ExportSettings(FormatVersion.V5),
 				List.of());
+		TexturePlan plan = texturePlan();
 
-		assertThatThrownBy(() -> planner.plan(model, texturePlan(), BONE_ID)).isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> planner.plan(model, plan, BONE_ID)).isInstanceOf(IllegalStateException.class);
 	}
 
 	@Test
@@ -178,7 +182,7 @@ class TextureGenerationSheetPlannerTest {
 
 		List<TextureGenerationSheet> sheets = planner.plan(model, texturePlan(), BONE_ID);
 
-		assertThat(sheets.size()).isGreaterThan(1);
+		assertThat(sheets).hasSizeGreaterThan(1);
 		// Identificación explícita de cada parte: índice (0-based) + tamaño de la lista.
 		int totalPlacements = sheets.stream().mapToInt(s -> s.placements().size()).sum();
 		assertThat(totalPlacements).isEqualTo(12); // 2 cuboids x 6 caras, sin pérdida ni duplicados

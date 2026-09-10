@@ -144,8 +144,9 @@ class TextureCompositorServiceTest {
 	void unAtlasConBytesCorruptos_lanzaTextureGenerationFailedException_sinComponerNada() {
 		byte[] garbage = {9, 9, 9};
 		TextureSlice slice = new TextureSlice(placementAt(new Vec4(0, 0, 8, 8)), solidImage(8, 8, RED));
+		List<TextureSlice> slices = List.of(slice);
 
-		assertThatThrownBy(() -> compositor.compose(garbage, List.of(slice))).isInstanceOf(TextureGenerationFailedException.class);
+		assertThatThrownBy(() -> compositor.compose(garbage, slices)).isInstanceOf(TextureGenerationFailedException.class);
 	}
 
 }

@@ -43,11 +43,12 @@ class TextureSheetPromptComposerTest {
 	void elPromptDelimitaVisualmenteCadaSheetRect_conElGutterExplicito_AC_backgroundMaskDeterminista() {
 		String prompt = TextureSheetPromptComposer.compose(sheet());
 
-		assertThat(prompt).contains(TextureGenerationSheetPlanner.GUTTER_PX + "px");
-		assertThat(prompt).contains("[0,0]-[8,8]"); // sheetRect de "north"
-		assertThat(prompt).contains("[10,0]-[18,8]"); // sheetRect de "up"
-		assertThat(prompt).contains("front");
-		assertThat(prompt).contains("top");
+		assertThat(prompt)
+				.contains(TextureGenerationSheetPlanner.GUTTER_PX + "px")
+				.contains("[0,0]-[8,8]") // sheetRect de "north"
+				.contains("[10,0]-[18,8]") // sheetRect de "up"
+				.contains("front")
+				.contains("top");
 	}
 
 	@Test
