@@ -109,7 +109,7 @@ async function regenerate(): Promise<void> {
 </script>
 
 <template>
-  <div class="ai-edit-panel">
+  <div class="ai-edit-panel app-scroll">
     <h3 class="ai-edit-panel__title">Asistente IA</h3>
 
     <template v-if="!plan">

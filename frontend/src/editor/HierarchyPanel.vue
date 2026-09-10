@@ -21,7 +21,7 @@ const tree = computed(() => (draft.model ? buildHierarchyTree(draft.model) : [])
 <template>
   <div class="hierarchy-panel">
     <h2 class="hierarchy-panel__title">Jerarquía</h2>
-    <ul class="hierarchy-panel__tree">
+    <ul class="hierarchy-panel__tree app-scroll">
       <HierarchyBoneNode v-for="node in tree" :key="node.bone.id" :node="node" />
     </ul>
   </div>

@@ -36,6 +36,7 @@ async function routerAt(id: string): Promise<Router> {
       { path: '/projects/:id', component: ProjectDetail },
       { path: '/projects/:projectId/mobs/new-ai', component: { template: '<div />' } },
       { path: '/projects/:projectId/mobs/:mobId/edit', component: { template: '<div />' } },
+      { path: '/projects/:projectId/mobs/:mobId/export', component: { template: '<div />' } },
     ],
   })
   await router.push(`/projects/${id}`)
@@ -183,16 +184,19 @@ describe('ProjectDetail.vue', () => {
     expect(link.attributes('href')).toBe('/projects/p1/mobs/new-ai')
   })
 
-  it('cada tarjeta de mob del grid navega a su ruta real de edición, ticket 034', async () => {
+  it('cada tarjeta de mob del grid navega a su ruta real de edición, ticket 034 (ticket 039: MobCard ahora emite open, no un router-link envolvente)', async () => {
     vi.stubGlobal(
       'fetch',
       stubProjectAndMobs({ id: 'p1', name: 'Galgoth', mobCount: 1, createdAt: '', updatedAt: '' }, [mob({ id: 'm1', name: 'Carcomido' })]),
     )
-    const wrapper = mount(ProjectDetail, { global: { plugins: [await routerAt('p1')] } })
+    const router = await routerAt('p1')
+    const pushSpy = vi.spyOn(router, 'push')
+    const wrapper = mount(ProjectDetail, { global: { plugins: [router] } })
     await flushPromises()
 
-    const link = wrapper.find('.project-detail__mob-link')
-    expect(link.attributes('href')).toBe('/projects/p1/mobs/m1/edit')
+    await wrapper.find('.mob-card__open').trigger('click')
+
+    expect(pushSpy).toHaveBeenCalledWith('/projects/p1/mobs/m1/edit')
   })
 
   it('"Mis proyectos" en el sidebar navega de vuelta al dashboard', async () => {
@@ -205,5 +209,100 @@ describe('ProjectDetail.vue', () => {
     await wrapper.findAll('.g-sidebar__item')[1]!.trigger('click')
 
     expect(pushSpy).toHaveBeenCalledWith('/projects')
+  })
+
+  describe('ticket 039 -- edición del nombre del proyecto desde el detalle', () => {
+    it('el ícono junto al título abre el diálogo de renombrar pre-llenado y guarda el nuevo nombre', async () => {
+      const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'PATCH') {
+          return jsonResponse({ id: 'p1', name: 'Nuevo nombre', mobCount: 0, createdAt: '', updatedAt: '' })
+        }
+        if (String(url).includes('/mobs')) {
+          return jsonResponse([])
+        }
+        return jsonResponse({ id: 'p1', name: 'Galgoth', mobCount: 0, createdAt: '', updatedAt: '' })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ProjectDetail, { global: { plugins: [await routerAt('p1')] } })
+      await flushPromises()
+
+      await wrapper.find('button[aria-label="Renombrar proyecto"]').trigger('click')
+      expect((wrapper.find('[aria-label="Nombre del proyecto"]').element as HTMLInputElement).value).toBe('Galgoth')
+
+      await wrapper.find('[aria-label="Nombre del proyecto"]').setValue('Nuevo nombre')
+      await wrapper.findAll('button').find((b) => b.text() === 'Guardar')!.trigger('click')
+      await flushPromises()
+
+      const patchCall = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === 'PATCH')!
+      expect(String(patchCall[0])).toContain('/api/projects/p1')
+    })
+  })
+
+  describe('ticket 039 -- CRUD de mobs desde el grid', () => {
+    it('Renombrar abre el diálogo pre-llenado y llama a PATCH /api/mobs/{mobId}', async () => {
+      const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'PATCH') {
+          return jsonResponse({ id: 'm1', name: 'Nuevo nombre', baseType: 'humanoid', status: 'draft', thumbnailKey: null, updatedAt: '' })
+        }
+        if (String(url).includes('/mobs') && !String(url).includes('/api/mobs/')) {
+          return jsonResponse([mob()])
+        }
+        return jsonResponse({ id: 'p1', name: 'Galgoth', mobCount: 1, createdAt: '', updatedAt: '' })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ProjectDetail, { global: { plugins: [await routerAt('p1')] } })
+      await flushPromises()
+
+      await wrapper.find('.g-menu__trigger').trigger('click')
+      await wrapper.findAll('[role="menuitem"]').find((i) => i.text() === 'Renombrar')!.trigger('click')
+      expect((wrapper.find('[aria-label="Nombre del mob"]').element as HTMLInputElement).value).toBe('Carcomido')
+
+      await wrapper.find('[aria-label="Nombre del mob"]').setValue('Nuevo nombre')
+      await wrapper.findAll('button').find((b) => b.text() === 'Guardar')!.trigger('click')
+      await flushPromises()
+
+      const patchCall = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === 'PATCH')!
+      expect(String(patchCall[0])).toContain('/api/mobs/m1')
+    })
+
+    it('Exportar navega a la pantalla real de exportación del mob', async () => {
+      vi.stubGlobal('fetch', stubProjectAndMobs({ id: 'p1', name: 'Galgoth', mobCount: 1, createdAt: '', updatedAt: '' }, [mob()]))
+      const router = await routerAt('p1')
+      const pushSpy = vi.spyOn(router, 'push')
+      const wrapper = mount(ProjectDetail, { global: { plugins: [router] } })
+      await flushPromises()
+
+      await wrapper.find('.g-menu__trigger').trigger('click')
+      await wrapper.findAll('[role="menuitem"]').find((i) => i.text() === 'Exportar')!.trigger('click')
+
+      expect(pushSpy).toHaveBeenCalledWith('/projects/p1/mobs/m1/export')
+    })
+
+    it('Eliminar muestra una confirmación diseñada, y confirmar llama a DELETE /api/mobs/{mobId} y refresca el grid', async () => {
+      let mobsListCalls = 0
+      const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'DELETE') {
+          return new Response(null, { status: 204 })
+        }
+        if (String(url).includes('/mobs') && !String(url).includes('/api/mobs/')) {
+          mobsListCalls += 1
+          return jsonResponse(mobsListCalls === 1 ? [mob()] : [])
+        }
+        return jsonResponse({ id: 'p1', name: 'Galgoth', mobCount: 1, createdAt: '', updatedAt: '' })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ProjectDetail, { global: { plugins: [await routerAt('p1')] } })
+      await flushPromises()
+
+      await wrapper.find('.g-menu__trigger').trigger('click')
+      await wrapper.findAll('[role="menuitem"]').find((i) => i.text() === 'Eliminar')!.trigger('click')
+      expect(wrapper.text()).toContain('¿Eliminar el mob "Carcomido"?')
+
+      await wrapper.findAll('button').find((b) => b.text() === 'Eliminar')!.trigger('click')
+      await flushPromises()
+
+      expect(fetchMock.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === 'DELETE')).toBe(true)
+      expect(wrapper.text()).not.toContain('Carcomido')
+    })
   })
 })

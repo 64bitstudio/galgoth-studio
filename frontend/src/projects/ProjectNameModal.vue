@@ -7,22 +7,27 @@
  * técnicos de IA/geometría -- por diseño, este modal no tiene ningún
  * otro campo.
  *
- * `<dialog>` nativo (hallazgo real de Sonar, S6819: usar el elemento
- * nativo en vez de emular con `role="dialog"`) -- gratis trae manejo de
- * foco/tab-trap del navegador y cierre con Escape, que la versión
- * anterior (un `<div>` con overlay a mano) no tenía.
+ * Ticket 039: reconstruido sobre `AppDialog.vue` (el shell genérico de
+ * diálogo del design system) en vez de tener su propio `<dialog>` a
+ * mano -- mismo comportamiento exacto, ahora compartido con
+ * `ConfirmDialog.vue` y cualquier otro diálogo futuro. `busy`/`error`
+ * nuevos: bloquea doble submit real mientras el caller espera al
+ * backend (antes se podía apretar "Guardar" varias veces sin ninguna
+ * señal).
  */
-import { onMounted, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
+import AppDialog from '../design-system/components/AppDialog.vue'
 import GButton from '../design-system/components/GButton.vue'
 
 const props = defineProps<{
   mode: 'create' | 'rename'
   initialName?: string
+  busy?: boolean
+  error?: string | null
 }>()
 
 const emit = defineEmits<{ confirm: [string]; cancel: [] }>()
 
-const dialogEl = ref<HTMLDialogElement>()
 const name = ref(props.initialName ?? '')
 const validationError = ref<string | null>(null)
 
@@ -33,11 +38,10 @@ watch(
   },
 )
 
-onMounted(() => {
-  dialogEl.value?.showModal()
-})
-
 function confirm(): void {
+  if (props.busy) {
+    return
+  }
   const trimmed = name.value.trim()
   if (!trimmed) {
     validationError.value = 'El nombre no puede estar vacío.'
@@ -46,58 +50,24 @@ function confirm(): void {
   validationError.value = null
   emit('confirm', trimmed)
 }
-
-/** Clic en el `::backdrop` nativo aterriza en el propio `<dialog>` (nunca en un hijo) -- mismo patrón que un backdrop a mano, sin necesitar un div extra. */
-function handleBackdropClick(event: MouseEvent): void {
-  if (event.target === dialogEl.value) {
-    emit('cancel')
-  }
-}
 </script>
 
 <template>
-  <dialog
-    ref="dialogEl"
-    class="project-name-modal"
-    :aria-label="mode === 'create' ? 'Nuevo proyecto' : 'Renombrar proyecto'"
-    @click="handleBackdropClick"
-    @cancel.prevent="emit('cancel')"
-  >
-    <h2 class="project-name-modal__title">{{ mode === 'create' ? 'Nuevo proyecto' : 'Renombrar proyecto' }}</h2>
+  <AppDialog :title="mode === 'create' ? 'Nuevo proyecto' : 'Renombrar proyecto'" @cancel="emit('cancel')">
     <label class="project-name-modal__label">
       Nombre
-      <input v-model="name" type="text" class="project-name-modal__input" aria-label="Nombre del proyecto" @keyup.enter="confirm" />
+      <input v-model="name" type="text" class="project-name-modal__input" aria-label="Nombre del proyecto" :disabled="busy" @keyup.enter="confirm" />
     </label>
     <p v-if="validationError" class="project-name-modal__error">{{ validationError }}</p>
-    <div class="project-name-modal__actions">
-      <GButton variant="ghost" @click="emit('cancel')">Cancelar</GButton>
-      <GButton variant="primary" @click="confirm">{{ mode === 'create' ? 'Crear proyecto' : 'Guardar' }}</GButton>
-    </div>
-  </dialog>
+    <p v-if="error" class="project-name-modal__error">{{ error }}</p>
+    <template #actions>
+      <GButton variant="ghost" :disabled="busy" @click="emit('cancel')">Cancelar</GButton>
+      <GButton variant="primary" :disabled="busy" @click="confirm">{{ busy ? 'Guardando…' : mode === 'create' ? 'Crear proyecto' : 'Guardar' }}</GButton>
+    </template>
+  </AppDialog>
 </template>
 
 <style scoped>
-.project-name-modal {
-  background: var(--panel);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-6);
-  width: min(360px, 90vw);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  color: var(--text);
-}
-
-.project-name-modal::backdrop {
-  background: rgba(0, 0, 0, 0.6);
-}
-
-.project-name-modal__title {
-  margin: 0;
-  font-size: var(--text-lg);
-}
-
 .project-name-modal__label {
   display: flex;
   flex-direction: column;
@@ -120,11 +90,5 @@ function handleBackdropClick(event: MouseEvent): void {
   margin: 0;
   color: var(--danger);
   font-size: var(--text-sm);
-}
-
-.project-name-modal__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
 }
 </style>

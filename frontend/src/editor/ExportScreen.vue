@@ -130,7 +130,7 @@ function handleSidebarSelect(key: GSidebarKey): void {
 <template>
   <div class="export-screen-shell">
     <GSidebar active="projects" @select="handleSidebarSelect" />
-    <main class="export-screen">
+    <main class="export-screen app-scroll">
       <p v-if="notFound" class="export-screen__error">
         Este mob no existe. <button type="button" class="export-screen__link-button" @click="router.push(`/projects/${projectId}`)">Volver al proyecto</button>
       </p>

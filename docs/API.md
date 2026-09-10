@@ -14,19 +14,22 @@ GET    /api/projects/{projectId}/mobs   -- grid de mobs del detalle de proyecto 
 ```
 
 - **`POST /api/projects/{projectId}/mobs`** — body `{name, baseType}` (`baseType` es uno de `humanoid`/`arachnid`/`quadruped`/`flying`/`custom`, el `CHECK` de `mobs.base_type` del ticket 003). `201 Created` con el `MobSummary` -- el mob siempre arranca en `status="draft"`, `current_revision_number=0` (default de la columna) y **sin fila en `mob_drafts`** (AC #2, no existe hasta el primer autosave/Guardar, ticket 020). `400 Bad Request` (`error: "INVALID_MOB_REQUEST"`) si el nombre está vacío o `baseType` no es uno de los 5 valores válidos. `404 Not Found` (`PROJECT_NOT_FOUND`) si el proyecto no existe.
-- **`GET /api/projects/{projectId}/mobs`** — `MobSummary[]` (id, name, baseType, status, thumbnailKey, updatedAt) de TODOS los mobs del proyecto, ordenados por `updatedAt` descendente. El filtro por nombre del buscador (AC #3) es **client-side** sobre esta lista -- sin parámetro de búsqueda en el backend, mismo criterio de simplicidad que el dashboard de proyectos (021). `404 Not Found` (`PROJECT_NOT_FOUND`) si el proyecto no existe.
-- Rename/Delete/Duplicate a nivel de mob individual **no están en el alcance de este ticket** (a diferencia de proyectos en el 021) -- el AC de 022 solo pide crear y listar.
+- **`GET /api/projects/{projectId}/mobs`** — `MobSummary[]` (id, name, baseType, status, thumbnailKey, updatedAt) de TODOS los mobs del proyecto, ordenados por `updatedAt` descendente. El filtro por nombre del buscador (AC #3) es **client-side** sobre esta lista -- sin parámetro de búsqueda en el backend, mismo criterio de simplicidad que el dashboard de proyectos (021). `404 Not Found` (`PROJECT_NOT_FOUND`) si el proyecto no existe. Excluye mobs soft-deleted (ticket 039).
+- Duplicate a nivel de mob individual sigue sin pedirse -- no se inventa. Rename/Delete SÍ existen desde el ticket 039 (ver abajo).
 
-### Detalle de un mob (ticket `034`)
+### Detalle de un mob (ticket `034`) + Renombrar/Eliminar (ticket `039`)
 
-Implementado en `backend/.../project/api/MobDetailController.java` -- ruta ya prevista desde el bootstrap del proyecto (ver "Rutas previstas" más abajo), sin `projectId` en el path (mismo criterio que `MobDraftController`/`MobThumbnailController`: el mob ya se identifica solo por su id).
+Implementado en `backend/.../project/api/MobDetailController.java` -- ruta ya prevista desde el bootstrap del proyecto (ver "Rutas previstas" más abajo), sin `projectId` en el path (mismo criterio que `MobDraftController`/`MobThumbnailController`: el mob ya se identifica solo por su id). Ticket 039 agrega `PATCH`/`DELETE` con el mismo criterio.
 
 ```text
 GET    /api/mobs/{mobId}   -- resumen de un mob (name/baseType/status/thumbnailKey), sin projectId en el path
+PATCH  /api/mobs/{mobId}   -- Renombrar (ticket 039, menú ⋮ de MobCard)
+DELETE /api/mobs/{mobId}   -- Eliminar, soft-delete (ticket 039)
 ```
 
-- `200 OK` — `MobSummary` (mismo shape que el listado de 022). `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe.
-- Usado por `MobEditor.vue` (034) para conocer `name`/`baseType` reales cuando el mob todavía no tiene ningún draft con qué arrancar el editor.
+- **`GET /api/mobs/{mobId}`** — `200 OK` — `MobSummary` (mismo shape que el listado de 022). `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe o está soft-deleted. Usado por `MobEditor.vue` (034) para conocer `name`/`baseType` reales cuando el mob todavía no tiene ningún draft con qué arrancar el editor.
+- **`PATCH /api/mobs/{mobId}`** — body `{name}`. Mismo criterio de validación que crear (`400 Bad Request`, `error: "INVALID_MOB_REQUEST"` si el nombre está vacío). `404 Not Found` (`MOB_NOT_FOUND`) si no existe.
+- **`DELETE /api/mobs/{mobId}`** — `204 No Content`. Soft-delete (`mobs.deleted_at`, `V2__mobs_soft_delete.sql`) -- mismo mecanismo EXACTO que `projects.deleted_at` (021): ningún FK hacia `mobs` (`mob_revisions`/`mob_drafts`/`reference_images`/`ai_jobs`) tiene `ON DELETE CASCADE`, un hard-delete fallaría por violación de FK en cualquier mob con historial real. `404 Not Found` (`MOB_NOT_FOUND`) si no existe.
 
 ### CRUD de proyectos (ticket `021`, HU-01/HU-02)
 

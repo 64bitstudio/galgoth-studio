@@ -234,7 +234,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="ai-mob-wizard-shell">
     <GSidebar active="projects" @select="handleSidebarSelect" />
-    <main class="ai-mob-wizard">
+    <main class="ai-mob-wizard app-scroll">
       <WizardStepper :current-step="step" class="ai-mob-wizard__stepper" />
 
       <ReferenceStep v-if="step === 'reference'" @selected="handleReferenceSelected" />

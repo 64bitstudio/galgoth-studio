@@ -146,6 +146,25 @@ class ProjectControllerTest {
 	}
 
 	@Test
+	void listar_excluye_mobs_eliminados_del_conteo_y_de_las_miniaturas_ticket_039() throws Exception {
+		MvcResult created = mockMvc.perform(post("/api/projects")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Con mobs eliminados en el dashboard")))
+				.andReturn();
+		UUID projectId = UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText());
+		flush();
+		aMobIn(projectId, "mob-vivo");
+		UUID mobEliminadoId = aMobIn(projectId, "mob-eliminado");
+		flush();
+		mockMvc.perform(delete("/api/mobs/{mobId}", mobEliminadoId)).andExpect(status().isNoContent());
+
+		mockMvc.perform(get("/api/projects"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].mobCount", is(1)))
+				.andExpect(jsonPath("$[0].mobThumbnails", hasSize(1)));
+	}
+
+	@Test
 	void listar_no_incluye_proyectos_eliminados() throws Exception {
 		MvcResult created = mockMvc.perform(post("/api/projects")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -237,6 +256,54 @@ class ProjectControllerTest {
 	@Test
 	void duplicar_un_proyecto_inexistente_responde_404() throws Exception {
 		mockMvc.perform(post("/api/projects/{id}/duplicate", UUID.randomUUID())).andExpect(status().isNotFound());
+	}
+
+	// -- Ticket 039: un mob eliminado (soft-delete) no debe contarse ni copiarse --
+	// Hallazgo real de la verificación en vivo: countByProjectId/findByProjectIdOrderByUpdatedAtDesc
+	// (sin filtrar deletedAt) seguían usándose acá para el conteo de "criaturas"
+	// y para Duplicate -- antes de este ticket `mobs` no tenía soft-delete, así
+	// que nunca hizo falta filtrar.
+
+	@Test
+	void el_conteo_de_mobs_del_detalle_excluye_los_eliminados() throws Exception {
+		MvcResult created = mockMvc.perform(post("/api/projects")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Con mob eliminado")))
+				.andReturn();
+		UUID projectId = UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText());
+		flush();
+		aMobIn(projectId, "mob-vivo");
+		UUID mobEliminadoId = aMobIn(projectId, "mob-eliminado");
+		flush();
+
+		mockMvc.perform(delete("/api/mobs/{mobId}", mobEliminadoId)).andExpect(status().isNoContent());
+
+		mockMvc.perform(get("/api/projects/{id}", projectId)).andExpect(jsonPath("$.mobCount", is(1)));
+	}
+
+	@Test
+	void duplicar_un_proyecto_no_copia_sus_mobs_eliminados() throws Exception {
+		MvcResult created = mockMvc.perform(post("/api/projects")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Con mob eliminado para duplicar")))
+				.andReturn();
+		UUID projectId = UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText());
+		flush();
+		aMobIn(projectId, "mob-vivo");
+		UUID mobEliminadoId = aMobIn(projectId, "mob-eliminado");
+		flush();
+		mockMvc.perform(delete("/api/mobs/{mobId}", mobEliminadoId)).andExpect(status().isNoContent());
+
+		MvcResult duplicated = mockMvc.perform(post("/api/projects/{id}/duplicate", projectId))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.mobCount", is(1)))
+				.andReturn();
+		flush();
+
+		String newProjectId = objectMapper.readTree(duplicated.getResponse().getContentAsString()).get("id").asText();
+		Integer newMobCount =
+				jdbc.queryForObject("select count(*) from mobs where project_id = ?", Integer.class, UUID.fromString(newProjectId));
+		assertThat(newMobCount).isEqualTo(1); // solo el mob vivo se copió, no el eliminado
 	}
 
 	// -- CORS (docs/definiciones/galgoth-studio-mvp.md §9 -- origen local de desarrollo) --

@@ -13,11 +13,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * CRUD de mobs dentro de un proyecto (ticket 022, HU-03/HU-04). Alcance
- * deliberadamente acotado al AC del ticket -- solo crear y listar (con
- * filtro de nombre en el frontend, ver `docs/API.md`). Rename/Delete/
- * Duplicate a nivel de mob individual NO están pedidos por este ticket
- * (a diferencia de proyectos en el 021) -- no se inventan.
+ * CRUD de mobs dentro de un proyecto (ticket 022, HU-03/HU-04 -- crear/
+ * listar; ticket 039 agrega rename/soft-delete individual, mismo
+ * criterio que `ProjectService` -- ver `V2__mobs_soft_delete.sql` para
+ * el porqué de soft-delete en vez de hard-delete). Duplicate a nivel de
+ * mob individual sigue sin pedirse -- no se inventa.
  */
 @Service
 public class MobService {
@@ -62,14 +62,36 @@ public class MobService {
 		if (projectRepository.findByIdAndDeletedAtIsNull(projectId).isEmpty()) {
 			throw new ProjectNotFoundException(projectId);
 		}
-		return mobRepository.findByProjectIdOrderByUpdatedAtDesc(projectId).stream().map(this::toSummary).toList();
+		return mobRepository.findByProjectIdAndDeletedAtIsNullOrderByUpdatedAtDesc(projectId).stream().map(this::toSummary).toList();
 	}
 
 	/** Ticket 034 -- ruta prevista desde el bootstrap del proyecto (`docs/API.md`, "Rutas previstas"), sin `projectId` en el path a propósito (mismo criterio que `MobDraftController`/`MobThumbnailController`: el mob ya se identifica solo por su id). */
 	@Transactional(readOnly = true)
 	public MobSummary get(UUID mobId) {
-		MobEntity mob = mobRepository.findById(mobId).orElseThrow(() -> new MobNotFoundException(mobId));
+		MobEntity mob = requireMob(mobId);
 		return toSummary(mob);
+	}
+
+	/** Ticket 039 -- mismo criterio de validación que `create`. */
+	@Transactional
+	public MobSummary rename(UUID mobId, String newName) {
+		MobEntity mob = requireMob(mobId);
+		mob.setName(requireValidName(newName));
+		mob.setUpdatedAt(Instant.now());
+		mobRepository.save(mob);
+		return toSummary(mob);
+	}
+
+	/** Ticket 039 -- soft-delete, mismo criterio que `ProjectService.softDelete`. */
+	@Transactional
+	public void softDelete(UUID mobId) {
+		MobEntity mob = requireMob(mobId);
+		mob.setDeletedAt(Instant.now());
+		mobRepository.save(mob);
+	}
+
+	private MobEntity requireMob(UUID mobId) {
+		return mobRepository.findByIdAndDeletedAtIsNull(mobId).orElseThrow(() -> new MobNotFoundException(mobId));
 	}
 
 	private String requireValidName(String name) {

@@ -22,6 +22,7 @@ import IconBoneJoint from '../design-system/icons/IconBoneJoint.vue'
 import IconCuboid from '../design-system/icons/IconCuboid.vue'
 import IconTrash from '../design-system/icons/IconTrash.vue'
 import GButton from '../design-system/components/GButton.vue'
+import IconButton from '../design-system/components/IconButton.vue'
 
 const props = defineProps<{ node: BoneNode }>()
 
@@ -58,8 +59,8 @@ const impact = draft.boneRemovalImpact(props.node.bone.id)
       <button v-else-if="hasChildren()" type="button" class="hierarchy-node__toggle" aria-label="Expandir" @click="expanded = true"><IconChevron :size="14" :expanded="false" /></button>
       <span v-else class="hierarchy-node__toggle-spacer" aria-hidden="true"></span>
       <IconBoneJoint :size="15" class="hierarchy-node__icon hierarchy-node__icon--bone" />
-      <span class="hierarchy-node__name">{{ node.bone.name }}</span>
-      <button type="button" class="hierarchy-node__delete" aria-label="Eliminar bone" title="Eliminar bone" @click="requestDelete"><IconTrash :size="14" /></button>
+      <span class="hierarchy-node__name" :title="node.bone.name">{{ node.bone.name }}</span>
+      <IconButton label="Eliminar bone" size="sm" class="hierarchy-node__delete" @click="requestDelete"><IconTrash :size="14" /></IconButton>
     </div>
 
     <div v-if="pendingDelete" class="hierarchy-node__delete-warning">
@@ -83,7 +84,7 @@ const impact = draft.boneRemovalImpact(props.node.bone.id)
       >
         <span class="hierarchy-node__toggle-spacer" aria-hidden="true"></span>
         <IconCuboid :size="14" class="hierarchy-node__icon hierarchy-node__icon--cuboid" />
-        <span class="hierarchy-node__name">{{ cuboid.name }}</span>
+        <span class="hierarchy-node__name" :title="cuboid.name">{{ cuboid.name }}</span>
       </li>
       <HierarchyBoneNode v-for="child in node.children" :key="child.bone.id" :node="child" />
     </ul>
@@ -156,26 +157,11 @@ const impact = draft.boneRemovalImpact(props.node.bone.id)
   font-size: var(--text-sm);
 }
 
+/* Ticket 039 -- IconButton ya trae su propio tamaño/borde/estados; acá solo se ajusta que quede oculto hasta el hover de la fila (comportamiento propio de este árbol, no del botón genérico). */
 .hierarchy-node__delete {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
   flex-shrink: 0;
-  padding: 0;
-  background: none;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  cursor: pointer;
   opacity: 0;
   transition: opacity var(--transition-fast);
-}
-
-.hierarchy-node__delete:hover {
-  background: var(--danger-soft);
-  color: var(--danger);
 }
 
 .hierarchy-node__row--bone:hover .hierarchy-node__delete {
