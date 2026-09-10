@@ -33,10 +33,10 @@ const label = computed(() => LABELS[props.state])
 </script>
 
 <template>
-  <span class="texture-save-status" :class="`texture-save-status--${state}`" role="status">
+  <output class="texture-save-status" :class="`texture-save-status--${state}`">
     <span class="texture-save-status__dot" aria-hidden="true"></span>
     <span>{{ label }}</span>
-  </span>
+  </output>
 </template>
 
 <style scoped>

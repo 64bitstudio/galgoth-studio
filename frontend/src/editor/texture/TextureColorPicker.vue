@@ -115,18 +115,21 @@ function swatchLabel(color: string): string {
       <span class="texture-color-picker__swatch-main" aria-hidden="true" :style="{ background: modelValue }"></span>
     </button>
 
-    <div v-if="isOpen" class="texture-color-picker__panel" role="group" aria-label="Elegir color activo">
+    <fieldset v-if="isOpen" class="texture-color-picker__panel">
+      <legend class="texture-color-picker__sr-only">Elegir color activo</legend>
       <div class="texture-color-picker__swatches">
         <button v-for="color in PALETTE" :key="color" type="button" class="texture-color-picker__swatch" :class="{ 'texture-color-picker__swatch--active': color.toLowerCase() === modelValue.toLowerCase() }" :style="{ background: color }" :aria-label="swatchLabel(color)" :aria-pressed="color.toLowerCase() === modelValue.toLowerCase()" @click="pickSwatch(color)"><span class="texture-color-picker__sr-only">{{ swatchLabel(color) }}</span></button>
       </div>
 
       <div class="texture-color-picker__custom-row">
         <button type="button" class="texture-color-picker__swatch texture-color-picker__swatch--custom" :class="{ 'texture-color-picker__swatch--active': isCustomActive }" aria-label="Elegir cualquier color" @click="openNativePicker"><span class="texture-color-picker__sr-only">Elegir cualquier color</span></button>
-        <input v-model="hexDraft" type="text" class="texture-color-picker__hex-input" maxlength="7" aria-label="Código hexadecimal del color activo" @keydown="handleHexKeydown" @blur="commitHexDraft" />
+        <label for="texture-color-picker-hex-input" class="texture-color-picker__sr-only">Código hexadecimal del color activo</label>
+        <input id="texture-color-picker-hex-input" v-model="hexDraft" type="text" class="texture-color-picker__hex-input" maxlength="7" aria-label="Código hexadecimal del color activo" @keydown="handleHexKeydown" @blur="commitHexDraft" />
       </div>
 
-      <input ref="nativeInputRef" type="color" class="texture-color-picker__native-input" aria-hidden="true" tabindex="-1" :value="modelValue" @input="handleNativeInput" />
-    </div>
+      <label for="texture-color-picker-native-input" class="texture-color-picker__sr-only">Selector de color nativo del sistema</label>
+      <input id="texture-color-picker-native-input" ref="nativeInputRef" type="color" class="texture-color-picker__native-input" aria-label="Selector de color nativo del sistema" tabindex="-1" :value="modelValue" @input="handleNativeInput" />
+    </fieldset>
   </div>
 </template>
 
@@ -185,6 +188,8 @@ function swatchLabel(color: string): string {
   left: 0;
   z-index: 50;
   width: 196px;
+  min-width: 0;
+  margin: 0;
   background: var(--surface);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-md);

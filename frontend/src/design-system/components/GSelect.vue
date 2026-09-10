@@ -60,7 +60,7 @@ function open(): void {
   focusedIndex.value = props.options.findIndex((o) => o.value === props.modelValue)
   isOpen.value = true
   nextTick(() => {
-    const target = focusedIndex.value >= 0 ? focusedIndex.value : 0
+    const target = Math.max(focusedIndex.value, 0)
     const buttons = listRef.value?.querySelectorAll<HTMLButtonElement>('.g-select__option')
     buttons?.[target]?.focus()
   })

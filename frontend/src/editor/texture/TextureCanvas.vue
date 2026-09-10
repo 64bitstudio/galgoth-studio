@@ -738,7 +738,7 @@ function showEyedropperToast(hex: string): void {
               </g>
             </svg>
           </div>
-          <p v-if="pickedColorToast" class="texture-canvas__toast" role="status" aria-live="polite">{{ pickedColorToast }}</p>
+          <output v-if="pickedColorToast" class="texture-canvas__toast" aria-live="polite">{{ pickedColorToast }}</output>
         </div>
       </section>
 
@@ -793,7 +793,6 @@ function showEyedropperToast(hex: string): void {
   gap: 2px;
   margin: 0;
   padding: 2px;
-  border: none;
   background: var(--surface);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-md);

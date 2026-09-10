@@ -308,7 +308,7 @@ describe('TextureCanvas.vue', () => {
     expect(w.get('.texture-color-picker__swatch-main').attributes('style')).toContain('background: rgb(10, 20, 30)')
     expect(recordSpy).not.toHaveBeenCalled()
     // AC ticket 058: confirmación VISIBLE del color capturado -- nunca un cambio silencioso.
-    expect(w.get('[role="status"][aria-live="polite"]').text()).toContain('#0a141e')
+    expect(w.get('output[aria-live="polite"]').text()).toContain('#0a141e')
   })
 
   it('AC HU-27: el toggle de cuadrícula agrega/quita líneas SOLO en el overlay -- nunca cambia un byte del atlas', async () => {
