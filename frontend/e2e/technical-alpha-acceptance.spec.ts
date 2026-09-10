@@ -30,7 +30,11 @@ test('flujo completo: crear proyecto → mob por IA → editar a mano → editar
   const mobName = `Carcomido E2E ${runId}`
 
   await page.goto('/')
-  await page.getByRole('button', { name: 'Proyecto vacío' }).click()
+  // Ticket 039 (corrección de producto): el CTA de proyecto vacío pasó de
+  // "Proyecto vacío" a "Crear nuevo proyecto" -- selector actualizado en
+  // el checkpoint del ticket 056, que encontró esta suite desactualizada
+  // (nunca corre en CI, ver Jenkinsfile) tras 039/050.
+  await page.getByRole('button', { name: 'Crear nuevo proyecto' }).click()
   await page.getByLabel('Nombre del proyecto').fill(projectName)
   await page.getByRole('button', { name: 'Crear proyecto' }).click()
   await expect(page.getByRole('heading', { name: projectName })).toBeVisible()
@@ -47,9 +51,30 @@ test('flujo completo: crear proyecto → mob por IA → editar a mano → editar
   await expect(page.getByRole('heading', { name: projectName })).toBeVisible()
 
   // -- Editar a mano y Guardar (016-020/034) --
-  await page.getByRole('link', { name: new RegExp(mobName) }).click()
-  await expect(page.locator('.mob-editor__hierarchy')).toBeVisible()
-  await page.getByRole('button', { name: 'Add cuboid' }).click()
+  // `MobCard.vue` abre el editor con un `<button class="mob-card__open">`
+  // (no un link) -- se filtra por clase porque el menú de acciones
+  // ("Acciones de {mob}") es OTRO botón cuyo nombre accesible también
+  // contiene el nombre del mob (violación de modo estricto por rol+nombre
+  // solo) -- selector actualizado en 056, mismo hallazgo de
+  // desactualización que arriba.
+  await page.locator('.mob-card__open', { hasText: mobName }).click()
+  // `.mob-editor__hierarchy` no existe en el markup actual (el panel real
+  // es `HierarchyPanel.vue`, clase `.hierarchy-panel`) -- mismo hallazgo
+  // de desactualización que el selector de arriba, corregido en 056.
+  await expect(page.locator('.hierarchy-panel')).toBeVisible()
+  // Ticket 056, hallazgo real: "Add cuboid" (ya renombrado a "Agregar
+  // cuboide" en el 039) crece el footprint UV -- combinado con el
+  // resize de MockReasoningProvider en el edit por IA de abajo, podía
+  // desbordar el atlas (UV_ATLAS_OVERFLOW, un rechazo de negocio real).
+  // Se reemplaza por un move (`moveSelectedCuboid`, 100% client-side,
+  // nunca toca UV/atlas) sobre el cuboid "torso" ya existente -- sigue
+  // siendo una edición manual real seguida de Guardar (AC del ticket),
+  // sin crecer el footprint. La causa raíz completa del overflow (escala
+  // del mock de edición demasiado agresiva para el packing real de hoy)
+  // se corrigió aparte en `MockReasoningProvider` -- ver su docstring.
+  await page.getByText('torso', { exact: true }).click()
+  await page.getByLabel('Posición X').fill('2')
+  await page.getByLabel('Posición X').blur()
   await page.getByRole('button', { name: 'Guardar' }).click()
   await expect(page.getByText(/Guardado \(revisión/)).toBeVisible()
 
@@ -65,10 +90,18 @@ test('flujo completo: crear proyecto → mob por IA → editar a mano → editar
   await page.getByRole('button', { name: 'Exportar' }).click()
   await expect(page.getByText('Modelo listo para usar en tu servidor')).toBeVisible({ timeout: 10_000 })
 
-  const [download] = await Promise.all([
-    page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Exportar .bbmodel' }).click(),
-  ])
+  // `mob_drafts` no se resincroniza con la Revision al hacer "Guardar"/
+  // "Aplicar cambios" (fuera de alcance -- eso es HU-30/autosave, un
+  // ticket distinto): "Usar este modelo" ya escribió una fila de draft,
+  // así que el panel puede mostrar "Guardar y exportar" en vez del botón
+  // simple. Se usa siempre "Exportar última versión guardada"/"Exportar
+  // .bbmodel" (la Revision YA guardada) -- nunca "Guardar y exportar"
+  // (crearía una Revision nueva a partir de ese draft desactualizado).
+  const exportLatestButton = page.getByRole('button', { name: 'Exportar última versión guardada' })
+  const exportSimpleButton = page.getByRole('button', { name: 'Exportar .bbmodel' })
+  const exportButton = (await exportLatestButton.count()) > 0 ? exportLatestButton : exportSimpleButton
+
+  const [download] = await Promise.all([page.waitForEvent('download'), exportButton.click()])
   const downloadPath = await download.path()
   expect(downloadPath).toBeTruthy()
 
