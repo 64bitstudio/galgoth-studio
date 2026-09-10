@@ -89,9 +89,14 @@
 // Jenkins o un cambio de infra mayor (imagen Docker todo-en-uno con
 // JDK+Node+Chromium+deps, evitando la topología de contenedor hermano
 // por completo) -- decisión que le corresponde a `platform`, fuera de
-// lo que se puede diagnosticar a ciegas leyendo logs. Ver el `## Hecho`
-// del ticket 033 y docs/ARQUITECTURA.md para el detalle completo de las
-// 6 rondas. Uso local: `./scripts/e2e.sh` desde la raíz del repo.
+// lo que se puede diagnosticar a ciegas leyendo logs. El PO (Marco)
+// decidió explícitamente el 2026-09-09 aceptar este gap como riesgo
+// conocido y cerrar el ticket 033 así (`done/033-...`), en vez de seguir
+// invirtiendo en el diagnóstico de red del agente compartido -- retomable
+// como ticket nuevo si se decide investigar más adelante. Ver el
+// `## Hecho` del ticket 033 y docs/ARQUITECTURA.md para el detalle
+// completo de las 6 rondas. Uso local: `./scripts/e2e.sh` desde la raíz
+// del repo.
 @Library('platform') _
 
 corePipeline(
