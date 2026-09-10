@@ -280,23 +280,25 @@ public class MobGenerationService {
 	 * ticket).
 	 */
 	private GeometryPlanExecution planWithHeartbeat(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel emptyModel) {
-		ScheduledExecutorService heartbeatScheduler = Executors.newSingleThreadScheduledExecutor();
-		long startNanos = System.nanoTime();
-		ScheduledFuture<?> heartbeat = heartbeatScheduler.scheduleAtFixedRate(
-				() -> {
-					long elapsedSeconds = (System.nanoTime() - startNanos) / 1_000_000_000L;
-					emit(
-							jobId, seq, GenerationStage.DETECTANDO_SILUETA,
-							"Generando geometría… llevamos " + elapsedSeconds + "s, puede tardar hasta un minuto.", 25, null);
-				},
-				heartbeatInitialDelaySeconds, heartbeatPeriodSeconds, TimeUnit.SECONDS);
-
 		RawOperationsResult raw;
-		try {
-			raw = geometryPlannerService.requestOperations(modelIntent);
-		} finally {
-			heartbeat.cancel(true);
-			heartbeatScheduler.shutdownNow();
+		// try-with-resources -- `ExecutorService`/`ScheduledExecutorService`
+		// implementan `AutoCloseable` desde Java 19 (Sonar S2093): cierra el
+		// scheduler solo, sin un `finally` manual con `shutdownNow()`.
+		try (ScheduledExecutorService heartbeatScheduler = Executors.newSingleThreadScheduledExecutor()) {
+			long startNanos = System.nanoTime();
+			ScheduledFuture<?> heartbeat = heartbeatScheduler.scheduleAtFixedRate(
+					() -> {
+						long elapsedSeconds = (System.nanoTime() - startNanos) / 1_000_000_000L;
+						emit(
+								jobId, seq, GenerationStage.DETECTANDO_SILUETA,
+								"Generando geometría… llevamos " + elapsedSeconds + "s, puede tardar hasta un minuto.", 25, null);
+					},
+					heartbeatInitialDelaySeconds, heartbeatPeriodSeconds, TimeUnit.SECONDS);
+			try {
+				raw = geometryPlannerService.requestOperations(modelIntent);
+			} finally {
+				heartbeat.cancel(true);
+			}
 		}
 
 		checkCancellation(jobId);

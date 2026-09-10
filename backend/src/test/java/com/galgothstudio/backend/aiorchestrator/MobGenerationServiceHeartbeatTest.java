@@ -84,8 +84,12 @@ class MobGenerationServiceHeartbeatTest {
 		@Override
 		public AiProviderResponse reason(ReasoningRequest request) {
 			try {
-				Thread.sleep(blockMillis);
-			} catch (InterruptedException e) {
+				// NOSONAR -- deliberado: el objetivo del test es verificar que el
+				// heartbeat dispara mientras pasa tiempo REAL; no hay forma de
+				// simularlo con un CountDownLatch/mock de tiempo sin reescribir
+				// el scheduler de producción.
+				Thread.sleep(blockMillis); // NOSONAR
+			} catch (InterruptedException _) {
 				Thread.currentThread().interrupt();
 			}
 			return new AiProviderResponse(ONE_BONE_ONE_CUBOID_JSON, "fake-slow", "fake-model", request.promptVersion(), request.schemaVersion());
@@ -155,8 +159,9 @@ class MobGenerationServiceHeartbeatTest {
 		assertThat(job.getStatus()).isEqualTo("completed");
 		List<AiJobEventEntity> events = aiJobEventRepository.findByJobIdAndSeqGreaterThanOrderBySeqAsc(jobId, 0);
 		assertThat(events.getLast().getStage()).isEqualTo("completado");
-		assertThat(events).anySatisfy(e -> assertThat(e.getStage()).isEqualTo("preparando_resultado"));
-		assertThat(events).anySatisfy(e -> assertThat(e.getStage()).isEqualTo("validando_geometria"));
+		assertThat(events)
+				.anySatisfy(e -> assertThat(e.getStage()).isEqualTo("preparando_resultado"))
+				.anySatisfy(e -> assertThat(e.getStage()).isEqualTo("validando_geometria"));
 	}
 
 	@Test
@@ -174,9 +179,11 @@ class MobGenerationServiceHeartbeatTest {
 		List<AiJobEventEntity> heartbeatPings =
 				events.stream().filter(e -> "detectando_silueta".equals(e.getStage()) && e.getMessage().contains("llevamos")).toList();
 
-		assertThat(heartbeatPings).as("al menos 2 pings reales durante los 2.5s de espera bloqueante").hasSizeGreaterThanOrEqualTo(2);
 		// Honesto: NUNCA cambia de stage ni de % mientras hace ping -- solo el mensaje.
-		assertThat(heartbeatPings).allSatisfy(e -> assertThat(e.getProgressPct()).isEqualTo(25));
+		assertThat(heartbeatPings)
+				.as("al menos 2 pings reales durante los 2.5s de espera bloqueante")
+				.hasSizeGreaterThanOrEqualTo(2)
+				.allSatisfy(e -> assertThat(e.getProgressPct()).isEqualTo(25));
 		// Mensajes distintos entre sí (el tiempo transcurrido realmente avanza, no es el mismo texto repetido).
 		assertThat(heartbeatPings.stream().map(AiJobEventEntity::getMessage).distinct().count()).isGreaterThanOrEqualTo(2);
 	}

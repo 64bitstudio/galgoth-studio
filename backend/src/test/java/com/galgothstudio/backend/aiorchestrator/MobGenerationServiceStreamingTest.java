@@ -66,8 +66,8 @@ class MobGenerationServiceStreamingTest {
 	/**
 	 * Entrega cada {@code GeometryOperation} de {@link #operationJsons} como
 	 * SU PROPIO delta (`reasonStreaming`) -- a diferencia de
-	 * `MockReasoningProvider`/el default de la interfaz, que entregan todo
-	 * en un solo fragmento. `failAtIndex`/`onBeforeIndex` permiten a cada
+	 * `MockReasoningProvider`/el default de la interfaz, que entregan el
+	 * contenido completo en un solo fragmento. `failAtIndex`/`onBeforeIndex` permiten a cada
 	 * test interceptar el stream EXACTAMENTE en la operación que necesita
 	 * (falla real del proveedor, o disparar `requestCancellation` desde
 	 * dentro del mismo hilo síncrono del pipeline).

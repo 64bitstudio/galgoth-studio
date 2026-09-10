@@ -196,7 +196,7 @@ async function beginGeneration(): Promise<void> {
   }
 }
 
-/** Ticket 038 -- estado de error explícito (AC del bugfix): reintentar dispara una generación COMPLETAMENTE nueva (el job fallido nunca se reutiliza), reseteando todo el estado local primero. */
+/** Ticket 038 -- estado de error explícito (AC del bugfix): reintentar dispara una generación COMPLETAMENTE nueva (el job fallido nunca se reutiliza), reseteando el estado local completo primero. */
 async function retryGeneration(): Promise<void> {
   closeStream()
   clearPersistedJobId()

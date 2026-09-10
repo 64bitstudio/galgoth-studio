@@ -49,7 +49,7 @@ export type StageStatus = 'done' | 'current' | 'pending'
  * AC del bugfix) -- función pura, sin ningún estado de componente: dado
  * el índice de la etapa actual y el outcome del job, dice si la etapa
  * `index` ya se completó, es la actual, o todavía no llegó. Terminado el
- * job (outcome !== 'running'), todo hasta la etapa actual queda "done"
+ * job (outcome !== 'running'), cada etapa hasta la actual queda "done"
  * (no queda ninguna "current" activa una vez terminado).
  */
 export function stageStatusFor(index: number, currentStageIndex: number, outcome: GenerationOutcome): StageStatus {

@@ -74,7 +74,7 @@ describe('generationStages', () => {
     })
 
     it.each(['completed', 'failed', 'cancelled'] as const)(
-      'terminado el job (%s), TODO hasta la etapa alcanzada queda "done" -- ninguna sigue "current"',
+      'terminado el job (%s), cada etapa hasta la alcanzada queda "done" -- ninguna sigue "current"',
       (outcome) => {
         expect(stageStatusFor(0, 3, outcome)).toBe('done')
         expect(stageStatusFor(3, 3, outcome)).toBe('done')

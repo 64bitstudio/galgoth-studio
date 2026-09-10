@@ -1,10 +1,10 @@
 package com.galgothstudio.backend.aiorchestrator.provider;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -52,6 +52,8 @@ public class ClaudeMessagesClient {
 	 * un rig humanoide puede ser largo).
 	 */
 	private static final int MAX_TOKENS = 16000;
+	/** Nombre real del campo JSON (`body.put`) y del `stop_reason` que Anthropic devuelve -- una sola constante, no 3 literales repetidos (Sonar S1192). */
+	private static final String MAX_TOKENS_FIELD = "max_tokens";
 
 	private final RestClient restClient;
 	private final ObjectMapper objectMapper;
@@ -133,7 +135,7 @@ public class ClaudeMessagesClient {
 		}
 
 		if (fullText.isEmpty()) {
-			if ("max_tokens".equals(stopReasonBox[0])) {
+			if (MAX_TOKENS_FIELD.equals(stopReasonBox[0])) {
 				throw new AiProviderException(
 						"Respuesta de Anthropic (streaming) truncada por max_tokens antes de emitir ningún bloque de "
 								+ "texto (probable razonamiento extendido consumiendo todo el presupuesto) -- subir MAX_TOKENS.");
@@ -195,7 +197,7 @@ public class ClaudeMessagesClient {
 
 		ObjectNode body = objectMapper.createObjectNode();
 		body.put("model", model);
-		body.put("max_tokens", MAX_TOKENS);
+		body.put(MAX_TOKENS_FIELD, MAX_TOKENS);
 		body.put("system", systemPrompt);
 		body.set("messages", messages);
 		return body;
@@ -245,7 +247,7 @@ public class ClaudeMessagesClient {
 		}
 		if (text.isEmpty()) {
 			String stopReason = response.path("stop_reason").asText("");
-			if ("max_tokens".equals(stopReason)) {
+			if (MAX_TOKENS_FIELD.equals(stopReason)) {
 				// Hallazgo real (ticket 028): el modelo consumió el presupuesto
 				// completo de max_tokens en un bloque "thinking" antes de llegar
 				// a emitir texto -- un error específico ahorra tener que releer
