@@ -7,6 +7,8 @@
 Fase 3 agrega al Technical Alpha ya aprobado la capacidad de **pintar y generar por IA la textura real de un mob**, reemplazando la textura placeholder checkerboard que hoy garantiza únicamente que el export sea válido. Cubre: un editor de textura/UV manual tipo pixel-art sobre el atlas ya calculado por `AutoUv`, con selección cruzada cuboid↔UV y preview 3D en vivo; la integración de ese trabajo con el sistema ya existente de Draft/Command/Revision, con Undo/Redo basado en patches (nunca snapshots completos del bitmap) y el bitmap persistido content-addressed con el backend como única autoridad del hash; la resolución del riesgo abierto #7 heredado de Fase 1+2 (qué pasa con una UV que ya no puede reempaquetarse libremente porque tiene textura pintada encima, vía una `StableUvStrategy` nueva con reservas explícitas de espacio abandonado); y un pipeline de generación de textura por IA usando **OpenAI** (modelo configurable, no hardcodeado) como `ImageGenerationProvider`, generando una sola imagen coherente por bone (nunca por cuboid) y con el mismo patrón "IA propone, la app valida y aplica con diff" ya probado en geometría (ticket 031). El exportador (`BBModelExporterV5`/`V4`) es, a partir de esta fase, un serializador puro — nunca calcula ni reempaqueta UV, solo serializa la UV canónica que ya quedó fijada en la Revision.
 
 > **VoBo FINAL del Product Owner: 10 sep 2026.** El diseño técnico incorpora 13 correcciones precisas del 9 sep 2026 (primera revisión) más 3 correcciones finales del 10 sep 2026 (semántica de densidad de texel x1/x2 — Diseño técnico §7; modelo de OpenAI configurable actualizado a un snapshot fechado — §12; aislamiento espacial del pipeline de generación por bone — §21). Con estas, Fase 3 queda **aprobada para desglose de tickets**.
+>
+> **Addendum post-implementación, 10 sep 2026 — Fase 3 ya 100% implementada (17/17 tickets) al momento de este addendum.** Revisión del PO sobre el trabajo entregado confirmó que la densidad de texel (§7) y el aislamiento espacial del `TextureGenerationSheet` (§21) ya estaban correctamente diseñados e implementados (tickets 042 y 053) — sin cambios. Se identificó un tercer hallazgo real, este sí un bug lógico presente en el código ya en `dev`: la regla de decisión de `UvLayoutSelector` (§2) ignoraba `UvReservation`, permitiendo que `AlphaAutoPackStrategy` reempaquetara sobre espacio reservado cuando un layout quedaba con `PAINTED=0`/`ORPHAN=0` pero `reservations>0` (p. ej. tras el resize confirmado de la única región pintada). Corregido en §2/HU-34 y en el código (ticket 057, ver Impacto estimado) — VoBo FINAL de este documento se mantiene, este addendum no reabre alcance ni arquitectura.
 
 ## Objetivo de negocio
 
@@ -217,6 +219,7 @@ para seguir usando el mismo flujo simple de AutoUv que ya conozco
 
 Criterios de aceptación:
 - Dado un atlas con una o más regiones ya pintadas, cuando agrego un cuboid nuevo, entonces la estrategia activa (`UvLayoutSelector` → `StableUvStrategy`) le asigna espacio verdaderamente libre del atlas — el atlas completo menos TODAS las regiones existentes (sin importar su estado) menos TODAS las reservas/tombstones (`UvReservation`) — sin mover ni reempaquetar nada de eso.
+- Dado un atlas SIN ninguna región `PAINTED` ni `ORPHAN`, pero con al menos una `UvReservation` vigente (p. ej. el resize confirmado de la única región `PAINTED` la dejó `UNPAINTED` y reservó su rect anterior), cuando agrego un cuboid nuevo, entonces `UvLayoutSelector` sigue eligiendo `StableUvStrategy` — NUNCA `AlphaAutoPackStrategy` — de modo que el rect reservado jamás se reutiliza este ciclo (`requiresStableLayout(UvLayout)`, Diseño técnico §2 — hallazgo real corregido, cerrado por el PO).
 - Dado que el atlas no tiene espacio libre suficiente para el cuboid nuevo, cuando esto ocurre, entonces la creación se rechaza con `UvAtlasOverflowException` — el atlas NUNCA crece automáticamente ni reempaqueta regiones pintadas/huérfanas/reservadas para hacerle espacio.
 ```
 
@@ -404,10 +407,12 @@ public interface UvLayoutStrategy {
 
 `StableUvStrategy implements UvLayoutStrategy` sobreescribe la sobrecarga de 4 argumentos (recibe el `UvLayout` completo, no solo la lista de regiones, para poder leer también `reservations`); su versión de 3 argumentos delega a `layout(cuboids, w, h, UvLayout(w, h, List.of(), List.of()))`.
 
-**`UvLayoutSelector implements UvLayoutStrategy`** (`domain/uv/`, `@Primary`), inyectado ÚNICAMENTE en `GeometryEngine.apply`, `GeometryPlannerService`, `AiGeometryEditPlannerService` — **el exportador queda fuera de esta lista de inyección a partir de esta revisión** (cambio directo respecto al diseño anterior, que sí lo incluía). Regla de decisión sin cambios:
+**`UvLayoutSelector implements UvLayoutStrategy`** (`domain/uv/`, `@Primary`), inyectado ÚNICAMENTE en `GeometryEngine.apply`, `GeometryPlannerService`, `AiGeometryEditPlannerService` — **el exportador queda fuera de esta lista de inyección a partir de esta revisión** (cambio directo respecto al diseño anterior, que sí lo incluía).
 
-- si `previousLayout.regions()` no contiene ningún `PAINTED`/`ORPHAN` → delega en `AlphaAutoPackStrategy`.
-- si contiene al menos uno → delega en `StableUvStrategy`.
+> **Hallazgo real — corregido, cerrado definitivamente por el PO.** La regla de decisión de una revisión anterior de este documento (y de la implementación ya en `dev`) miraba ÚNICAMENTE `previousLayout.regions()` (PAINTED/ORPHAN), ignorando `previousLayout.reservations()`. Esto es un bug lógico real: un resize confirmado sobre la ÚNICA región `PAINTED` la reempaqueta como `UNPAINTED` (§1) y crea una `UvReservation` para el rect abandonado — si esa era la única región pintada, el layout resultante queda con `PAINTED=0`, `ORPHAN=0` y `reservations>0`. La regla anterior habría elegido `AlphaAutoPackStrategy` para el siguiente `Add`, que no conoce las reservas y podría reempaquetar libremente ENCIMA del rect reservado — exactamente lo que `UvReservation` existe para impedir. Regla de decisión corregida, encapsulada en un único método `requiresStableLayout(UvLayout)`:
+
+- **`StableUvStrategy`** si se cumple CUALQUIERA de: existe al menos una región `PAINTED`, O existe al menos una región `ORPHAN`, O `previousLayout.reservations()` no está vacío.
+- **`AlphaAutoPackStrategy`** únicamente cuando las tres condiciones son falsas a la vez: `PAINTED=0` Y `ORPHAN=0` Y `reservations=0` (layout "limpio", idéntico al comportamiento de Fase 1+2).
 
 `GeometryEngine.apply(model, ops, uvLayoutStrategy)` invoca `uvLayoutStrategy.layout(cuboids, w, h, model.uv())` (pasa el `UvLayout` completo, no solo `regions()`, para que `StableUvStrategy` pueda leer `reservations`). `StableUvStrategy` reutiliza la matemática de box-unwrap ya verificada de `AlphaAutoPackStrategy` vía el helper compartido `BoxUvMath`.
 
@@ -913,8 +918,8 @@ flowchart LR
     GE --> SEL
     GPS --> SEL
     AGEPS --> SEL
-    SEL -- "layout sin PAINTED/ORPHAN\n→ idéntico a Fase 1+2" --> ALPHA
-    SEL -- "layout con ≥1 PAINTED/ORPHAN\n→ preserva regiones + reservas" --> STABLE
+    SEL -- "PAINTED=0 Y ORPHAN=0 Y reservations=0\n→ idéntico a Fase 1+2" --> ALPHA
+    SEL -- "PAINTED>0 O ORPHAN>0 O reservations>0\n→ preserva regiones + reservas" --> STABLE
 
     subgraph EXPORT["Export — el exportador NUNCA decide UV"]
         LEGACY["LegacyUvNormalizationService\n(NUEVO, domain/uv —\nsolo si 0 regiones pintadas Y difiere de AlphaAutoPack)"]
@@ -971,7 +976,7 @@ Documentadas para resolverse a nivel de ticket — no bloquean el VoBo de este d
 Lista tentativa de tickets a desglosar con el skill `nuevo-ticket` tras el VoBo — no definitiva:
 
 1. `MobProjectModel`: extensión de `UvRegion`/`UvRegionStatus` + `UvReservation`/`UvReservationReason` nuevos, contratos TS + DTOs Java + JSON Schemas actualizados en `contracts/` (HU-24, HU-29, HU-33/34/35).
-2. `UvLayoutSelector` + `StableUvStrategy` (considera regiones y reservas) + `BoxUvMath` compartido + `PaintedRegionResizeConfirmationRequiredException` — inyectado SOLO en `GeometryEngine.apply`/`GeometryPlannerService`/`AiGeometryEditPlannerService`, nunca en el exportador (HU-33, HU-34, HU-35).
+2. `UvLayoutSelector` + `StableUvStrategy` (considera regiones y reservas) + `BoxUvMath` compartido + `PaintedRegionResizeConfirmationRequiredException` — inyectado SOLO en `GeometryEngine.apply`/`GeometryPlannerService`/`AiGeometryEditPlannerService`, nunca en el exportador (HU-33, HU-34, HU-35). `UvLayoutSelector.requiresStableLayout(UvLayout)` decide `StableUvStrategy` si `PAINTED>0` O `ORPHAN>0` O `reservations>0` — ver addendum arriba y ticket 057.
 3. `POST /api/mobs/{mobId}/geometry/apply` (nuevo `MobGeometryController`/`project/geometry`) + wiring del flujo de confirmación en el editor manual, con preview local en `pointermove` y commit único en `pointerup` (HU-33).
 4. Resolución de atlas: densidad de texel x1/x2 (1 o 2 texels/unidad) alimentando el footprint de `AutoUv` — `BoxUvMath.footprintOf` gana el parámetro de densidad, atlas resultante del packing (Minecraft) o power-of-two (custom), congelado + `UvAtlasOverflowException` tras el primer `PAINTED` (HU-29).
 5. Persistencia content-addressed de textura con el backend como autoridad de hash (`PUT /api/mobs/{mobId}/texture` decodifica/valida/calcula SHA-256 server-side), dirty-check por `storageKey`, flush obligatorio antes de crear Revision + migración `V3__ai_jobs_texture_job_types.sql` (HU-30, HU-31, HU-39).
@@ -987,3 +992,4 @@ Lista tentativa de tickets a desglosar con el skill `nuevo-ticket` tras el VoBo 
 15. Pantalla del generador IA de textura (mockup 08) (HU-42).
 16. `BBModelExporterV5`/`V4`: cambio de firma a `export(model)` — nunca invoca ninguna `UvLayoutStrategy`, serializa `model.uv()` tal cual + `LegacyUvNormalizationService` (paso explícito previo, solo para revisiones legacy seguras) + fixtures nuevas contra Blockbench real con textura pintada (HU-43).
 17. Suite de aceptación E2E de Fase 3 (análoga a HU-23/ticket 033) (HU-43).
+18. **[Addendum post-implementación]** `UvLayoutSelector.requiresStableLayout(UvLayout)`: corrección del bug real de la regla de decisión (ignoraba `reservations`) — `StableUvStrategy` si `PAINTED>0` O `ORPHAN>0` O `reservations>0`, `AlphaAutoPackStrategy` solo si las 3 son 0. Tests obligatorios: (A) `PAINTED=0`/`ORPHAN=0`/`reservations=1` → Stable; (B) todo `UNPAINTED`/`reservations=0` → Alpha; (C) resize de la única `PAINTED` crea una reserva y el siguiente Add usa Stable, nunca ocupa ese rect (HU-34).

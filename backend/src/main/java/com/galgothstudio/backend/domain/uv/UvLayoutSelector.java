@@ -16,9 +16,27 @@ import org.springframework.stereotype.Component;
  * `docs/definiciones/galgoth-studio-fase3-textura.md`.
  *
  * <p>Regla de decisión (única, usada por los 3 llamadores de
- * {@link UvLayoutStrategy}): si {@code previousLayout.regions()} no
- * contiene ningún {@code PAINTED}/{@code ORPHAN} → {@link AlphaAutoPackStrategy};
- * si contiene al menos uno → {@link StableUvStrategy}.
+ * {@link UvLayoutStrategy}, encapsulada en {@link #requiresStableLayout}):
+ * {@link StableUvStrategy} si se cumple CUALQUIERA de -- existe al menos
+ * una región {@code PAINTED}, existe al menos una región {@code ORPHAN}, o
+ * {@code previousLayout.reservations()} no está vacío; {@link AlphaAutoPackStrategy}
+ * únicamente cuando las tres condiciones son falsas a la vez (layout
+ * "limpio", idéntico al comportamiento de Fase 1+2).
+ *
+ * <p><b>Ticket 057 -- hallazgo real corregido, cerrado por el PO.</b> Una
+ * revisión anterior de esta regla miraba ÚNICAMENTE {@code regions()}
+ * (PAINTED/ORPHAN), ignorando {@code reservations()}. Esto era un bug
+ * lógico real: un resize confirmado sobre la ÚNICA región {@code PAINTED}
+ * la reempaqueta como {@code UNPAINTED} y crea una {@link
+ * com.galgothstudio.backend.domain.model.UvReservation} para el rect
+ * abandonado -- si esa era la única región pintada, el layout resultante
+ * quedaba con {@code PAINTED=0}, {@code ORPHAN=0} y {@code reservations>0},
+ * y la regla anterior elegía {@link AlphaAutoPackStrategy} para el
+ * siguiente {@code Add}, que no conoce las reservas y podía reempaquetar
+ * libremente ENCIMA del rect reservado -- exactamente lo que {@code
+ * UvReservation} existe para impedir. Ver Diseño técnico §2/HU-34 de
+ * `docs/definiciones/galgoth-studio-fase3-textura.md` (addendum
+ * post-implementación).
  *
  * <p>{@code @Primary}: se inyecta automáticamente donde se pida
  * {@link UvLayoutStrategy} por tipo -- {@code GeometryEngine.apply},
@@ -68,10 +86,19 @@ public final class UvLayoutSelector implements UvLayoutStrategy {
 	}
 
 	private UvLayoutStrategy resolve(UvLayout previousLayout) {
+		return requiresStableLayout(previousLayout) ? stableUvStrategy : alphaAutoPackStrategy;
+	}
+
+	/**
+	 * Ticket 057: {@code StableUvStrategy} si hay al menos una región
+	 * {@code PAINTED}/{@code ORPHAN}, O al menos una {@code UvReservation}
+	 * vigente -- ver el hallazgo documentado en el Javadoc de la clase.
+	 */
+	private boolean requiresStableLayout(UvLayout previousLayout) {
 		boolean hasPaintedOrOrphan = previousLayout.regions()
 				.stream()
 				.anyMatch(region -> region.status() == UvRegionStatus.PAINTED || region.status() == UvRegionStatus.ORPHAN);
-		return hasPaintedOrOrphan ? stableUvStrategy : alphaAutoPackStrategy;
+		return hasPaintedOrOrphan || !previousLayout.reservations().isEmpty();
 	}
 
 }
