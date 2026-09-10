@@ -3,78 +3,111 @@
  * Ticket 047 -- editor de textura/UV manual: el canvas 2D real y sus
  * herramientas de pintado (Diseño técnico Sección 9 de
  * docs/definiciones/galgoth-studio-fase3-textura.md, HU-24/26/27).
- * Monta el mecanismo de Undo/Redo del ticket 046 (textureEditorStore)
- * sobre un atlas real y visible por primera vez.
+ * Ticket 048 -- import de PNG. Ticket 049 -- selección cruzada
+ * cuboid-UV. Ver el detalle histórico de cada uno en el `## Hecho` de sus
+ * tickets respectivos.
  *
- * Alcance explícito del ticket 047 (ver "## Hecho" del ticket para el
- * detalle completo de qué se implementó/difirió): color picker + paleta,
- * Pincel, Borrador, Cubeta (flood-fill real), Eyedropper, toggle de
- * cuadrícula. NO incluía selección cruzada cuboid-UV -- ver ticket 049
- * más abajo, ya integrada en este mismo componente --, NI import de PNG
- * (ticket 048), NI Selección/Copiar-pegar/Undo-Redo con UI propia (HU-27
- * los menciona pero la sección "Qué implementar" del ticket 047 no los
- * lista -- el mecanismo de textureEditorStore.undo/redo queda disponible
- * y correctamente alimentado por cada herramienta vía recordPatch(), pero
- * sin botón/atajo de teclado en este componente). El ticket 047 tampoco
- * ensambla la pantalla completa del mockup 07 (eso es el ticket 050) --
- * este componente es la pieza que 050 va a montar.
+ * Ticket 058 -- REDISEÑO completo del shell visual (mockup 07 v2, VoBo
+ * explícito del PO tras 2 rondas de ajustes sobre un Artifact validado,
+ * ver `docs/definiciones/mockups/058-texture-editor-redesign-reference.html`).
+ * La columna lateral izquierda de herramientas (047/050) se reemplaza por
+ * 3 zonas: toolbar horizontal arriba, lienzo dominante al centro, preview
+ * 3D secundario a la derecha -- el lienzo pasa a tener zoom/pan reales
+ * (antes solo una escala CSS fija, ver el comentario que describía esa
+ * limitación en versiones previas de este archivo). Ningún mecanismo de
+ * dominio cambia (pixelTools.ts/textureEditorStore.ts/ThreeViewportService
+ * siguen intactos) -- este ticket es 100% shell/UX.
  *
- * Ticket 048 -- agrega import de PNG (`TextureImportPanel.vue`), tanto
- * sobre la región enfocada por el selector de arriba como sobre el
- * atlas completo cuando el selector está en "Todas las caras" (ver
- * `importTargetRect`/`importTargetLabel` más abajo -- reutiliza el
- * MISMO selector de foco de región de 047 en vez de agregar un segundo
- * control redundante).
- *
- * Arquitectura de dos capas superpuestas, deliberada:
- * - canvas (bitmap real, canvasRef): tamaño intrínseco EXACTO al atlas
- *   (atlas.width/atlas.height en px de canvas, nunca más) -- ahí se
- *   pintan los píxeles reales, 1:1, sin escalar. Se muestra más grande
- *   en pantalla vía CSS (image-rendering: pixelated) para que un atlas
- *   chico (64x64) sea usable -- ESTO NO ES UN ZOOM interactivo (no hay
- *   control de zoom en este ticket, dicho explícitamente), es una
- *   escala CSS fija; la conversión de coordenadas de puntero
- *   (canvasPointToAtlas) ya tiene en cuenta ese factor de escala tal
- *   como lo necesitaría un zoom real (AC: tamaño de pincel en píxeles
- *   del atlas, verificado con un canvas escalado).
+ * Arquitectura de dos capas superpuestas dentro del "stage" (sin cambios
+ * de fondo respecto a 047, solo ahora con tamaño en px explícito en vez
+ * de una escala CSS fija -- ver `displayScale`/`stageWidthPx/HeightPx`):
+ * - canvas (bitmap real, canvasRef): resolución intrínseca EXACTA al
+ *   atlas (atlas.width/atlas.height), pintado 1:1 sin escalar. El tamaño
+ *   VISIBLE (`stageWidthPx/HeightPx`) es controlado por `zoomPercent` --
+ *   pixelated garantiza pixel-perfect en cualquier nivel de zoom (AC no
+ *   negociable, ya un principio del ticket 047).
  * - svg overlay (guía UV + grid + resaltado de región): capa SEPARADA,
- *   pointer-events: none (los eventos de puntero siguen yendo al canvas
- *   de abajo). Nunca toca atlas.pixels -- por construcción, la
- *   grilla/etiquetas JAMÁS pueden filtrarse al bitmap real (AC: "grid
- *   nunca se persiste").
+ *   pointer-events: none, nunca toca atlas.pixels.
  *
- * Cada trazo de Pincel/Borrador pinta sobre una copia de trabajo
- * (strokeWorking, clon de atlas.pixels tomado en pointerdown vía
- * textureEditorStore.readRegion() sobre el rect COMPLETO del atlas --
- * reutiliza la función tal como sugiere el ticket 046) -- el atlas real
- * NO cambia hasta pointerup, cuando se hace la ÚNICA llamada a
- * recordPatch() del trazo completo. La Cubeta es atómica (un solo
- * evento), así que llama a recordPatch() directo.
+ * Zoom/pan (ticket 058): `zoomPercent` (25-1600%) controla la escala vía
+ * `setZoom()` -- botones +/-/reset, dropdown de presets (`GSelect`),
+ * atajos de teclado (+/-/0) y `Ctrl`+rueda CENTRADO en el cursor (mismo
+ * algoritmo que el mockup validado: convierte el punto bajo el cursor a
+ * coordenadas de atlas ANTES de cambiar la escala, y ajusta el scroll del
+ * viewport DESPUÉS para que ese mismo punto de atlas quede bajo el cursor
+ * de nuevo). Pan: barra espaciadora + arrastre (mismo criterio que
+ * herramientas de diseño estándar) sobre el viewport con scroll nativo
+ * (clase `.app-scroll` ya estilizada del proyecto, ticket 039) --
+ * `canvasPointToAtlas` NO cambió: sigue siendo un cálculo de RATIO
+ * (canvas.width/rect.width), así que es zoom-agnóstico por construcción,
+ * sin tocar la lógica de pintado en absoluto.
  *
- * Ticket 049 (HU-25, Diseño técnico §14): selección cruzada cuboid↔UV.
- * `selectedRegionKey` deja de ser un `ref` local -- ahora es un computed
- * de lectura/escritura sobre `textureSelectionStore.selectedFace`
- * (`textureSelectionStore.ts`, store nuevo y separado de
- * `selectionStore.ts`), así que el MISMO estado alimenta 3 superficies
- * sin duplicar nada: el `<select>` de región (ya existía), el resaltado
- * SVG de esa región (ya existía) y ahora también el highlight de esa cara
- * en el preview 3D (`buildMobGroup`'s `selectedFace`, ver
- * `buildMobScene.ts`). Un clic en una cara del preview 3D (`handlePreviewClick`,
- * mismo patrón click-vs-drag que `ThreeViewport.vue`) llama a
- * `pickCuboidFaceAt` y escribe al MISMO store -- de ahí sale la
- * bidireccionalidad de la selección cruzada.
+ * Selectores propios (ticket 058, AC "ningún elemento de select nativo en
+ * esta pantalla"): región/tamaño de pincel/presets de zoom migran del
+ * elemento nativo de selección/de un input numérico a `GSelect.vue`
+ * (design system, generalizado en este mismo ticket). El color activo
+ * migra de un control de color nativo VISIBLE a `TextureColorPicker.vue`
+ * (trigger + panel con paleta + swatch personalizado -- ese swatch SÍ
+ * dispara un control de color nativo oculto, única excepción ya aceptada
+ * por el PO). El tamaño de pincel pasa de un rango libre 1-32 a un set de
+ * presets (1/2/4/8/16/32px) -- fidelidad al mockup validado, con MÁS
+ * presets que los 4 del mockup (1/2/4/8) para no perder el extremo
+ * superior (32px) que el rango libre anterior sí permitía.
+ *
+ * Cuentagotas (ticket 058, AC "confirmación visible de qué color se
+ * capturó"): además de activar el color, muestra un toast temporal
+ * (`pickedColorToast`) con el hex capturado -- antes era un cambio
+ * silencioso (solo el swatch cambiaba, sin ningún otro indicio).
+ *
+ * Guardado (ticket 058, AC "indicador de 4 estados, reutiliza el flush
+ * de 056"): `saveState` (saved/dirty/saving/error) se marca `dirty` en
+ * cada mutación real del atlas (trazo/fill/import -- NUNCA en la carga
+ * inicial), y `handleSave()` reutiliza EXACTAMENTE el mismo mecanismo que
+ * `EditorToolbar.handleSave` (`flushPaintedTexture` + `saveRevision` +
+ * `draftModelStore.commitExternalModel` + thumbnail best-effort) -- se
+ * duplica la orquestación (no se extrajo a un módulo compartido) porque
+ * `EditorToolbar.vue` ya tiene su propio flujo probado (`EditorToolbar.spec.ts`)
+ * y unificar ambos hubiese significado tocar un componente ajeno a este
+ * ticket sin necesidad real; ambos llaman a los MISMOS módulos de fondo
+ * (`textureFlush.ts`/`draftPersistenceApi.ts`/`thumbnailApi.ts`), así que
+ * no hay ninguna lógica de negocio duplicada, solo la orquestación local.
+ *
+ * "Generar con IA" (ticket 058): navega a la ruta ya existente del ticket
+ * 055 (generador IA de textura) -- reutiliza el pipeline real de 054/055,
+ * este ticket no reimplementa nada de IA.
+ *
+ * Preview 3D orbitable (ticket 058): `ThreeViewportService` ya expone
+ * OrbitControls HABILITADOS por defecto (`this.controls.enableDamping = true`,
+ * nunca deshabilitado para este contexto -- la única vez que se
+ * deshabilita es durante el arrastre de TransformControls, que no aplica
+ * a la tab Textura) -- este ticket NO necesitó ningún cambio en
+ * `ThreeViewportService.ts`: el arrastre para orbitar ya funcionaba, la
+ * selección cruzada cuboid-UV (`handlePreviewPointerDown`/`handlePreviewClick`,
+ * ticket 049) coexiste con OrbitControls exactamente igual que en la tab
+ * Modelo (mismo criterio click-vs-drag ya usado por `ThreeViewport.vue`).
  */
 import { DataTexture, RGBAFormat, NearestFilter } from 'three'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { FaceName, MobProjectModel } from '../../domain/MobProjectModel'
 import { threeViewportService } from '../../viewport/ThreeViewportService'
 import type { CuboidFaceRef } from '../../viewport/textureUvMapping'
 import IconButton from '../../design-system/components/IconButton.vue'
+import GButton from '../../design-system/components/GButton.vue'
+import GSelect, { type GSelectOption } from '../../design-system/components/GSelect.vue'
 import IconBrush from '../../design-system/icons/IconBrush.vue'
 import IconBucket from '../../design-system/icons/IconBucket.vue'
 import IconEraser from '../../design-system/icons/IconEraser.vue'
 import IconEyedropper from '../../design-system/icons/IconEyedropper.vue'
 import IconGrid from '../../design-system/icons/IconGrid.vue'
+import IconSave from '../../design-system/icons/IconSave.vue'
+import IconSparkle from '../../design-system/icons/IconSparkle.vue'
+import IconZoomIn from '../../design-system/icons/IconZoomIn.vue'
+import IconZoomOut from '../../design-system/icons/IconZoomOut.vue'
+import IconZoomReset from '../../design-system/icons/IconZoomReset.vue'
+import { useDraftModelStore } from '../draftModelStore'
+import { saveRevision } from '../draftPersistenceApi'
+import { uploadThumbnail } from '../thumbnailApi'
 import { hexToRgba, rgbaToHex } from './colorHex'
 import {
   boundsToRect,
@@ -90,11 +123,17 @@ import {
 import { ALL_REGIONS_VALUE, buildSelectableRegions, regionKey, type SelectableRegion } from './regionLabels'
 import type { TextureRect } from './TexturePatchCommand'
 import { readRectFrom } from './textureRectBuffer'
+import { DEFAULT_COLOR } from './texturePalette'
+import { flushPaintedTexture } from './textureFlush'
 import { useTextureEditorStore } from './textureEditorStore'
 import { useTextureSelectionStore } from './textureSelectionStore'
+import TextureColorPicker from './TextureColorPicker.vue'
 import TextureImportPanel from './TextureImportPanel.vue'
+import TextureSaveStatus, { type TextureSaveState } from './TextureSaveStatus.vue'
 
 type Tool = 'brush' | 'eraser' | 'fill' | 'eyedropper'
+
+const TOOL_LABELS: Record<Tool, string> = { brush: 'Pincel', eraser: 'Borrador', fill: 'Cubeta', eyedropper: 'Cuentagotas' }
 
 // Umbral de movimiento del mouse entre pointerdown y click en el preview
 // 3D -- por encima de esto se interpreta como arrastre de órbita
@@ -102,30 +141,41 @@ type Tool = 'brush' | 'eraser' | 'fill' | 'eyedropper'
 // que `ThreeViewport.vue` (ticket 017).
 const CLICK_DRAG_THRESHOLD_PX = 5
 
-const PALETTE: string[] = ['#f3f6f8', '#0b0f14', '#e0574c', '#f2c66d', '#48e5a0', '#4d8bf0', '#a35bd6', '#8a5a3b']
-const DEFAULT_COLOR = PALETTE[2]!
 const GRID_STEP_PX = 8
-const MIN_BRUSH_SIZE = 1
-const MAX_BRUSH_SIZE = 32
+const BRUSH_SIZE_PRESETS = [1, 2, 4, 8, 16, 32]
+const ZOOM_PRESETS = [50, 100, 200, 400, 800, 1600]
+const MIN_ZOOM = 25
+const MAX_ZOOM = 1600
+const ZOOM_STEP_FACTOR = 1.5
+const ZOOM_WHEEL_FACTOR = 1.12
+const BASE_SCALE = 4
+const EYEDROPPER_TOAST_MS = 1800
 
 const props = defineProps<{ model: MobProjectModel }>()
 
+const router = useRouter()
 const textureEditorStore = useTextureEditorStore()
 const textureSelectionStore = useTextureSelectionStore()
+const draftModelStore = useDraftModelStore()
 
 const canvasRef = ref<HTMLCanvasElement>()
+const canvasViewportRef = ref<HTMLDivElement>()
 const previewContainerRef = ref<HTMLDivElement>()
 
 const activeTool = ref<Tool>('brush')
 const activeColorHex = ref(DEFAULT_COLOR)
 const brushSize = ref(4)
 const showGrid = ref(false)
+const zoomPercent = ref(100)
+const spaceDown = ref(false)
+const isPanning = ref(false)
+const pickedColorToast = ref<string | null>(null)
+const saveState = ref<TextureSaveState>('saved')
 
 /**
- * Puente entre el `<select>` (formato `regionKey`, ya existente desde el
- * ticket 047) y `textureSelectionStore.selectedFace` (formato
- * `{cuboidId, face}`, ticket 049) -- el template no cambia, sigue usando
- * `v-model="selectedRegionKey"`.
+ * Puente entre el selector de región (formato `regionKey`, ticket 047) y
+ * `textureSelectionStore.selectedFace` (formato `{cuboidId, face}`,
+ * ticket 049).
  */
 const selectedRegionKey = computed<string>({
   get: () => (textureSelectionStore.selectedFace ? regionKey(textureSelectionStore.selectedFace) : ALL_REGIONS_VALUE),
@@ -142,6 +192,18 @@ const selectedRegionKey = computed<string>({
 const atlasWidth = computed(() => textureEditorStore.atlas?.width ?? 0)
 const atlasHeight = computed(() => textureEditorStore.atlas?.height ?? 0)
 const selectableRegions = computed<SelectableRegion[]>(() => buildSelectableRegions(props.model.uv.regions, props.model.cuboids))
+
+const regionOptions = computed<GSelectOption[]>(() => [
+  { value: ALL_REGIONS_VALUE, label: 'Todas las caras' },
+  ...selectableRegions.value.map((region) => ({ value: regionKey(region), label: region.label })),
+])
+
+const brushSizeOptions: GSelectOption[] = BRUSH_SIZE_PRESETS.map((n) => ({ value: String(n), label: `${n}px` }))
+
+const zoomOptions: GSelectOption[] = ZOOM_PRESETS.map((z) => ({ value: String(z), label: `${z}%` }))
+
+const activeRegionLabel = computed<string>(() => selectedRegion.value?.label ?? 'Todas las caras')
+const activeToolLabel = computed<string>(() => TOOL_LABELS[activeTool.value])
 
 const gridLinesX = computed(() => {
   const lines: number[] = []
@@ -168,13 +230,6 @@ function regionRect(region: SelectableRegion): { x: number; y: number; width: nu
 }
 
 // -- Ticket 048: destino del import de PNG -------------------------------
-// Reutiliza el selector de región de 047 en vez de un control nuevo:
-// "Todas las caras" -> AC (B) atlas completo; una región puntual -> AC
-// (A) esa región seleccionada. `resolveImportTarget` se pasa como
-// FUNCIÓN (no como prop de valor) a `TextureImportPanel` -- ver su
-// docstring para la razón (evita una carrera con el timing de
-// reactividad de Vue justo después del montaje, cuando el atlas todavía
-// no cargó).
 const selectedRegion = computed<SelectableRegion | null>(() => selectableRegions.value.find((region) => regionKey(region) === selectedRegionKey.value) ?? null)
 
 const importTargetLabel = computed<string>(() => (selectedRegion.value ? `la región "${selectedRegion.value.label}"` : 'el atlas completo'))
@@ -189,19 +244,135 @@ function resolveImportTarget(): { rect: TextureRect; label: string } {
 function handleImported(): void {
   syncDataTexture()
   redraw()
+  markDirty()
 }
 
-function swatchLabel(color: string): string {
-  return `Color ${color}`
+// -- Zoom/pan (ticket 058) ------------------------------------------------
+const displayScale = computed(() => BASE_SCALE * (zoomPercent.value / 100))
+const stageWidthPx = computed(() => Math.round(atlasWidth.value * displayScale.value))
+const stageHeightPx = computed(() => Math.round(atlasHeight.value * displayScale.value))
+
+/**
+ * Cambia el zoom, opcionalmente centrado en un punto de pantalla
+ * (`anchorClientX/Y`, ej. la posición del cursor en `Ctrl`+rueda) -- sin
+ * ancla, centra en el punto medio del viewport visible (botones
+ * +/-/reset, atajos de teclado). Mismo algoritmo que el mockup validado:
+ * convierte el punto bajo el ancla a coordenadas de ATLAS (independientes
+ * del zoom) ANTES de cambiar la escala, y ajusta `scrollLeft/scrollTop`
+ * DESPUÉS para que ese mismo punto de atlas quede exactamente bajo el
+ * ancla de nuevo -- `nextTick` porque el tamaño del stage recién cambia
+ * en el DOM después de que Vue aplica el nuevo `zoomPercent`.
+ */
+function setZoom(nextRaw: number, anchorClientX?: number, anchorClientY?: number): void {
+  const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(nextRaw)))
+  if (next === zoomPercent.value) {
+    return
+  }
+  const viewport = canvasViewportRef.value
+  if (!viewport) {
+    zoomPercent.value = next
+    return
+  }
+  const rect = viewport.getBoundingClientRect()
+  const beforeScale = displayScale.value
+  const localX = anchorClientX != null ? anchorClientX - rect.left + viewport.scrollLeft : viewport.scrollLeft + viewport.clientWidth / 2
+  const localY = anchorClientY != null ? anchorClientY - rect.top + viewport.scrollTop : viewport.scrollTop + viewport.clientHeight / 2
+  const atlasX = localX / beforeScale
+  const atlasY = localY / beforeScale
+  zoomPercent.value = next
+  void nextTick(() => {
+    const afterScale = displayScale.value
+    viewport.scrollLeft = atlasX * afterScale - (anchorClientX != null ? anchorClientX - rect.left : viewport.clientWidth / 2)
+    viewport.scrollTop = atlasY * afterScale - (anchorClientY != null ? anchorClientY - rect.top : viewport.clientHeight / 2)
+  })
+}
+
+function zoomIn(): void {
+  setZoom(zoomPercent.value * ZOOM_STEP_FACTOR)
+}
+function zoomOut(): void {
+  setZoom(zoomPercent.value / ZOOM_STEP_FACTOR)
+}
+function zoomReset(): void {
+  setZoom(100)
+}
+function handleZoomSelect(value: string): void {
+  setZoom(Number(value))
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
+}
+
+function handleWindowKeydown(event: KeyboardEvent): void {
+  if (isEditableTarget(event.target)) {
+    return
+  }
+  if (event.key === 'Escape') {
+    return
+  }
+  if (event.code === 'Space') {
+    spaceDown.value = true
+    return
+  }
+  if (event.key === '+' || event.key === '=') {
+    event.preventDefault()
+    zoomIn()
+  } else if (event.key === '-' || event.key === '_') {
+    event.preventDefault()
+    zoomOut()
+  } else if (event.key === '0') {
+    zoomReset()
+  }
+}
+
+function handleWindowKeyup(event: KeyboardEvent): void {
+  if (event.code === 'Space') {
+    spaceDown.value = false
+  }
+}
+
+/** `Ctrl`/`Cmd`+rueda: zoom centrado en el cursor -- una rueda SIN modificador sigue siendo scroll nativo del viewport (pan vertical/horizontal estándar). */
+function handleViewportWheel(event: WheelEvent): void {
+  if (!event.ctrlKey && !event.metaKey) {
+    return
+  }
+  event.preventDefault()
+  const factor = event.deltaY < 0 ? ZOOM_WHEEL_FACTOR : 1 / ZOOM_WHEEL_FACTOR
+  setZoom(zoomPercent.value * factor, event.clientX, event.clientY)
+}
+
+// -- Pan (barra espaciadora + arrastre) -----------------------------------
+let panStart: { x: number; y: number; scrollLeft: number; scrollTop: number } | null = null
+
+function handleViewportPointerDown(event: PointerEvent): void {
+  if (!spaceDown.value || event.button !== 0) {
+    return
+  }
+  const viewport = canvasViewportRef.value
+  if (!viewport) {
+    return
+  }
+  isPanning.value = true
+  panStart = { x: event.clientX, y: event.clientY, scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop }
+  viewport.setPointerCapture(event.pointerId)
+  event.preventDefault()
+}
+
+function handleViewportPointerMove(event: PointerEvent): void {
+  if (!isPanning.value || !panStart || !canvasViewportRef.value) {
+    return
+  }
+  canvasViewportRef.value.scrollLeft = panStart.scrollLeft - (event.clientX - panStart.x)
+  canvasViewportRef.value.scrollTop = panStart.scrollTop - (event.clientY - panStart.y)
+}
+
+function handleViewportPointerUp(): void {
+  isPanning.value = false
+  panStart = null
 }
 
 // -- Textura 3D en vivo (HU-26) -----------------------------------------
-// DataTexture envuelve DIRECTO el Uint8ClampedArray del atlas -- sin
-// canvas 2D intermedio (jsdom no implementa un contexto 2D real, ver
-// docstring de pixelTools.ts; DataTexture no depende de DOM en absoluto,
-// así que esto es 100% testable). flipY = false: fila 0 del buffer
-// (arriba en pixel-space) es la fila 0 de la textura, sin invertir -- ver
-// textureUvMapping.ts para el lado correspondiente del mapeo UV.
 let dataTexture: DataTexture | null = null
 let dataTexturePixelsRef: Uint8ClampedArray | null = null
 
@@ -226,14 +397,6 @@ function syncDataTexture(): void {
   }
 }
 
-/**
- * Ticket 049 (HU-25): reconstruye el mob del preview 3D con el highlight
- * de `textureSelectionStore.selectedFace` vigente -- separado de la rama
- * `else` (needsUpdate-only) de `syncDataTexture` a propósito: cada trazo
- * de pintado NO debe reconstruir todos los meshes (esa optimización del
- * ticket 047 sigue intacta), pero un cambio de selección de cara sí
- * necesita reconstruir (el highlight se agrega dentro de `buildMobGroup`).
- */
 function applyPreviewModel(): void {
   threeViewportService.setModel(props.model, null, dataTexture, textureSelectionStore.selectedFace)
 }
@@ -256,17 +419,10 @@ function redraw(sourcePixels?: Uint8ClampedArray): void {
 }
 
 function loadModelAtlas(model: MobProjectModel): void {
-  // Ticket 034 (mismo criterio, sin código especial): tanto un mob con
-  // revision_number >= 1 como un draft vacío en memoria llegan acá con
-  // model.uv.textureWidth/textureHeight ya válidos (emptyMobProjectModel
-  // usa 128x128 por defecto) -- nunca bloqueado. No existe todavía ningún
-  // backend que devuelva bytes de una textura ya pintada (GET/PUT
-  // /texture es HU-30/31, fuera de alcance de 040-046) -- se carga
-  // siempre en blanco al tamaño real del atlas, nunca un tamaño fijo
-  // inventado (ver "## Hecho" del ticket para el detalle de esta decisión).
   textureEditorStore.loadAtlas(model.uv.textureWidth, model.uv.textureHeight)
   syncDataTexture()
   redraw()
+  saveState.value = 'saved'
 }
 
 // -- Selección cruzada cuboid<->UV en el preview 3D (ticket 049, HU-25) --
@@ -276,7 +432,6 @@ function handlePreviewPointerDown(event: PointerEvent): void {
   previewPointerDownPosition = { x: event.clientX, y: event.clientY }
 }
 
-/** Mismo criterio click-vs-drag que `ThreeViewport.vue` (ticket 017) -- un arrastre de órbita (`OrbitControls`) nunca debe interpretarse como una selección de cara. */
 function handlePreviewClick(event: MouseEvent): void {
   if (previewPointerDownPosition) {
     const distance = Math.hypot(event.clientX - previewPointerDownPosition.x, event.clientY - previewPointerDownPosition.y)
@@ -296,6 +451,8 @@ onMounted(() => {
     previewContainerRef.value.addEventListener('pointerdown', handlePreviewPointerDown)
     previewContainerRef.value.addEventListener('click', handlePreviewClick)
   }
+  window.addEventListener('keydown', handleWindowKeydown)
+  window.addEventListener('keyup', handleWindowKeyup)
 })
 
 watch(
@@ -303,10 +460,6 @@ watch(
   () => loadModelAtlas(props.model),
 )
 
-// Ticket 049 (HU-25 AC "seleccionar una región UV en el editor 2D resalta
-// la cara en el preview 3D"): cualquier cambio de selección (desde el
-// dropdown, desde un clic en el preview, o deseleccionar) reconstruye el
-// mob del preview con el highlight vigente -- ver `applyPreviewModel`.
 watch(
   () => textureSelectionStore.selectedFace,
   () => applyPreviewModel(),
@@ -315,16 +468,19 @@ watch(
 onBeforeUnmount(() => {
   previewContainerRef.value?.removeEventListener('pointerdown', handlePreviewPointerDown)
   previewContainerRef.value?.removeEventListener('click', handlePreviewClick)
+  window.removeEventListener('keydown', handleWindowKeydown)
+  window.removeEventListener('keyup', handleWindowKeyup)
+  if (toolToastTimer) {
+    clearTimeout(toolToastTimer)
+  }
   threeViewportService.detach()
   dataTexture?.dispose()
 })
 
 // -- Conversión de coordenadas de pantalla a píxeles del ATLAS ----------
-// (nunca de pantalla -- AC del ticket). getBoundingClientRect() del
-// canvas puede ser MÁS GRANDE que canvas.width/height (la escala CSS
-// fija descrita arriba) -- dividir por esa relación es exactamente lo
-// que un zoom interactivo futuro necesitaría, aunque este ticket no
-// implemente ningún control de zoom.
+// Cálculo de RATIO (canvas.width intrínseco / tamaño CSS mostrado) --
+// zoom-agnóstico por construcción: sigue siendo válido en cualquier nivel
+// de `zoomPercent` sin ningún cambio (ver docstring de cabecera).
 function canvasPointToAtlas(event: PointerEvent): { x: number; y: number } | null {
   const canvas = canvasRef.value
   const atlas = textureEditorStore.atlas
@@ -347,6 +503,46 @@ function canvasPointToAtlas(event: PointerEvent): { x: number; y: number } | nul
 
 function activeColor(): RgbaColor {
   return activeTool.value === 'eraser' ? TRANSPARENT : hexToRgba(activeColorHex.value)
+}
+
+// -- Guardado (ticket 058, reutiliza el flush de 056) --------------------
+let toolToastTimer: ReturnType<typeof setTimeout> | null = null
+
+function markDirty(): void {
+  if (saveState.value !== 'saving') {
+    saveState.value = 'dirty'
+  }
+}
+
+async function handleSave(): Promise<void> {
+  if (saveState.value === 'saving') {
+    return
+  }
+  saveState.value = 'saving'
+  try {
+    const flushedModel = await flushPaintedTexture(props.model)
+    if (flushedModel !== props.model) {
+      draftModelStore.commitExternalModel(flushedModel)
+    }
+    await saveRevision(flushedModel.mobId, flushedModel)
+    saveState.value = 'saved'
+  } catch {
+    saveState.value = 'error'
+    return
+  }
+
+  // Thumbnail: side-effect best-effort, nunca revierte el guardado ya
+  // completado arriba (mismo criterio que `EditorToolbar.handleSave`).
+  try {
+    const png = await threeViewportService.captureThumbnail()
+    await uploadThumbnail(props.model.mobId, png)
+  } catch (error) {
+    console.warn('[TextureCanvas] no se pudo generar/subir el thumbnail:', error)
+  }
+}
+
+function openAiGenerator(): void {
+  router.push(`/projects/${props.model.projectId}/mobs/${props.model.mobId}/texture/generate-ai`)
 }
 
 // -- Trazo de Pincel/Borrador: UN solo recordPatch() por trazo completo --
@@ -392,13 +588,9 @@ function finishStroke(): void {
     const before = readRectFrom(strokeBeforeFull, atlas.width, rect)
     const after = readRectFrom(strokeWorking, atlas.width, rect)
     textureEditorStore.recordPatch(rect, before, after) // ÚNICA llamada del trazo completo
-    // Llamada explícita (no vía watcher): un shallowRef de Pinia mutado
-    // in-place + triggerRef() no siempre re-dispara un watch() externo
-    // de forma confiable entre el store y este componente -- se refresca
-    // el preview 3D/canvas 2D acá mismo, justo después del ÚNICO commit
-    // real del trazo (AC HU-26: "al completarse el trazo").
     syncDataTexture()
     redraw()
+    markDirty()
   }
   strokeBeforeFull = null
   strokeWorking = null
@@ -407,6 +599,9 @@ function finishStroke(): void {
 }
 
 function handlePointerDown(event: PointerEvent): void {
+  if (spaceDown.value) {
+    return // barra espaciadora mantenida -- este pointerdown es para pan, no para pintar (ver handleViewportPointerDown).
+  }
   const atlas = textureEditorStore.atlas
   const point = canvasPointToAtlas(event)
   if (!atlas || !point) {
@@ -417,6 +612,7 @@ function handlePointerDown(event: PointerEvent): void {
     const color = pickColorAt(atlas, point.x, point.y)
     if (color) {
       activeColorHex.value = rgbaToHex(color)
+      showEyedropperToast(activeColorHex.value)
     }
     return
   }
@@ -427,15 +623,11 @@ function handlePointerDown(event: PointerEvent): void {
       textureEditorStore.recordPatch(result.rect, result.beforePixels, result.afterPixels) // ÚNICA llamada del fill
       syncDataTexture()
       redraw()
+      markDirty()
     }
     return
   }
 
-  // `setPointerCapture`/`hasPointerCapture` no existen en jsdom (entorno
-  // de test) -- guardado defensivo, no solo por eso: tampoco son
-  // universales en runtimes embebidos. Sin captura, el trazo sigue
-  // funcionando igual dentro del canvas; solo se pierde la continuidad
-  // si el puntero sale de sus límites a mitad de un drag rápido.
   if (typeof canvasRef.value?.setPointerCapture === 'function') {
     canvasRef.value.setPointerCapture(event.pointerId)
   }
@@ -459,145 +651,188 @@ function handlePointerUp(event: PointerEvent): void {
   }
   finishStroke()
 }
+
+/** AC ticket 058: el cuentagotas debe dar una confirmación VISIBLE de qué color capturó -- antes era un cambio silencioso (solo el swatch, sin ningún otro indicio). */
+function showEyedropperToast(hex: string): void {
+  pickedColorToast.value = `Cuentagotas: color capturado ${hex}`
+  if (toolToastTimer) {
+    clearTimeout(toolToastTimer)
+  }
+  toolToastTimer = setTimeout(() => {
+    pickedColorToast.value = null
+  }, EYEDROPPER_TOAST_MS)
+}
 </script>
 
 <template>
   <div class="texture-canvas">
-    <aside class="texture-canvas__tools">
-      <label class="texture-canvas__field">
-        Región
-        <select v-model="selectedRegionKey" class="texture-canvas__select" aria-label="Región UV a enfocar">
-          <option :value="ALL_REGIONS_VALUE">Todas las caras</option>
-          <option v-for="region in selectableRegions" :key="regionKey(region)" :value="regionKey(region)">{{ region.label }}</option>
-        </select>
-      </label>
+    <div class="texture-canvas__toolbar">
+      <div class="texture-canvas__tb-group texture-canvas__tb-group--region">
+        <GSelect v-model="selectedRegionKey" :options="regionOptions" label="Región UV a enfocar" />
+      </div>
 
-      <fieldset class="texture-canvas__tool-row">
+      <span class="texture-canvas__tb-sep" aria-hidden="true"></span>
+
+      <fieldset class="texture-canvas__tb-group" aria-label="Herramientas de pintado">
         <legend class="texture-canvas__sr-only">Herramientas de pintado</legend>
         <IconButton label="Pincel" :active="activeTool === 'brush'" @click="activeTool = 'brush'"><IconBrush /></IconButton>
         <IconButton label="Borrador" :active="activeTool === 'eraser'" @click="activeTool = 'eraser'"><IconEraser /></IconButton>
         <IconButton label="Cubeta" :active="activeTool === 'fill'" @click="activeTool = 'fill'"><IconBucket /></IconButton>
         <IconButton label="Selector de color (eyedropper)" :active="activeTool === 'eyedropper'" @click="activeTool = 'eyedropper'"><IconEyedropper /></IconButton>
+      </fieldset>
+
+      <div class="texture-canvas__tb-group">
         <IconButton label="Cuadrícula" :active="showGrid" @click="showGrid = !showGrid"><IconGrid /></IconButton>
-      </fieldset>
-
-      <label class="texture-canvas__field" aria-label="Color activo">
-        Color activo
-        <input v-model="activeColorHex" type="color" class="texture-canvas__color-input" aria-label="Color activo" />
-      </label>
-
-      <fieldset class="texture-canvas__palette">
-        <legend class="texture-canvas__sr-only">Paleta de colores</legend>
-        <button v-for="color in PALETTE" :key="color" type="button" class="texture-canvas__swatch" :class="{ 'texture-canvas__swatch--active': color.toLowerCase() === activeColorHex.toLowerCase() }" :style="{ backgroundColor: color }" :aria-label="swatchLabel(color)" :aria-pressed="color.toLowerCase() === activeColorHex.toLowerCase()" @click="activeColorHex = color"></button>
-      </fieldset>
-
-      <label class="texture-canvas__field" aria-label="Tamaño de pincel en píxeles del atlas">
-        Tamaño de pincel (píxeles del atlas)
-        <input v-model.number="brushSize" type="number" aria-label="Tamaño de pincel en píxeles del atlas" :min="MIN_BRUSH_SIZE" :max="MAX_BRUSH_SIZE" class="texture-canvas__number-input" />
-      </label>
-
-      <TextureImportPanel :target-label="importTargetLabel" :resolve-target="resolveImportTarget" @imported="handleImported" />
-    </aside>
-
-    <div class="texture-canvas__stage-wrapper">
-      <div class="texture-canvas__stage" :style="{ aspectRatio: `${atlasWidth} / ${atlasHeight}` }">
-        <!-- S6819/S6843: este canvas es una superficie de dibujo interactiva
-             (pointerdown/move/up), no una imagen estática -- por eso no
-             lleva un rol de tipo imagen: sería semánticamente incorrecto
-             asignar un rol no interactivo a un elemento con handlers de
-             puntero reales. El aria-label describe el contenido igual,
-             sin reclamar un rol que no le corresponde. -->
-        <canvas ref="canvasRef" :width="atlasWidth" :height="atlasHeight" class="texture-canvas__bitmap" aria-label="Atlas de textura del mob -- superficie de pintado" @pointerdown="handlePointerDown" @pointermove="handlePointerMove" @pointerup="handlePointerUp" @pointercancel="handlePointerUp"></canvas>
-        <svg class="texture-canvas__overlay" :viewBox="`0 0 ${atlasWidth} ${atlasHeight}`" preserveAspectRatio="none" aria-hidden="true">
-          <g v-if="showGrid" class="texture-canvas__grid">
-            <line v-for="x in gridLinesX" :key="`gx-${x}`" :x1="x" y1="0" :x2="x" :y2="atlasHeight" />
-            <line v-for="y in gridLinesY" :key="`gy-${y}`" x1="0" :y1="y" :x2="atlasWidth" :y2="y" />
-          </g>
-          <g>
-            <rect v-for="region in selectableRegions" :key="regionKey(region)" v-bind="regionRect(region)" class="texture-canvas__region" :class="{ 'texture-canvas__region--selected': isRegionSelected(region) }" />
-          </g>
-        </svg>
       </div>
+
+      <div class="texture-canvas__tb-group texture-canvas__tb-group--brush">
+        <GSelect :model-value="String(brushSize)" :options="brushSizeOptions" label="Tamaño de pincel en píxeles del atlas" @update:model-value="(v) => (brushSize = Number(v))" />
+      </div>
+
+      <TextureColorPicker v-model="activeColorHex" />
+
+      <span class="texture-canvas__tb-sep" aria-hidden="true"></span>
+
+      <div class="texture-canvas__tb-group texture-canvas__zoomctl">
+        <IconButton label="Alejar zoom" shortcut="-" @click="zoomOut"><IconZoomOut /></IconButton>
+        <GSelect :model-value="String(zoomPercent)" :options="zoomOptions" :placeholder="`${zoomPercent}%`" label="Nivel de zoom del lienzo" @update:model-value="handleZoomSelect" />
+        <IconButton label="Acercar zoom" shortcut="+" @click="zoomIn"><IconZoomIn /></IconButton>
+        <IconButton label="Restablecer zoom" shortcut="0" @click="zoomReset"><IconZoomReset /></IconButton>
+      </div>
+
+      <span class="texture-canvas__tb-sep" aria-hidden="true"></span>
+
+      <div class="texture-canvas__tb-import">
+        <TextureImportPanel :target-label="importTargetLabel" :resolve-target="resolveImportTarget" @imported="handleImported" />
+      </div>
+
+      <GButton variant="ghost" @click="openAiGenerator"><template #icon><IconSparkle :size="16" /></template>Generar con IA</GButton>
+
+      <div class="texture-canvas__tb-grow"></div>
+
+      <TextureSaveStatus :state="saveState" />
+      <GButton variant="primary" :disabled="saveState === 'saving'" @click="handleSave"><template #icon><IconSave :size="16" /></template>{{ saveState === 'saving' ? 'Guardando…' : 'Guardar' }}</GButton>
     </div>
 
-    <div ref="previewContainerRef" class="texture-canvas__preview" aria-hidden="true"></div>
+    <div class="texture-canvas__main">
+      <section class="texture-canvas__canvas-panel" aria-label="Lienzo de textura">
+        <div
+          ref="canvasViewportRef"
+          class="texture-canvas__viewport app-scroll"
+          :class="{ 'texture-canvas__viewport--pan-ready': spaceDown, 'texture-canvas__viewport--panning': isPanning }"
+          @wheel="handleViewportWheel"
+          @pointerdown="handleViewportPointerDown"
+          @pointermove="handleViewportPointerMove"
+          @pointerup="handleViewportPointerUp"
+          @pointercancel="handleViewportPointerUp"
+        >
+          <div class="texture-canvas__stage" :style="{ width: `${stageWidthPx}px`, height: `${stageHeightPx}px` }">
+            <canvas ref="canvasRef" :width="atlasWidth" :height="atlasHeight" class="texture-canvas__bitmap" aria-label="Atlas de textura del mob -- superficie de pintado" @pointerdown="handlePointerDown" @pointermove="handlePointerMove" @pointerup="handlePointerUp" @pointercancel="handlePointerUp"></canvas>
+            <svg class="texture-canvas__overlay" :viewBox="`0 0 ${atlasWidth} ${atlasHeight}`" preserveAspectRatio="none" aria-hidden="true">
+              <g v-if="showGrid" class="texture-canvas__grid">
+                <line v-for="x in gridLinesX" :key="`gx-${x}`" :x1="x" y1="0" :x2="x" :y2="atlasHeight" />
+                <line v-for="y in gridLinesY" :key="`gy-${y}`" x1="0" :y1="y" :x2="atlasWidth" :y2="y" />
+              </g>
+              <g>
+                <rect v-for="region in selectableRegions" :key="regionKey(region)" v-bind="regionRect(region)" class="texture-canvas__region" :class="{ 'texture-canvas__region--selected': isRegionSelected(region) }" />
+              </g>
+            </svg>
+          </div>
+          <p v-if="pickedColorToast" class="texture-canvas__toast" role="status" aria-live="polite">{{ pickedColorToast }}</p>
+        </div>
+      </section>
+
+      <aside class="texture-canvas__preview-panel" aria-label="Preview 3D">
+        <div ref="previewContainerRef" class="texture-canvas__preview" aria-hidden="true"></div>
+      </aside>
+    </div>
+
+    <div class="texture-canvas__statusbar">
+      <span>Región: <strong>{{ activeRegionLabel }}</strong></span>
+      <span class="texture-canvas__statusbar-sep" aria-hidden="true">|</span>
+      <span>Zoom: <strong>{{ zoomPercent }}%</strong></span>
+      <span class="texture-canvas__statusbar-sep" aria-hidden="true">|</span>
+      <span>Herramienta: <strong>{{ activeToolLabel }}</strong></span>
+      <span class="texture-canvas__statusbar-grow"></span>
+      <TextureSaveStatus :state="saveState" />
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* Sin borde/radio/`overflow: hidden` en la raíz a propósito (mismo
+   criterio que la versión 047/050 de este componente, que tampoco los
+   tenía): `MobEditor.vue` ya le da su propio padding a `.mob-editor`, y
+   los paneles desplegables de `GSelect`/`TextureColorPicker` en la
+   toolbar son `position: absolute` -- necesitan poder escapar
+   visualmente de este contenedor, un `overflow: hidden` acá los
+   recortaría contra el borde del panel. */
 .texture-canvas {
-  display: grid;
-  grid-template-columns: 220px 1fr 1fr;
-  gap: var(--space-4);
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
+  background: var(--bg);
 }
 
-.texture-canvas__tools {
+/* ---- Toolbar horizontal (zona 1) --------------------------------- */
+.texture-canvas__toolbar {
+  flex: 0 0 auto;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  background: var(--panel);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-lg);
-  overflow-y: auto;
-}
-
-.texture-canvas__field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--muted);
-}
-
-.texture-canvas__select,
-.texture-canvas__number-input {
-  min-height: var(--hit-target-min);
-  padding: 0 var(--space-3);
-  background: var(--surface);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--text);
-  font-size: var(--text-base);
-}
-
-.texture-canvas__color-input {
-  width: 100%;
-  height: var(--hit-target-min);
-  padding: var(--space-1);
-  background: var(--surface);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-}
-
-/* `<fieldset>` real (S6819/S6843, en vez de role="group" sobre un div) --
-   resetea el borde/padding por defecto del navegador para conservar
-   exactamente el layout que ya tenían estos contenedores como <div>. */
-.texture-canvas__tool-row,
-.texture-canvas__palette {
-  border: none;
-  margin: 0;
-  padding: 0;
-}
-
-.texture-canvas__tool-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-}
-
-.texture-canvas__palette {
-  display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--panel);
+  border-bottom: var(--border-width) solid var(--border);
+  flex-wrap: wrap;
 }
 
-/* `<legend>` de cada fieldset -- visible para lectores de pantalla, fuera
-   del flujo visual (el nombre del grupo ya es evidente por las herramientas
-   que contiene, mismo criterio que un aria-label ya usaba antes). */
+.texture-canvas__tb-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 2px;
+  border: none;
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.texture-canvas__tb-group--region {
+  min-width: 168px;
+}
+
+.texture-canvas__tb-group--brush {
+  width: 104px;
+}
+
+.texture-canvas__tb-sep {
+  width: var(--border-width);
+  align-self: stretch;
+  margin: var(--space-1) 2px;
+  background: var(--border);
+}
+
+.texture-canvas__tb-grow {
+  flex: 1 1 auto;
+}
+
+.texture-canvas__tb-import {
+  display: contents;
+}
+
+.texture-canvas__zoomctl {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.texture-canvas__zoomctl :deep(.g-select) {
+  min-width: 84px;
+}
+
 .texture-canvas__sr-only {
   position: absolute;
   width: 1px;
@@ -610,42 +845,68 @@ function handlePointerUp(event: PointerEvent): void {
   border: 0;
 }
 
-.texture-canvas__swatch {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  border: 2px solid var(--border);
-  cursor: pointer;
-  padding: 0;
+/* Confirmación del import de PNG -- flota debajo del botón trigger en vez
+   de empujar el resto de la toolbar (la fila horizontal no tiene alto
+   variable). `TextureImportPanel.vue` no se tocó -- se posiciona su
+   bloque de confirmación desde afuera vía `:deep()`. */
+.texture-canvas__tb-import :deep(.texture-import-panel) {
+  position: relative;
 }
 
-.texture-canvas__swatch--active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+.texture-canvas__tb-import :deep(.texture-import-panel__confirm) {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 50;
+  width: 260px;
+  box-shadow: var(--shadow-md);
 }
 
-.texture-canvas__stage-wrapper {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
+/* ---- Zona central: lienzo (zona 2, dominante) + preview 3D (zona 3) --- */
+.texture-canvas__main {
+  flex: 1;
   min-height: 0;
-  background: var(--surface);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
+  display: flex;
+}
+
+.texture-canvas__canvas-panel {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  background: var(--bg);
+  border-right: var(--border-width) solid var(--border);
+}
+
+.texture-canvas__viewport {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  position: relative;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 24px 24px;
+  cursor: crosshair;
+}
+
+.texture-canvas__viewport--pan-ready {
+  cursor: grab;
+}
+
+.texture-canvas__viewport--panning {
+  cursor: grabbing;
 }
 
 .texture-canvas__stage {
-  position: relative;
-  width: 100%;
-  max-width: 512px;
-  max-height: 100%;
+  position: absolute;
+  top: var(--space-6);
+  left: var(--space-6);
+  box-shadow: 0 0 0 1px var(--border), var(--shadow-md);
 }
 
 .texture-canvas__bitmap {
-  position: absolute;
-  inset: 0;
+  display: block;
   width: 100%;
   height: 100%;
   image-rendering: pixelated;
@@ -689,10 +950,63 @@ function handlePointerUp(event: PointerEvent): void {
   fill: var(--accent-soft);
 }
 
-.texture-canvas__preview {
-  min-height: 280px;
+.texture-canvas__toast {
+  position: absolute;
+  top: var(--space-3);
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  background: rgba(17, 24, 32, 0.92);
   border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--text-xs);
+  padding: 6px 12px;
+  border-radius: 999px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.texture-canvas__preview-panel {
+  width: 320px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  min-width: 0;
+}
+
+.texture-canvas__preview {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---- Barra de estado inferior (opcional, ticket 058) ------------------ */
+.texture-canvas__statusbar {
+  flex: 0 0 auto;
+  height: var(--statusbar-h, 30px);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-4);
+  background: var(--panel);
+  border-top: var(--border-width) solid var(--border);
+  font-size: var(--text-xs);
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+.texture-canvas__statusbar-sep {
+  color: var(--border);
+  font-family: var(--font-sans);
+}
+
+.texture-canvas__statusbar-grow {
+  flex: 1;
+}
+
+.texture-canvas__statusbar strong {
+  color: var(--text);
+  font-weight: 600;
+  font-family: var(--font-mono);
 }
 </style>
