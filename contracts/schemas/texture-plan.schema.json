@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://galgothstudio.com/schemas/texture-plan.schema.json",
+  "title": "TexturePlan",
+  "description": "Salida cruda del VisionModelProvider (ticket 025) tras analizar la imagen de referencia ya subida en Fase 2 -- ticket 052, Diseño técnico §11 punto 1 de docs/definiciones/galgoth-studio-fase3-textura.md. Equivalente de ModelIntent (model-intent.schema.json) para el paso de textura: etiqueta semántica por bone, paleta dominante/acento, notas de material por (bone, cara). Consumido por TextureGenerationSheetPlanner (ticket 054), nunca persistido tal cual.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["boneLabels", "palette", "materialNotes"],
+  "$defs": {
+    "faceName": {
+      "type": "string",
+      "enum": ["north", "south", "east", "west", "up", "down"]
+    },
+    "hexColor": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$"
+    }
+  },
+  "properties": {
+    "boneLabels": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["boneId", "boneName", "semanticLabel"],
+        "properties": {
+          "boneId": { "type": "string", "minLength": 1 },
+          "boneName": { "type": "string", "minLength": 1 },
+          "semanticLabel": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Ej. \"cabeza\", \"torso frontal\"."
+          }
+        }
+      }
+    },
+    "palette": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dominantColorHex", "accentColorHex"],
+      "properties": {
+        "dominantColorHex": { "$ref": "#/$defs/hexColor" },
+        "accentColorHex": { "$ref": "#/$defs/hexColor" }
+      }
+    },
+    "materialNotes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["boneId", "boneName", "face", "note"],
+        "properties": {
+          "boneId": { "type": "string", "minLength": 1 },
+          "boneName": { "type": "string", "minLength": 1 },
+          "face": { "$ref": "#/$defs/faceName" },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Ej. \"cuero desgastado con parches\"."
+          }
+        }
+      }
+    }
+  }
+}
