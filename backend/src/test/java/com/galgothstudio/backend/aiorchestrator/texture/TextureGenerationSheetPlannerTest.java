@@ -14,7 +14,6 @@ import com.galgothstudio.backend.domain.model.FaceMaterialNote;
 import com.galgothstudio.backend.domain.model.FaceName;
 import com.galgothstudio.backend.domain.model.FormatVersion;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
-import com.galgothstudio.backend.domain.model.ReferenceImage;
 import com.galgothstudio.backend.domain.model.TextureDocument;
 import com.galgothstudio.backend.domain.model.TexturePalette;
 import com.galgothstudio.backend.domain.model.TexturePlan;
@@ -33,6 +32,15 @@ import org.junit.jupiter.api.Test;
  * 2 y §21 (aislamiento espacial): no-solape de `sheetRect`, lectura
  * (nunca reasignación) del `atlasUvRect` ya resuelto, y fallback/batching
  * explícito cuando el bone excede el límite técnico de una sola sheet.
+ *
+ * <p>{@code modelWith} construye el modelo con {@code referenceImages()}
+ * VACÍO a propósito (ticket 059) -- así es como luce SIEMPRE un
+ * {@link MobProjectModel} real (ver hallazgo documentado en el Javadoc de
+ * {@link TextureGenerationSheetPlanner}); el planner recibe el id de la
+ * imagen de referencia como parámetro explícito ({@link #REFERENCE_IMAGE_ID}),
+ * nunca derivado del modelo -- esta clase de test es la que hubiera
+ * detectado el bug real si no hubiera simulado a mano un
+ * {@code ReferenceImage} que ningún flujo real llega a poblar.
  */
 class TextureGenerationSheetPlannerTest {
 
@@ -60,14 +68,13 @@ class TextureGenerationSheetPlannerTest {
 		return regions;
 	}
 
+	/** `referenceImages()` vacío a propósito -- ver Javadoc de la clase (ticket 059): así luce SIEMPRE un {@link MobProjectModel} real. */
 	private static MobProjectModel modelWith(List<Cuboid> cuboids, List<UvRegion> regions) {
 		Bone head = bone(BONE_ID, "head");
 		TextureDocument texture = new TextureDocument(64, 64, null);
-		ReferenceImage referenceImage = new ReferenceImage(REFERENCE_IMAGE_ID, "storage-key", 100, 100, "image/png");
 		return new MobProjectModel(
 				"mob-1", "project-1", "Test Mob", BaseType.HUMANOID, MobProjectModel.UNITS_MINECRAFT_PIXELS, List.of(head),
-				cuboids, texture, new UvLayout(64, 64, regions), List.of(), new ExportSettings(FormatVersion.V5),
-				List.of(referenceImage));
+				cuboids, texture, new UvLayout(64, 64, regions), List.of(), new ExportSettings(FormatVersion.V5), List.of());
 	}
 
 	private static TexturePlan texturePlan() {
@@ -83,7 +90,7 @@ class TextureGenerationSheetPlannerTest {
 		regions.addAll(regionsFor("cube-b", 8));
 		MobProjectModel model = modelWith(cuboids, regions);
 
-		List<TextureGenerationSheet> sheets = planner.plan(model, texturePlan(), BONE_ID);
+		List<TextureGenerationSheet> sheets = planner.plan(model, texturePlan(), BONE_ID, REFERENCE_IMAGE_ID);
 
 		assertThat(sheets).hasSize(1);
 		TextureGenerationSheet sheet = sheets.getFirst();
@@ -103,7 +110,7 @@ class TextureGenerationSheetPlannerTest {
 		regions.addAll(regionsFor("cube-b", 8));
 		MobProjectModel model = modelWith(cuboids, regions);
 
-		List<CuboidFacePlacement> placements = planner.plan(model, texturePlan(), BONE_ID).getFirst().placements();
+		List<CuboidFacePlacement> placements = planner.plan(model, texturePlan(), BONE_ID, REFERENCE_IMAGE_ID).getFirst().placements();
 
 		for (int i = 0; i < placements.size(); i++) {
 			for (int j = i + 1; j < placements.size(); j++) {
@@ -125,7 +132,7 @@ class TextureGenerationSheetPlannerTest {
 		}
 		MobProjectModel model = modelWith(cuboids, regions);
 
-		List<CuboidFacePlacement> placements = planner.plan(model, texturePlan(), BONE_ID).getFirst().placements();
+		List<CuboidFacePlacement> placements = planner.plan(model, texturePlan(), BONE_ID, REFERENCE_IMAGE_ID).getFirst().placements();
 
 		CuboidFacePlacement north = placements.stream().filter(p -> p.face() == FaceName.NORTH).findFirst().orElseThrow();
 		assertThat(north.atlasUvRect()).isEqualTo(expectedAtlasRect);
@@ -136,7 +143,8 @@ class TextureGenerationSheetPlannerTest {
 		MobProjectModel model = modelWith(List.of(), List.of());
 		TexturePlan plan = texturePlan();
 
-		assertThatThrownBy(() -> planner.plan(model, plan, "no-existe")).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> planner.plan(model, plan, "no-existe", REFERENCE_IMAGE_ID))
+				.isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
@@ -144,7 +152,8 @@ class TextureGenerationSheetPlannerTest {
 		MobProjectModel model = modelWith(List.of(), List.of());
 		TexturePlan plan = texturePlan();
 
-		assertThatThrownBy(() -> planner.plan(model, plan, BONE_ID)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> planner.plan(model, plan, BONE_ID, REFERENCE_IMAGE_ID))
+				.isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
@@ -154,21 +163,26 @@ class TextureGenerationSheetPlannerTest {
 		MobProjectModel model = modelWith(cuboids, regionsSinDown);
 		TexturePlan plan = texturePlan();
 
-		assertThatThrownBy(() -> planner.plan(model, plan, BONE_ID)).isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> planner.plan(model, plan, BONE_ID, REFERENCE_IMAGE_ID))
+				.isInstanceOf(IllegalStateException.class);
 	}
 
+	/**
+	 * Ticket 059 (hallazgo real, ver Javadoc de la clase de producción):
+	 * este test reemplaza al viejo "un modelo sin imagen de referencia
+	 * lanza excepción" -- ESE test simulaba el bug real (`referenceImages()`
+	 * vacío) pero seguía pasando en verde porque el planner lo derivaba mal
+	 * del modelo. La responsabilidad ahora es del CALLER: si no resuelve un
+	 * id, el planner rechaza el argumento explícitamente en vez de intentar
+	 * derivarlo de una fuente que en producción real SIEMPRE está vacía.
+	 */
 	@Test
-	void unModeloSinImagenDeReferencia_lanzaExcepcionExplicita() {
-		List<Cuboid> cuboids = List.of(cuboidOf("cube-a", BONE_ID));
-		Bone head = bone(BONE_ID, "head");
-		TextureDocument texture = new TextureDocument(64, 64, null);
-		MobProjectModel model = new MobProjectModel(
-				"mob-1", "project-1", "Test Mob", BaseType.HUMANOID, MobProjectModel.UNITS_MINECRAFT_PIXELS, List.of(head),
-				cuboids, texture, new UvLayout(64, 64, regionsFor("cube-a", 8)), List.of(), new ExportSettings(FormatVersion.V5),
-				List.of());
+	void unReferenceImageIdNuloOEnBlanco_lanzaExcepcionExplicita_esResponsabilidadDelCaller() {
+		MobProjectModel model = modelWith(List.of(cuboidOf("cube-a", BONE_ID)), regionsFor("cube-a", 8));
 		TexturePlan plan = texturePlan();
 
-		assertThatThrownBy(() -> planner.plan(model, plan, BONE_ID)).isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> planner.plan(model, plan, BONE_ID, null)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> planner.plan(model, plan, BONE_ID, "  ")).isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
@@ -180,7 +194,7 @@ class TextureGenerationSheetPlannerTest {
 		regions.addAll(regionsFor("cube-b", 900));
 		MobProjectModel model = modelWith(cuboids, regions);
 
-		List<TextureGenerationSheet> sheets = planner.plan(model, texturePlan(), BONE_ID);
+		List<TextureGenerationSheet> sheets = planner.plan(model, texturePlan(), BONE_ID, REFERENCE_IMAGE_ID);
 
 		assertThat(sheets).hasSizeGreaterThan(1);
 		// Identificación explícita de cada parte: índice (0-based) + tamaño de la lista.

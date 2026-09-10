@@ -5,7 +5,6 @@ import com.galgothstudio.backend.domain.model.BoneSemanticLabel;
 import com.galgothstudio.backend.domain.model.Cuboid;
 import com.galgothstudio.backend.domain.model.FaceName;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
-import com.galgothstudio.backend.domain.model.ReferenceImage;
 import com.galgothstudio.backend.domain.model.TexturePalette;
 import com.galgothstudio.backend.domain.model.TexturePlan;
 import com.galgothstudio.backend.domain.model.UvLayout;
@@ -57,6 +56,24 @@ import org.springframework.stereotype.Component;
  * devuelve una {@code List}; tamaño 1 es el camino normal, tamaño N &gt; 1
  * es el batching -- ver el Javadoc de {@link TextureGenerationSheet}
  * para cómo se identifica cada parte SIN agregar campos al record.
+ *
+ * <p><b>Hallazgo real, corregido (ticket 059)</b>: la versión original de
+ * este planner derivaba el {@code referenceImageId} de la sheet leyendo
+ * {@code model.referenceImages()} -- un campo de {@link MobProjectModel}
+ * que, auditado, NINGÚN flujo real de la aplicación llega a poblar jamás
+ * (`MobGenerationService.emptyModelFor` lo inicializa en {@code List.of()}
+ * y ningún otro punto del código principal construye un
+ * {@code ReferenceImage} real; solo los tests lo simulaban a mano). La
+ * imagen de referencia REAL de un mob vive exclusivamente en la tabla
+ * `reference_images` ({@code ReferenceImageRepository}), ya resuelta y
+ * validada por el caller ANTES de llegar acá
+ * ({@code TextureGenerationService.startGeneration} ->
+ * {@code mostRecentReference}). Esto hacía que CUALQUIER generación de
+ * textura por IA sobre un mob real fallara siempre con
+ * "Fallo inesperado durante la generación de textura" (reproducido en
+ * `studio-dev`, job real) -- 100% determinista, nunca un flake. Corregido
+ * recibiendo el id ya resuelto como parámetro explícito de {@link #plan}
+ * en vez de re-derivarlo de una fuente que nunca tiene datos.
  */
 @Component
 public class TextureGenerationSheetPlanner {
@@ -98,7 +115,13 @@ public class TextureGenerationSheetPlanner {
 			int height) {
 	}
 
-	public List<TextureGenerationSheet> plan(MobProjectModel model, TexturePlan texturePlan, String boneId) {
+	public List<TextureGenerationSheet> plan(MobProjectModel model, TexturePlan texturePlan, String boneId, String referenceImageId) {
+		if (referenceImageId == null || referenceImageId.isBlank()) {
+			throw new IllegalArgumentException(
+					"referenceImageId es obligatorio -- el caller (HU-36/37, ticket 054) debe resolverlo ANTES de invocar "
+							+ "al planner (ver hallazgo del ticket 059: el planner ya no lo deriva de model.referenceImages(), "
+							+ "un campo del dominio que ningún flujo real de la aplicación llega a poblar).");
+		}
 		Bone bone = findBone(model, boneId);
 		List<Cuboid> boneCuboids = cuboidsOfBone(model, boneId);
 		if (boneCuboids.isEmpty()) {
@@ -111,7 +134,7 @@ public class TextureGenerationSheetPlanner {
 
 		SheetMetadata metadata = new SheetMetadata(
 				bone, semanticLabelFor(texturePlan, boneId), paletteDescription(texturePlan.palette()),
-				materialNotesFor(texturePlan, boneId), referenceImageId(model));
+				materialNotesFor(texturePlan, boneId), referenceImageId);
 
 		Map<String, RawPlacement> rawById = rawPlacements.stream()
 				.collect(Collectors.toMap(r -> packerId(r.cuboidId(), r.face()), r -> r));
@@ -225,16 +248,6 @@ public class TextureGenerationSheetPlanner {
 
 	private static String paletteDescription(TexturePalette palette) {
 		return "dominante " + palette.dominantColorHex() + ", acento " + palette.accentColorHex();
-	}
-
-	private static String referenceImageId(MobProjectModel model) {
-		List<ReferenceImage> images = model.referenceImages();
-		if (images == null || images.isEmpty()) {
-			throw new IllegalStateException(
-					"El modelo no tiene ninguna imagen de referencia subida -- TextureGenerationSheetPlanner asume que "
-							+ "el caller (HU-36/37, ticket 054) ya validó esta precondición antes de invocar el planner.");
-		}
-		return images.get(0).id();
 	}
 
 	private static Bone findBone(MobProjectModel model, String boneId) {

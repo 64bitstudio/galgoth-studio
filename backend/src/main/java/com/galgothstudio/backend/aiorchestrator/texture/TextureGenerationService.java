@@ -210,8 +210,8 @@ public class TextureGenerationService {
 				Bone bone = findBone(context.model(), boneId);
 				emit(jobId, seq, GenerationStage.MAPEANDO_CARAS, "Mapeando caras de " + bone.name() + "…", nextProgress(progressCounter), null);
 
-				List<TextureGenerationSheet> sheets =
-						textureGenerationSheetPlanner.plan(context.model(), planResult.texturePlan(), boneId);
+				List<TextureGenerationSheet> sheets = textureGenerationSheetPlanner.plan(
+						context.model(), planResult.texturePlan(), boneId, context.referenceImageId().toString());
 				int totalParts = sheets.size();
 
 				for (int partIndex = 0; partIndex < sheets.size(); partIndex++) {
