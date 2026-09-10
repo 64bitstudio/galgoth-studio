@@ -1,5 +1,8 @@
 package com.galgothstudio.backend.aiorchestrator.provider;
 
+import java.util.Arrays;
+import java.util.Objects;
+
 /**
  * Genera imágenes de textura por IA -- interfaz definida en el ticket 025
  * (entonces explícitamente sin proveedor real, Fase 3 fuera de alcance
@@ -41,6 +44,38 @@ public interface ImageGenerationProvider {
 	 * dentro del prompt compuesto).
 	 */
 	record TextureGenerationSheetRequest(String prompt, byte[] referenceImageBytes, int sheetWidth, int sheetHeight, String style) {
+
+		// S6218: un record con un campo array (`referenceImageBytes`) hereda
+		// equals/hashCode/toString por identidad de referencia del array, no
+		// por contenido -- dos requests con los mismos bytes de imagen (pero
+		// arrays distintos, ej. tras un round-trip de deserialización)
+		// compararían como distintos. Se sobreescriben los 3 explícitamente
+		// con `java.util.Arrays` sobre ese campo.
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof TextureGenerationSheetRequest that)) {
+				return false;
+			}
+			return sheetWidth == that.sheetWidth && sheetHeight == that.sheetHeight
+					&& Objects.equals(prompt, that.prompt) && Objects.equals(style, that.style)
+					&& Arrays.equals(referenceImageBytes, that.referenceImageBytes);
+		}
+
+		@Override
+		public int hashCode() {
+			int result = Objects.hash(prompt, sheetWidth, sheetHeight, style);
+			return 31 * result + Arrays.hashCode(referenceImageBytes);
+		}
+
+		@Override
+		public String toString() {
+			return "TextureGenerationSheetRequest[prompt=" + prompt + ", referenceImageBytes="
+					+ Arrays.toString(referenceImageBytes) + ", sheetWidth=" + sheetWidth + ", sheetHeight=" + sheetHeight
+					+ ", style=" + style + "]";
+		}
 	}
 
 }
