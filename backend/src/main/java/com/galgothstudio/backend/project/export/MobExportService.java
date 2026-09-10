@@ -41,8 +41,8 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Ticket 056 (HU-43) -- segundo gap real detectado y cerrado con VoBo
  * explícito del PO: `BBModelExporterV5`/`V4` nunca leían
- * `model.texture().storageKey()`, así que TODO export embebía siempre el
- * checkerboard placeholder (011), incluso con textura real ya persistida
+ * `model.texture().storageKey()`, así que cualquier export embebía siempre
+ * el checkerboard placeholder (011), incluso con textura real ya persistida
  * (045/046-054). Este servicio es ahora el ÚNICO punto que resuelve esos
  * bytes reales vía {@link AssetStorageService#get}, y se los pasa al
  * exportador como parámetro -- el exportador SIGUE sin ninguna
@@ -94,7 +94,7 @@ public class MobExportService {
 		if (hasSavedRevision) {
 			latestRevisionModel = loadRevisionModel(mob);
 			MobProjectModel normalized = legacyUvNormalizationService.normalizeIfSafe(latestRevisionModel);
-			String bbmodelJson = BBModelExporterV5.export(normalized, resolveRealTextureBytes(normalized));
+			String bbmodelJson = BBModelExporterV5.export(normalized, resolveRealTextureBytes(normalized).orElse(null));
 			ValidationResult validation = FmmCompatibilityValidator.validate(bbmodelJson);
 			fmmCompatible = validation.pass();
 			fmmIssues = validation.issues();
@@ -113,36 +113,41 @@ public class MobExportService {
 		}
 		MobProjectModel model = loadRevisionModel(mob);
 		MobProjectModel normalized = legacyUvNormalizationService.normalizeIfSafe(model);
-		String bbmodelJson = BBModelExporterV5.export(normalized, resolveRealTextureBytes(normalized));
+		String bbmodelJson = BBModelExporterV5.export(normalized, resolveRealTextureBytes(normalized).orElse(null));
 		return new ExportedFile(safeFilename(mob.getName()), bbmodelJson);
 	}
 
 	/**
-	 * Ticket 056 (HU-43) -- `null` (nunca lanza) si el mob no tiene textura
-	 * real todavía (`storageKey == null`, el caso de siempre para un mob
-	 * sin ninguna región pintada -- AC #2 exige que ESE caso siga usando el
-	 * placeholder tal cual). También `null` si `storageKey` está seteado
-	 * pero los bytes ya no existen en el storage: invariante roto en teoría
-	 * (`DraftPersistenceService.saveRevision` ya verifica esto en
-	 * profundidad ANTES de escribir la Revision, ticket 045), pero el
-	 * export nunca debe romperse en caliente por eso -- se loguea como
-	 * WARN (nunca silencioso) y se cae al placeholder en vez de fallar
-	 * un export que de otro modo sería válido.
+	 * Ticket 056 (HU-43) -- {@code Optional.empty()} (nunca lanza) si el mob
+	 * no tiene textura real todavía (`storageKey == null`, el caso de
+	 * siempre para un mob sin ninguna región pintada -- AC #2 exige que ESE
+	 * caso siga usando el placeholder tal cual). También vacío si
+	 * `storageKey` está seteado pero los bytes ya no existen en el storage:
+	 * invariante roto en teoría (`DraftPersistenceService.saveRevision` ya
+	 * verifica esto en profundidad ANTES de escribir la Revision, ticket
+	 * 045), pero el export nunca debe romperse en caliente por eso -- se
+	 * loguea como WARN (nunca silencioso) y se cae al placeholder en vez de
+	 * fallar un export que de otro modo sería válido. El caller pasa
+	 * {@code .orElse(null)} al exportador (S1168: un método que devuelve
+	 * `byte[]` no debería devolver `null`, pero el contrato público de
+	 * `BBModelExporterV5.export` sí distingue "sin textura real" de "textura
+	 * real vacía" por `null` -- ese contrato no cambia, solo se envuelve
+	 * acá para no exponer `null` desde este método privado).
 	 */
-	private byte[] resolveRealTextureBytes(MobProjectModel model) {
+	private Optional<byte[]> resolveRealTextureBytes(MobProjectModel model) {
 		TextureDocument texture = model.texture();
 		String storageKey = texture != null ? texture.storageKey() : null;
 		if (storageKey == null) {
-			return null;
+			return Optional.empty();
 		}
 		Optional<byte[]> bytes = assetStorageService.get(storageKey);
 		if (bytes.isEmpty()) {
 			log.warn(
 					"Revision referencia storageKey '{}' que ya no existe en el storage -- exportando con placeholder en su lugar (invariante roto: DraftPersistenceService.saveRevision debería haber impedido esto).",
 					storageKey);
-			return null;
+			return Optional.empty();
 		}
-		return bytes.get();
+		return bytes;
 	}
 
 	private boolean computeHasUnsavedChanges(UUID mobId, boolean hasSavedRevision, MobProjectModel latestRevisionModel) {
