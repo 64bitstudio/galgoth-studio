@@ -14,6 +14,20 @@
  * error: el editor arranca desde un modelo vacío coherente con el mob
  * real (`emptyMobProjectModel`, compartido con el pipeline de
  * generación IA), nunca una pantalla rota ni en blanco sin explicación.
+ *
+ * Ticket 050 (HU-41, mockup 07): la tab "Textura" deja de estar
+ * deshabilitada -- `activeTab` decide qué se monta en el body, mismo
+ * `draft.model` real ya cargado arriba (nunca un segundo fetch/estado
+ * duplicado). En la tab Textura se monta EXCLUSIVAMENTE `TextureCanvas`
+ * (047/048/049 ya construido -- este ticket lo ENSAMBLA, no lo
+ * reimplementa): ni `EditorToolbar` (Move/Scale/Rotate/Add/Delete son
+ * herramientas de geometría, sin sentido acá) ni `HierarchyPanel`/
+ * `InspectorPanel`/`AiEditPanel` (mockup 07 no los muestra -- solo UV
+ * Editor a la izquierda + Vista previa 3D a la derecha, ya resueltos
+ * DENTRO de `TextureCanvas`). Por el mismo motivo, la fila de acciones
+ * superior (Reset cámara/Asistente IA/Exportar) es específica de la tab
+ * Modelo y se oculta en Textura -- fidelidad estricta al mockup, sin
+ * inventar controles que no están ahí.
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -25,6 +39,7 @@ import EditorHeader from './EditorHeader.vue'
 import EditorToolbar from './EditorToolbar.vue'
 import AiEditPanel from './AiEditPanel.vue'
 import GenerationPreviewViewport from '../ai/GenerationPreviewViewport.vue'
+import TextureCanvas from './texture/TextureCanvas.vue'
 import { useDraftModelStore } from './draftModelStore'
 import { useGeometryApplyStore } from './geometryApplyStore'
 import { getDraft } from './draftPersistenceApi'
@@ -48,6 +63,10 @@ const geometryApply = useGeometryApplyStore()
 const loadError = ref<string | null>(null)
 const notFound = ref(false)
 const mobName = ref('')
+
+// Ticket 050: tab de workspace activa -- 'modelo' por default, mismo
+// criterio que `EditorHeader.vue` (GTabs) ya usaba antes de fuego.
+const activeTab = ref<string>('modelo')
 
 // -- Ticket 043, Diseño técnico §2: modal de confirmación de pérdida de --
 // -- pintura, compartido por los 3 puntos de entrada de Resize (gizmo 3D --
@@ -141,8 +160,8 @@ function backToProject(): void {
       <p v-else-if="loadError" class="mob-editor__error">{{ loadError }}</p>
       <template v-else-if="draft.model">
         <div class="mob-editor__top">
-          <EditorHeader :mob-name="mobName" />
-          <div class="mob-editor__top-actions">
+          <EditorHeader :mob-name="mobName" :active-tab="activeTab" @update:active-tab="activeTab = $event" />
+          <div v-if="activeTab === 'modelo'" class="mob-editor__top-actions">
             <GButton variant="ghost" @click="threeViewportService.resetCamera()"><template #icon><IconCamera :size="16" /></template>Reset cámara</GButton>
             <GButton :variant="showAiPanel ? 'primary' : 'secondary'" @click="showAiPanel = !showAiPanel">
               <template #icon><IconSparkle :size="16" /></template>{{ showAiPanel ? 'Editor manual' : 'Asistente IA' }}
@@ -150,23 +169,26 @@ function backToProject(): void {
             <GButton variant="secondary" @click="router.push(`/projects/${projectId}/mobs/${mobId}/export`)">Exportar</GButton>
           </div>
         </div>
-        <EditorToolbar />
-        <div class="mob-editor__body">
-          <div class="mob-editor__panel mob-editor__panel--left">
-            <AiEditPanel
-              v-if="showAiPanel"
-              :mob-id="mobId"
-              @preview-model-changed="handleAiPreviewModelChanged"
-              @applied="handleAiEditApplied"
-            />
-            <HierarchyPanel v-else />
+        <template v-if="activeTab === 'modelo'">
+          <EditorToolbar />
+          <div class="mob-editor__body">
+            <div class="mob-editor__panel mob-editor__panel--left">
+              <AiEditPanel
+                v-if="showAiPanel"
+                :mob-id="mobId"
+                @preview-model-changed="handleAiPreviewModelChanged"
+                @applied="handleAiEditApplied"
+              />
+              <HierarchyPanel v-else />
+            </div>
+            <GenerationPreviewViewport v-if="aiPreviewModel" :model="aiPreviewModel" class="mob-editor__canvas" />
+            <ThreeViewport v-else class="mob-editor__canvas" />
+            <div class="mob-editor__panel mob-editor__panel--right">
+              <InspectorPanel />
+            </div>
           </div>
-          <GenerationPreviewViewport v-if="aiPreviewModel" :model="aiPreviewModel" class="mob-editor__canvas" />
-          <ThreeViewport v-else class="mob-editor__canvas" />
-          <div class="mob-editor__panel mob-editor__panel--right">
-            <InspectorPanel />
-          </div>
-        </div>
+        </template>
+        <TextureCanvas v-else-if="activeTab === 'textura'" :model="draft.model" class="mob-editor__texture" />
       </template>
       <p v-else class="mob-editor__loading">Cargando…</p>
     </main>
@@ -219,6 +241,11 @@ function backToProject(): void {
   min-height: 0;
   display: flex;
   gap: var(--space-3);
+}
+
+.mob-editor__texture {
+  flex: 1;
+  min-height: 0;
 }
 
 .mob-editor__panel {
