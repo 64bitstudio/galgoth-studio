@@ -36,8 +36,14 @@ echo "--- levantando Postgres + MinIO ---"
 MINIO_PORT="$(cd "$ROOT_DIR" && docker compose -f docker/docker-compose.yml port minio 9000 | cut -d: -f2)"
 echo "MinIO real en el puerto $MINIO_PORT"
 
-echo "--- levantando backend (AI_VISION_PROVIDER=mock, AI_REASONING_PROVIDER=mock) ---"
-(cd "$ROOT_DIR/backend" && AI_VISION_PROVIDER=mock AI_REASONING_PROVIDER=mock GALGOTH_STORAGE_MINIO_ENDPOINT="http://localhost:$MINIO_PORT" ./gradlew bootRun --console=plain >"$BACKEND_LOG" 2>&1) &
+# Ticket 056: se agrega AI_IMAGE_PROVIDER=mock (antes solo vision/
+# reasoning) -- la suite de Fase 3 (`fase3-textura-acceptance.spec.ts`)
+# comparte este mismo stack, y cualquier escenario que ejercite el
+# pipeline de generación de textura por IA (051/054) necesita
+# `MockImageProvider`, nunca `OpenAiImageProvider` real, igual que ya
+# pasa con vision/reasoning.
+echo "--- levantando backend (AI_VISION_PROVIDER=mock, AI_REASONING_PROVIDER=mock, AI_IMAGE_PROVIDER=mock) ---"
+(cd "$ROOT_DIR/backend" && AI_VISION_PROVIDER=mock AI_REASONING_PROVIDER=mock AI_IMAGE_PROVIDER=mock GALGOTH_STORAGE_MINIO_ENDPOINT="http://localhost:$MINIO_PORT" ./gradlew bootRun --console=plain >"$BACKEND_LOG" 2>&1) &
 BACKEND_PID=$!
 wait_for "http://localhost:8080/actuator/health" "backend"
 

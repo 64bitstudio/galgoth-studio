@@ -44,9 +44,14 @@ public final class BBModelExporterV4 {
 
 	/** Ver {@link BBModelExporterV5#export(MobProjectModel)} -- misma semántica (ticket 044: nunca recomputa UV). */
 	public static String export(MobProjectModel model) {
-		BBTexture placeholder =
-				BBModelExportSupport.buildPlaceholderTexture(model.texture().width(), model.texture().height());
-		return BBModelExportSupport.serialize(buildDocument(model, List.of(placeholder)));
+		return export(model, null);
+	}
+
+	/** Ver {@link BBModelExporterV5#export(MobProjectModel, byte[])} -- misma semántica (ticket 056, HU-43). */
+	public static String export(MobProjectModel model, byte[] realTexturePngBytes) {
+		BBTexture texture =
+				BBModelExportSupport.buildTexture(model.texture().width(), model.texture().height(), realTexturePngBytes);
+		return BBModelExportSupport.serialize(buildDocument(model, List.of(texture)));
 	}
 
 	private static BBModelDocumentV4 buildDocument(MobProjectModel model, List<BBTexture> textures) {

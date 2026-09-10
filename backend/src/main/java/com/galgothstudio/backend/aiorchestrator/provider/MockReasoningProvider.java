@@ -113,7 +113,21 @@ public class MockReasoningProvider implements StructuredReasoningProvider {
 		return defaultEditResponseFor(request.userPrompt());
 	}
 
-	/** Ver el hallazgo #2 del docstring de la clase. */
+	/**
+	 * Ver el hallazgo #2 del docstring de la clase.
+	 *
+	 * <p>Hallazgo real #3 (ticket 056, suite E2E de Fase 3): la escala
+	 * 1.2/1.2/1.2 de esta rama (introducida en el ticket 031, antes de que
+	 * existiera densidad de texel/AutoUv real por packing, ticket 042)
+	 * hace crecer el footprint del primer cuboid (torso, en el rig de
+	 * {@link #DEFAULT_GENERATION_RESPONSE}) lo suficiente como para
+	 * desbordar el atlas que `AlphaAutoPackStrategy` empaqueta HOY para
+	 * ese mismo rig -- `UV_ATLAS_OVERFLOW` real, reproducido
+	 * consistentemente corriendo el flujo completo (generar -> editar por
+	 * IA) contra un servidor real con providers mock. Escala reducida a
+	 * 1.05 -- sigue siendo un resize real y visible, dentro del headroom
+	 * que el packing de hoy ya reserva.
+	 */
 	private String defaultEditResponseFor(String userPrompt) {
 		if (userPrompt.contains("\"id\":\"hand_right\"")) {
 			return DEFAULT_EDIT_RESPONSE;
@@ -124,7 +138,7 @@ public class MockReasoningProvider implements StructuredReasoningProvider {
 		}
 		String realCuboidId = matcher.group(1);
 		return """
-				{"summary":"Resize the first cuboid found in the current model","operations":[{"op":"resizeCuboid","target":"%s","scale":[1.2,1.2,1.2]}]}
+				{"summary":"Resize the first cuboid found in the current model","operations":[{"op":"resizeCuboid","target":"%s","scale":[1.05,1.05,1.05]}]}
 				"""
 				.formatted(realCuboidId);
 	}

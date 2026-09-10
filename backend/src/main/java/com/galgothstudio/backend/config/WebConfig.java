@@ -49,9 +49,15 @@ public class WebConfig implements WebMvcConfigurer {
 		// local (mismo código, misma config, decenas de verificaciones en
 		// vivo) -- ser explícito acá no cambia el comportamiento ya probado
 		// localmente, pero descarta esta hipótesis concreta sin adivinar más.
+		// PUT agregado en el ticket 056 -- hallazgo real: `PUT /api/mobs/{mobId}/texture`
+		// (ticket 045) nunca había tenido un consumidor frontend real hasta
+		// este ticket (el flush de textura de "Guardar"), así que este gap
+		// de CORS nunca se había ejercitado desde un navegador real -- la
+		// suite E2E de Fase 3 lo reprodujo consistentemente (preflight
+		// rechazado, el fetch fallaba antes de llegar al backend).
 		registry.addMapping("/api/**")
 				.allowedOrigins(allowedOrigins)
-				.allowedMethods("GET", "POST", "PATCH", "DELETE", "OPTIONS")
+				.allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
 				.allowedHeaders("*");
 	}
 

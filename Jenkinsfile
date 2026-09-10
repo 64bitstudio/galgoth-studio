@@ -71,10 +71,14 @@
 // overrides como los que sí necesitó mail-core-mc (NestJS)/
 // texture-studio-mc (Express).
 //
-// E2E (ticket 033, HU-23): la suite Playwright de aceptación (frontend/e2e/,
-// scripts/e2e.sh) está completa y verificada -- corriendo LOCAL, en
-// verde, de forma reproducible. **NO está wireada en este Jenkinsfile
-// -- gap de infra real y documentado, no un olvido.** Se intentó a
+// E2E (ticket 033, HU-23; ampliada en el ticket 056, HU-43, Fase 3): la
+// suite Playwright de aceptación (frontend/e2e/, scripts/e2e.sh, 2
+// specs -- Technical Alpha + Fase 3) está completa y verificada --
+// corriendo LOCAL, en verde, de forma reproducible (el ticket 056
+// además encontró y cerró 3 bugs reales pre-existentes -- SSE, CORS,
+// mock de IA -- que impedían correrla de punta a punta, ver
+// docs/ARQUITECTURA.md). **NO está wireada en este Jenkinsfile -- gap
+// de infra real y documentado, no un olvido.** Se intentó a
 // fondo (6 rondas de CI real, 5 hallazgos resueltos: permisos de
 // `playwright install --with-deps`, colisión de puerto fijo de MinIO,
 // Chromium sin librerías de sistema para lanzarse, `--network host` vs.
@@ -93,10 +97,11 @@
 // decidió explícitamente el 2026-09-09 aceptar este gap como riesgo
 // conocido y cerrar el ticket 033 así (`done/033-...`), en vez de seguir
 // invirtiendo en el diagnóstico de red del agente compartido -- retomable
-// como ticket nuevo si se decide investigar más adelante. Ver el
-// `## Hecho` del ticket 033 y docs/ARQUITECTURA.md para el detalle
-// completo de las 6 rondas. Uso local: `./scripts/e2e.sh` desde la raíz
-// del repo.
+// como ticket nuevo si se decide investigar más adelante. El ticket 056
+// (mismo día) heredó la misma decisión sin reabrir el diagnóstico, al
+// ampliar esta misma suite para Fase 3. Ver el `## Hecho` de ambos
+// tickets y docs/ARQUITECTURA.md para el detalle completo. Uso local:
+// `./scripts/e2e.sh` desde la raíz del repo.
 @Library('platform') _
 
 corePipeline(
@@ -136,6 +141,6 @@ corePipeline(
                 }
             }
         }
-        // E2E (ticket 033): NO corre acá -- ver el comentario de cabecera.
+        // E2E (ticket 033, ampliada en el 056): NO corre acá -- ver el comentario de cabecera.
     }
 )

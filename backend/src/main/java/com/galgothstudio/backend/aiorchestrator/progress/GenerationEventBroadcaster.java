@@ -74,6 +74,22 @@ public class GenerationEventBroadcaster {
 		} catch (IOException _) {
 			log.info("Cliente SSE desconectado del job {} -- se remueve el emitter.", event.getJobId());
 			removeEmitter(event.getJobId(), emitter);
+		} catch (IllegalStateException _) {
+			// Hallazgo real (ticket 056, reproducido consistentemente por la
+			// suite E2E contra providers mock -- una generación mock termina
+			// tan rápido que esta carrera, antes solo teórica, se vuelve
+			// habitual): `completeAll(jobId)` puede correr en OTRO hilo (el
+			// pipeline async marcando el job como terminal) exactamente
+			// mientras ESTE hilo todavía está iterando `replay()` sobre el
+			// backlog del emitter recién suscrito -- `SseEmitter.send()`
+			// lanza `IllegalStateException` (no `IOException`) si el emitter
+			// ya fue completado por ese otro hilo. Mismo tratamiento que un
+			// cliente desconectado: no hay nada más que enviarle a este
+			// emitter, se remueve sin propagar (antes esto tumbaba la
+			// request completa del endpoint SSE con un 500, dejando al
+			// `EventSource` del navegador reconectando indefinidamente).
+			log.info("Emitter del job {} ya estaba completado (carrera con completeAll) -- se remueve sin propagar.", event.getJobId());
+			removeEmitter(event.getJobId(), emitter);
 		}
 	}
 

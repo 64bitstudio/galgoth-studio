@@ -1,10 +1,12 @@
 import { defineConfig } from '@playwright/test'
 
 /**
- * Ticket 033 (HU-23) -- suite de aceptación E2E. Corre contra un
- * backend/frontend REALES (Postgres+MinIO vía Docker Compose, backend
- * con `AI_VISION_PROVIDER=mock`/`AI_REASONING_PROVIDER=mock`, ver
- * `scripts/e2e.sh`), nunca contra mocks de red del lado del navegador --
+ * Ticket 033 (HU-23), ampliada en el ticket 056 (HU-43, Fase 3) --
+ * suite de aceptación E2E. Corre contra un backend/frontend REALES
+ * (Postgres+MinIO vía Docker Compose, backend con
+ * `AI_VISION_PROVIDER=mock`/`AI_REASONING_PROVIDER=mock`/
+ * `AI_IMAGE_PROVIDER=mock`, ver `scripts/e2e.sh`), nunca contra mocks de
+ * red del lado del navegador --
  * eso ya lo hacen los tests Vitest de cada componente. `webServer` NO
  * se usa acá: además del frontend hacen falta Postgres/MinIO/backend, 3
  * procesos más que Playwright no orquesta bien con una sola entrada de
