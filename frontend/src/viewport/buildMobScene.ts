@@ -176,7 +176,7 @@ function buildCuboidMesh(
     mesh.add(outline)
   }
 
-  if (selectedFace && selectedFace.cuboidId === cuboid.id) {
+  if (selectedFace?.cuboidId === cuboid.id) {
     const faceIndex = BOX_GEOMETRY_FACE_ORDER.indexOf(selectedFace.face)
     if (faceIndex !== -1) {
       mesh.add(buildFaceHighlight(geometry, faceIndex))
