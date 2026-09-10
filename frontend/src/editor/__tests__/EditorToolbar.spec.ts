@@ -20,6 +20,12 @@ vi.mock('three', async (importOriginal) => {
 
 vi.mock('../draftPersistenceApi', () => ({ saveRevision: vi.fn() }))
 vi.mock('../thumbnailApi', () => ({ uploadThumbnail: vi.fn() }))
+// Ticket 056: flush de textura antes de Guardar -- mockeado como no-op
+// transparente (devuelve el mismo model) por default en la mayoría de
+// los tests, que no le conciernen a este archivo (cubiertos en
+// textureFlush.spec.ts); el describe dedicado de más abajo lo
+// reconfigura por test para probar la integración real con EditorToolbar.
+vi.mock('../texture/textureFlush', () => ({ flushPaintedTexture: vi.fn(async (model) => model) }))
 
 // Ticket 043: Add/Delete de cuboid pasan a ser server-side (`POST /geometry/apply`,
 // vía `geometryApplyStore`) -- se mockea el cliente HTTP, nunca `fetch` real.
@@ -40,6 +46,7 @@ const { threeViewportService } = await import('../../viewport/ThreeViewportServi
 const { saveRevision } = await import('../draftPersistenceApi')
 const { uploadThumbnail } = await import('../thumbnailApi')
 const { applyGeometry } = await import('../geometryApplyApi')
+const { flushPaintedTexture } = await import('../texture/textureFlush')
 
 const EMPTY_FACES = {
   north: { uv: [0, 0, 0, 0] as [number, number, number, number], texture: null },
@@ -91,6 +98,12 @@ function findButton(wrapper: ReturnType<typeof mount>, label: string) {
 describe('EditorToolbar.vue', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    // `vi.restoreAllMocks()` (afterEach) limpia también la implementación
+    // por default de este mock de módulo (no solo los spies) -- se
+    // re-establece acá el no-op transparente para que los tests que no
+    // le conciernen al flush de textura (la inmensa mayoría de este
+    // archivo) sigan viendo `saveRevision` llamado con el MISMO `model`.
+    vi.mocked(flushPaintedTexture).mockImplementation(async (model) => model)
   })
 
   afterEach(() => {
@@ -374,6 +387,57 @@ describe('EditorToolbar.vue', () => {
     it('el botón Guardar está deshabilitado mientras no hay modelo cargado', () => {
       const wrapper = mount(EditorToolbar)
       expect(findButton(wrapper, 'Guardar').attributes('disabled')).toBeDefined()
+    })
+  })
+
+  describe('Flush de textura antes de Guardar (ticket 056)', () => {
+    it('espera el flush ANTES de commitear la revisión, y usa el model ya flusheado (con el storageKey oficial)', async () => {
+      const draft = useDraftModelStore()
+      draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
+      const originalModel = draft.model!
+      const flushedModel = { ...originalModel, texture: { ...originalModel.texture, storageKey: 'textures/oficial.png' } }
+      vi.mocked(flushPaintedTexture).mockResolvedValue(flushedModel)
+      vi.mocked(saveRevision).mockResolvedValue({ created: true, revisionNumber: 5, reason: null })
+      vi.spyOn(threeViewportService, 'captureThumbnail').mockResolvedValue(new Blob(['png'], { type: 'image/png' }))
+      const wrapper = mount(EditorToolbar)
+
+      await findButton(wrapper, 'Guardar').trigger('click')
+      await flushPromises()
+
+      expect(flushPaintedTexture).toHaveBeenCalledWith(originalModel)
+      expect(saveRevision).toHaveBeenCalledWith('test-mob', flushedModel)
+      expect(draft.model!.texture.storageKey).toBe('textures/oficial.png') // commiteado al draft, no descartado
+      expect(wrapper.text()).toContain('Guardado (revisión 5).')
+    })
+
+    it('sin ningún atlas cargado (flush no-op, mismo model), NUNCA llama a draft.commitExternalModel de más', async () => {
+      const draft = useDraftModelStore()
+      draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
+      const commitSpy = vi.spyOn(draft, 'commitExternalModel')
+      vi.mocked(saveRevision).mockResolvedValue({ created: true, revisionNumber: 1, reason: null })
+      vi.spyOn(threeViewportService, 'captureThumbnail').mockResolvedValue(new Blob(['png'], { type: 'image/png' }))
+      const wrapper = mount(EditorToolbar)
+
+      await findButton(wrapper, 'Guardar').trigger('click')
+      await flushPromises()
+
+      expect(commitSpy).not.toHaveBeenCalled()
+      expect(saveRevision).toHaveBeenCalledWith('test-mob', draft.model)
+    })
+
+    it('si el flush de textura falla (PUT /texture rechazado), el guardado se aborta y NUNCA se llama a saveRevision ni al thumbnail', async () => {
+      const draft = useDraftModelStore()
+      draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
+      vi.mocked(flushPaintedTexture).mockRejectedValue(new Error('El archivo no se pudo decodificar como un PNG válido.'))
+      const captureSpy = vi.spyOn(threeViewportService, 'captureThumbnail')
+      const wrapper = mount(EditorToolbar)
+
+      await findButton(wrapper, 'Guardar').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('El archivo no se pudo decodificar como un PNG válido.')
+      expect(saveRevision).not.toHaveBeenCalled()
+      expect(captureSpy).not.toHaveBeenCalled()
     })
   })
 })

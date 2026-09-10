@@ -18,6 +18,17 @@
  * que únicamente loguea con `console.warn` si falla. El thumbnail es un
  * asset derivado best-effort -- su fallo nunca debe revertir ni bloquear
  * el Guardar que ya se completó (ver docstring de `thumbnailApi.ts`).
+ *
+ * Ticket 056: ANTES de commitear la revisión, `handleSave` hace flush
+ * de la textura pintada a mano (`textureFlush.flushPaintedTexture`) --
+ * sube el atlas vigente vía `PUT /texture` y espera (await) el
+ * `storageKey` OFICIAL del backend antes de invocar `saveRevision`
+ * (mismo criterio "flush obligatorio antes de crear una Revision" que
+ * HU-31, Diseño técnico §6). Si no hay ningún atlas cargado (el tab
+ * Textura nunca se abrió en esta sesión) es un no-op transparente. Si el
+ * flush falla, el guardado completo se aborta (mismo `catch` que ya
+ * cubre un `saveRevision` fallido) -- nunca se crea una Revision con una
+ * referencia de textura colgante.
  */
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { threeViewportService } from '../viewport/ThreeViewportService'
@@ -26,6 +37,7 @@ import { useGeometryApplyStore } from './geometryApplyStore'
 import { useSelectionStore } from './selectionStore'
 import { saveRevision } from './draftPersistenceApi'
 import { uploadThumbnail } from './thumbnailApi'
+import { flushPaintedTexture } from './texture/textureFlush'
 import IconButton from '../design-system/components/IconButton.vue'
 import GButton from '../design-system/components/GButton.vue'
 import IconMove from '../design-system/icons/IconMove.vue'
@@ -137,7 +149,11 @@ async function handleSave(): Promise<void> {
   saving.value = true
   saveMessage.value = null
   try {
-    const result = await saveRevision(model.mobId, model)
+    const flushedModel = await flushPaintedTexture(model)
+    if (flushedModel !== model) {
+      draft.commitExternalModel(flushedModel)
+    }
+    const result = await saveRevision(flushedModel.mobId, flushedModel)
     saveMessage.value = result.created ? `Guardado (revisión ${result.revisionNumber}).` : (result.reason ?? 'Sin cambios.')
   } catch (error) {
     saveMessage.value = error instanceof Error ? error.message : 'No se pudo guardar.'
