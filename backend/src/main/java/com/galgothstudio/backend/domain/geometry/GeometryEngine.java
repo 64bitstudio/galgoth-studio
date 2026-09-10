@@ -107,6 +107,26 @@ public final class GeometryEngine {
 	 */
 	public static MobProjectModel apply(
 			MobProjectModel model, List<GeometryOperation> operations, UvLayoutStrategy uvLayoutStrategy) {
+		return apply(model, operations, uvLayoutStrategy, false);
+	}
+
+	/**
+	 * Igual que {@link #apply(MobProjectModel, List, UvLayoutStrategy)},
+	 * pero además propaga {@code confirmPaintLoss} (ticket 043, Diseño
+	 * técnico §2) hasta la sobrecarga de 5 argumentos de
+	 * {@code uvLayoutStrategy} -- el canal real desde
+	 * {@code POST /api/mobs/{mobId}/geometry/apply} hasta
+	 * {@code StableUvStrategy} (vía {@code UvLayoutSelector}). La
+	 * sobrecarga de 3 argumentos de arriba es exactamente equivalente a
+	 * llamar esta con {@code confirmPaintLoss=false} -- cero cambio de
+	 * comportamiento para los callers existentes ({@code GeometryPlannerService},
+	 * {@code AiGeometryEditPlannerService}), que nunca necesitan confirmar
+	 * pérdida de pintura (siempre operan sobre un modelo recién generado o
+	 * ya validado por el diff de "Aplicar cambios").
+	 */
+	public static MobProjectModel apply(
+			MobProjectModel model, List<GeometryOperation> operations, UvLayoutStrategy uvLayoutStrategy,
+			boolean confirmPaintLoss) {
 		MobProjectModel afterOps = apply(model, operations);
 
 		boolean touchesUv = operations.stream()
@@ -117,7 +137,8 @@ public final class GeometryEngine {
 
 		int atlasWidth = afterOps.texture().width();
 		int atlasHeight = afterOps.texture().height();
-		UvLayoutStrategy.Result uvResult = uvLayoutStrategy.layout(afterOps.cuboids(), atlasWidth, atlasHeight, model.uv());
+		UvLayoutStrategy.Result uvResult =
+				uvLayoutStrategy.layout(afterOps.cuboids(), atlasWidth, atlasHeight, model.uv(), confirmPaintLoss);
 		return new MobProjectModel(
 				afterOps.mobId(),
 				afterOps.projectId(),

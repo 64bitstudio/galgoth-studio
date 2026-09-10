@@ -47,4 +47,24 @@ class UvLayoutStrategyDefaultMethodTest {
 		assertThat(via4Args.reservations()).isEmpty();
 	}
 
+	/**
+	 * Ticket 043: la sobrecarga {@code default} de 5 argumentos (con
+	 * {@code confirmPaintLoss}) -- {@link AlphaAutoPackStrategy} tampoco la
+	 * sobreescribe, así que debe ignorar el flag y delegar en la sobrecarga
+	 * de 4 argumentos, sin ningún cambio de comportamiento.
+	 */
+	@Test
+	void alphaAutoPackStrategyNoSobreescribeLaSobrecargaDe5Args_ignoraConfirmPaintLossYDelegaEnLaDe4() {
+		AlphaAutoPackStrategy strategy = new AlphaAutoPackStrategy();
+		List<Cuboid> cuboids = List.of(cube("head"), cube("body"));
+		UvLayout noisyPreviousLayout = new UvLayout(
+				64, 64, List.of(new UvRegion("other-cuboid", FaceName.NORTH, new Vec4(0, 0, 8, 8), UvRegionStatus.PAINTED)));
+
+		UvLayoutStrategy.Result via5ArgsConfirmed = strategy.layout(cuboids, 64, 64, noisyPreviousLayout, true);
+		UvLayoutStrategy.Result via4Args = strategy.layout(cuboids, 64, 64, noisyPreviousLayout);
+
+		assertThat(via5ArgsConfirmed.cuboids()).isEqualTo(via4Args.cuboids());
+		assertThat(via5ArgsConfirmed.regions()).isEqualTo(via4Args.regions());
+	}
+
 }

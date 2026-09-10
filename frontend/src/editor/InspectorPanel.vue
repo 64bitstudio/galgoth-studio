@@ -12,23 +12,30 @@
  * este ticket -- es el único mapeo posible contra el dominio real: los
  * cuboids no tienen pivot propio (solo los bones, ver `Bone.pivot`).
  *
- * CERO funcionalidad nueva: los 4 campos son editables porque llaman a
- * métodos que YA EXISTEN en `draftModelStore` (los mismos que ya usa el
- * gizmo 3D de `ThreeViewport.vue` al soltar un drag) -- Posición/Tamaño/
- * Rotación son delta/escala respecto al valor actual (mismo cálculo que
- * hace el gizmo, `moveSelectedCuboid`/`resizeSelectedCuboid`/
- * `rotateSelectedCuboid`), Pivot es un set absoluto (`setPivot`, mismo
+ * Posición/Rotación son delta respecto al valor actual (mismo cálculo que
+ * hace el gizmo, `moveSelectedCuboid`/`rotateSelectedCuboid`, ambas 100%
+ * client-side, sin cambios), Pivot es un set absoluto (`setPivot`, mismo
  * método que ya usaba el editor inline de `HierarchyBoneNode.vue` antes
  * de este ticket -- movido aquí, no duplicado).
+ *
+ * Ticket 043, Diseño técnico §15: "Tamaño" deja de commitear localmente --
+ * al confirmar el valor (evento `change` de `InspectorField`, dispara solo
+ * al salir del input, no en cada tecla) se envía la MISMA operación
+ * `resizeCuboid` que usa el gizmo 3D vía `useGeometryApplyStore`, server-
+ * side autoritativo. Si el backend exige confirmación de pérdida de
+ * pintura, el modal (montado en `MobEditor.vue`) resuelve igual que desde
+ * el viewport -- este panel no necesita saber nada de esa excepción.
  */
 import { computed } from 'vue'
 import type { Vec3 } from '../domain/MobProjectModel'
 import { useDraftModelStore } from './draftModelStore'
+import { useGeometryApplyStore } from './geometryApplyStore'
 import { useSelectionStore } from './selectionStore'
 import InspectorField from './InspectorField.vue'
 
 const draft = useDraftModelStore()
 const selection = useSelectionStore()
+const geometryApply = useGeometryApplyStore()
 
 const selectedCuboid = computed(() => draft.model?.cuboids.find((c) => c.id === selection.selectedCuboidId) ?? null)
 
@@ -59,13 +66,14 @@ function updatePosition(newOrigin: Vec3): void {
 
 function updateSize(newSize: Vec3): void {
   const cuboid = selectedCuboid.value
-  if (!cuboid) {
+  const mobId = draft.model?.mobId
+  if (!cuboid || !mobId) {
     return
   }
   const currentSize = size.value
   const scale: Vec3 = [0, 1, 2].map((i) => (currentSize[i] !== 0 ? newSize[i] / currentSize[i] : 1)) as Vec3
   if (scale.every((s) => s > 0)) {
-    draft.resizeSelectedCuboid(cuboid.id, scale)
+    geometryApply.resizeCuboid(mobId, cuboid.id, scale)
   }
 }
 

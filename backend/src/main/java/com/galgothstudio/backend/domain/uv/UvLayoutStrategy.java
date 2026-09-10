@@ -47,6 +47,30 @@ public interface UvLayoutStrategy {
 	}
 
 	/**
+	 * Sobrecarga aditiva (ticket 043, Diseño técnico §2 de
+	 * `docs/definiciones/galgoth-studio-fase3-textura.md`): mismo contrato
+	 * que la sobrecarga de 4 argumentos, más el flag explícito de
+	 * confirmación de pérdida de pintura del caso "Resize" -- el canal
+	 * formal desde {@code POST /api/mobs/{mobId}/geometry/apply}
+	 * (`project/geometry/MobGeometryApplyService`) hasta
+	 * {@link StableUvStrategy#layout(List, int, int, UvLayout, boolean)},
+	 * que el ticket 041 dejó documentado como "wiring de un ticket
+	 * posterior". Default: ignora el flag y delega en la sobrecarga de 4
+	 * argumentos -- {@link AlphaAutoPackStrategy} nunca lanza
+	 * {@link PaintedRegionResizeConfirmationRequiredException} y no
+	 * sobreescribe este método, cero cambio de comportamiento.
+	 *
+	 * @param confirmPaintLoss si {@code true}, un resize que afectaría una
+	 *        cara {@code PAINTED} se aplica igual (reempaquetando +
+	 *        reservando el rect abandonado) en vez de lanzar la excepción
+	 *        de confirmación.
+	 */
+	default Result layout(
+			List<Cuboid> cuboids, int textureWidth, int textureHeight, UvLayout previousLayout, boolean confirmPaintLoss) {
+		return layout(cuboids, textureWidth, textureHeight, previousLayout);
+	}
+
+	/**
 	 * @param reservations tombstones de espacio de atlas abandonado (ticket
 	 *        041) -- aditivo respecto al ticket 006/007: {@link AlphaAutoPackStrategy}
 	 *        sigue usando el constructor de 2 argumentos (reservations vacío)

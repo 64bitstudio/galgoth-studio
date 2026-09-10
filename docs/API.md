@@ -79,6 +79,25 @@ POST   /api/mobs/{mobId}/revisions    -- Guardar (valida y crea una revisión in
 
 **Todos los errores** siguen la misma forma: `{ error, message, details }` (`details` es `null` salvo en `INVALID_DRAFT`).
 
+### Apply de geometría server-side + confirmación de resize (ticket `043`, Diseño técnico §2/§15)
+
+Implementado en `backend/.../project/api/MobGeometryController.java`. Autoridad de negocio: `MobGeometryApplyService` (paquete `project.geometry`), que ejecuta `GeometryEngine.apply(model, ops, uvLayoutStrategy, confirmPaintLoss)` (`domain/geometry`, `domain/uv`) sobre el DRAFT actual del mob y lo persiste por el MISMO mecanismo que `PATCH /draft` (`DraftPersistenceService.autosave`) -- cierra el Hallazgo B (el editor manual calculaba geometría/UV client-side sin que el backend lo revalidara) para las 3 operaciones que afectan UV.
+
+```text
+POST   /api/mobs/{mobId}/geometry/apply    -- aplica createCuboid/resizeCuboid/removeCuboid server-side
+```
+
+**`POST /api/mobs/{mobId}/geometry/apply`** — body `{ operations: GeometryOperation[], confirmPaintLoss: boolean }`
+- Whitelist CERRADA: solo `createCuboid`/`resizeCuboid`/`removeCuboid` (las únicas 3 que afectan UV). `moveCuboid`/`rotateCuboid`/`setBonePivot`/`setBoneRotation`/`parentBone`/`createBone` NUNCA pasan por este endpoint -- siguen 100% client-side + autosave debounced, sin cambios.
+- `200 OK` — `{ model: MobProjectModel, draftVersion }`. `model` es el modelo COMPLETO ya recalculado server-side (geometría + UV vía `UvLayoutSelector`, mismas reglas del ticket 041), listo para `draftModelStore.commitExternalModel()` en el frontend. Persiste el draft actualizado (mismo `draft_version` que `GET`/`PATCH /draft`).
+- `409 Conflict` (`error: "PAINTED_REGION_RESIZE_CONFIRMATION_REQUIRED"`, `details: ["<cuboidId>:<face>", ...]`) — el resize cambiaría el footprint de al menos una cara ya `PAINTED`, y `confirmPaintLoss` no vino en `true`. No se aplica ni persiste nada. El frontend reenvía la MISMA operación con `confirmPaintLoss: true` para confirmar.
+- `400 Bad Request` (`error: "UV_ATLAS_OVERFLOW"`, `details: ["currentWidth=..", "currentHeight=..", "requiredWidth=..", "requiredHeight=.."]`) — un `createCuboid` no cabe en ningún espacio libre del atlas actual (mismas reglas del ticket 041, el atlas nunca crece en silencio).
+- `400 Bad Request` (`error: "INVALID_GEOMETRY_OPERATION"`, `details: [...]`) — el batch no pasa la validación del Geometry Engine (referencia no resuelta, dimensión resultante ≤ 0, etc.).
+- `400 Bad Request` (`error: "UNSUPPORTED_GEOMETRY_OPERATION"`) — se envió una operación fuera de la whitelist de este endpoint.
+- `404 Not Found` (`DRAFT_NOT_FOUND` / `MOB_NOT_FOUND`) — mismos códigos que `GET /draft`.
+
+**Frontend (`ThreeViewport.vue`/`InspectorPanel.vue`, Diseño técnico §15)**: durante el arrastre del handle de resize (`pointermove`), el preview es 100% local (sin llamada de red, mismo mecanismo visual de siempre). Solo al soltar (`pointerup`, o al confirmar un input numérico) se dispara la ÚNICA llamada a este endpoint. Si responde `PAINTED_REGION_RESIZE_CONFIRMATION_REQUIRED`, se muestra `ConfirmDialog` con el detalle de las caras afectadas -- "Confirmar" reenvía la misma operación con `confirmPaintLoss: true`; "Cancelar" descarta el preview local sin llamar a `commitExternalModel` (el cuboid vuelve a su último estado confirmado).
+
 ### Asset-service: subida de imagen de referencia (ticket `024`, HU-10)
 
 Implementados en `backend/.../project/api/MobReferenceImageController.java`. Autoridad de negocio: `ReferenceImageService` (paquete `project.reference`), sobre `AssetStorageService` (ticket 023, mismo cliente S3 genérico que el pipeline de thumbnails). **Backend-only en este ticket** — la UI real del paso "Referencia" del wizard llegó en el ticket 027 (Wizard 4 pasos), que dependía explícitamente de este; primer consumidor frontend real: `frontend/src/api/referenceImagesApi.ts`.

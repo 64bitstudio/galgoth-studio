@@ -1,6 +1,7 @@
 package com.galgothstudio.backend.domain.uv;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.galgothstudio.backend.domain.model.Cuboid;
 import com.galgothstudio.backend.domain.model.CuboidFaces;
@@ -87,6 +88,43 @@ class UvLayoutSelectorTest {
 		UvLayoutStrategy.Result result = selector.layout(List.of(head), 64, 64, previousLayout);
 
 		assertThat(result.cuboids().get(0).faces().up().uv().a()).isEqualTo(18);
+	}
+
+	// -- Ticket 043: wiring de confirmPaintLoss a través del selector --------
+
+	@Test
+	void resizeConCaraPintadaSinConfirmar_delegaEnStableUvStrategyYPropagaLaExcepcion() {
+		Cuboid head = cube("head", 8);
+		CuboidFaces oldFaces = BoxUvMath.boxUnwrapFaces(head, 0, 0);
+		List<UvRegion> oldRegions = new ArrayList<>();
+		for (FaceName faceName : FaceName.values()) {
+			UvRegionStatus status = faceName == FaceName.NORTH ? UvRegionStatus.PAINTED : UvRegionStatus.UNPAINTED;
+			oldRegions.add(new UvRegion("head", faceName, BoxUvMath.faceOf(oldFaces, faceName).uv(), status));
+		}
+		UvLayout previousLayout = new UvLayout(64, 64, oldRegions);
+		Cuboid resizedHead = cube("head", 12);
+		List<Cuboid> cuboids = List.of(resizedHead);
+
+		assertThatThrownBy(() -> selector.layout(cuboids, 64, 64, previousLayout, false))
+				.isInstanceOf(PaintedRegionResizeConfirmationRequiredException.class);
+	}
+
+	@Test
+	void resizeConCaraPintadaConfirmado_seAplicaYCreaLaReservaEsperada() {
+		Cuboid head = cube("head", 8);
+		CuboidFaces oldFaces = BoxUvMath.boxUnwrapFaces(head, 0, 0);
+		List<UvRegion> oldRegions = new ArrayList<>();
+		for (FaceName faceName : FaceName.values()) {
+			UvRegionStatus status = faceName == FaceName.NORTH ? UvRegionStatus.PAINTED : UvRegionStatus.UNPAINTED;
+			oldRegions.add(new UvRegion("head", faceName, BoxUvMath.faceOf(oldFaces, faceName).uv(), status));
+		}
+		UvLayout previousLayout = new UvLayout(64, 64, oldRegions);
+		Cuboid resizedHead = cube("head", 12);
+
+		UvLayoutStrategy.Result result = selector.layout(List.of(resizedHead), 64, 64, previousLayout, true);
+
+		assertThat(result.reservations()).hasSize(1);
+		assertThat(result.reservations().get(0).sourceFace()).isEqualTo(FaceName.NORTH);
 	}
 
 }

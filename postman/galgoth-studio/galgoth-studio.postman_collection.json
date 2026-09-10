@@ -5,10 +5,22 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:8080" },
-    { "key": "projectId", "value": "" },
-    { "key": "mobId", "value": "" },
-    { "key": "referenceId", "value": "" }
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "projectId",
+      "value": ""
+    },
+    {
+      "key": "mobId",
+      "value": ""
+    },
+    {
+      "key": "referenceId",
+      "value": ""
+    }
   ],
   "item": [
     {
@@ -18,9 +30,26 @@
           "name": "Crear proyecto",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Nuevo proyecto\"\n}" },
-            "url": { "raw": "{{baseUrl}}/api/projects", "host": ["{{baseUrl}}"], "path": ["api", "projects"] },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nuevo proyecto\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects"
+              ]
+            },
             "description": "201 con el ProjectDetail si el nombre es válido; 400 (INVALID_PROJECT_NAME) si está vacío -- ningún proyecto se crea."
           }
         },
@@ -29,7 +58,16 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{baseUrl}}/api/projects", "host": ["{{baseUrl}}"], "path": ["api", "projects"] },
+            "url": {
+              "raw": "{{baseUrl}}/api/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects"
+              ]
+            },
             "description": "ProjectSummary[] -- hasta 3 mobThumbnails por proyecto, sin los soft-deleted, ordenados por updatedAt desc."
           }
         },
@@ -40,8 +78,14 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/projects/{{projectId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "projects", "{{projectId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{projectId}}"
+              ]
             },
             "description": "404 (PROJECT_NOT_FOUND) si no existe o está soft-deleted."
           }
@@ -50,12 +94,26 @@
           "name": "Renombrar proyecto",
           "request": {
             "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Nombre nuevo\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nombre nuevo\"\n}"
+            },
             "url": {
               "raw": "{{baseUrl}}/api/projects/{{projectId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "projects", "{{projectId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{projectId}}"
+              ]
             }
           }
         },
@@ -66,8 +124,14 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/projects/{{projectId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "projects", "{{projectId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{projectId}}"
+              ]
             },
             "description": "204. Marca projects.deleted_at -- el proyecto deja de aparecer en cualquier consulta."
           }
@@ -79,8 +143,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/projects/{{projectId}}/duplicate",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "projects", "{{projectId}}", "duplicate"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{projectId}}",
+                "duplicate"
+              ]
             },
             "description": "201 con el ProjectDetail de la copia -- copia el proyecto y TODOS sus mobs con su historial completo de mob_revisions y su mob_drafts actual."
           }
@@ -94,12 +165,27 @@
           "name": "Agregar mob",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Carcomido\",\n  \"baseType\": \"humanoid\"\n}" },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Carcomido\",\n  \"baseType\": \"humanoid\"\n}"
+            },
             "url": {
               "raw": "{{baseUrl}}/api/projects/{{projectId}}/mobs",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "projects", "{{projectId}}", "mobs"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{projectId}}",
+                "mobs"
+              ]
             },
             "description": "201 con el MobSummary -- status siempre 'draft', current_revision_number=0, sin fila en mob_drafts. baseType: humanoid|arachnid|quadruped|flying|custom. 400 (INVALID_MOB_REQUEST) si el nombre está vacío o baseType es inválido."
           }
@@ -111,8 +197,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/projects/{{projectId}}/mobs",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "projects", "{{projectId}}", "mobs"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{projectId}}",
+                "mobs"
+              ]
             },
             "description": "MobSummary[] -- el filtro por nombre del buscador es client-side, sin parámetro de búsqueda aquí."
           }
@@ -124,8 +217,14 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/mobs/{{mobId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "mobs", "{{mobId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}"
+              ]
             },
             "description": "200 con el MobSummary -- sin projectId en el path (el mob ya se identifica solo por su id). 404 (MOB_NOT_FOUND) si el mob no existe. Usado por MobEditor.vue para saber name/baseType reales cuando el mob todavía no tiene ningún draft."
           }
@@ -134,9 +233,27 @@
           "name": "Renombrar mob (ticket 039)",
           "request": {
             "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Nombre nuevo\"\n}" },
-            "url": { "raw": "{{baseUrl}}/api/mobs/{{mobId}}", "host": ["{{baseUrl}}"], "path": ["api", "mobs", "{{mobId}}"] },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nombre nuevo\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}"
+              ]
+            },
             "description": "200 con el MobSummary actualizado. 400 (INVALID_MOB_REQUEST) si el nombre queda vacío. 404 (MOB_NOT_FOUND) si el mob no existe."
           }
         },
@@ -145,7 +262,17 @@
           "request": {
             "method": "DELETE",
             "header": [],
-            "url": { "raw": "{{baseUrl}}/api/mobs/{{mobId}}", "host": ["{{baseUrl}}"], "path": ["api", "mobs", "{{mobId}}"] },
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}"
+              ]
+            },
             "description": "204. Marca mobs.deleted_at -- mismo criterio que projects.deleted_at (ticket 021): ningún FK hacia mobs tiene ON DELETE CASCADE, por eso es soft-delete y no hard-delete."
           }
         }
@@ -158,12 +285,27 @@
           "name": "Subir thumbnail de un mob",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "image/png" }],
-            "body": { "mode": "file", "file": {} },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "image/png"
+              }
+            ],
+            "body": {
+              "mode": "file",
+              "file": {}
+            },
             "url": {
               "raw": "{{baseUrl}}/api/mobs/{{mobId}}/thumbnail",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "mobs", "{{mobId}}", "thumbnail"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "thumbnail"
+              ]
             },
             "description": "Body: bytes crudos de un PNG (elegir un archivo local en la pestaña Body > binary de Postman) -- NO JSON, NO multipart. 204 sin cuerpo si tuvo éxito (sube el PNG a MinIO y actualiza mobs.thumbnail_key al path servible /api/mobs/{mobId}/thumbnail, siempre sobreescribiendo el thumbnail anterior in-place). 404 (MOB_NOT_FOUND) si el mob no existe."
           }
@@ -175,8 +317,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/mobs/{{mobId}}/thumbnail",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "mobs", "{{mobId}}", "thumbnail"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "thumbnail"
+              ]
             },
             "description": "200 con los bytes del PNG (Content-Type: image/png) si el mob ya tiene thumbnail. 404 sin cuerpo si el mob existe pero todavía no tiene ninguno subido; 404 (MOB_NOT_FOUND) si el mob no existe."
           }
@@ -190,12 +339,27 @@
           "name": "Subir una imagen de referencia",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "image/png" }],
-            "body": { "mode": "file", "file": {} },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "image/png"
+              }
+            ],
+            "body": {
+              "mode": "file",
+              "file": {}
+            },
             "url": {
               "raw": "{{baseUrl}}/api/mobs/{{mobId}}/references",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "mobs", "{{mobId}}", "references"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "references"
+              ]
             },
             "description": "Body: bytes crudos de una imagen (elegir un archivo local en la pestaña Body > binary de Postman) -- solo image/png o image/jpeg, máx 10MB. 201 con { id, url, width, height, contentType, createdAt } -- width/height se decodifican de los bytes reales. 400 (INVALID_REFERENCE_IMAGE) si el formato/tamaño no es soportado o el archivo no decodifica como imagen válida. 404 (MOB_NOT_FOUND) si el mob no existe."
           }
@@ -207,8 +371,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/mobs/{{mobId}}/references",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "mobs", "{{mobId}}", "references"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "references"
+              ]
             },
             "description": "ReferenceImageSummary[] en orden de subida (más antigua primero). 404 (MOB_NOT_FOUND) si el mob no existe."
           }
@@ -220,8 +391,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/mobs/{{mobId}}/references/{{referenceId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "mobs", "{{mobId}}", "references", "{{referenceId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "references",
+                "{{referenceId}}"
+              ]
             },
             "description": "200 con los bytes de la imagen (Content-Type real: image/png o image/jpeg). 404 sin cuerpo si esa imagen no existe; 404 (MOB_NOT_FOUND) si el mob no existe."
           }
@@ -238,8 +417,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/mobs/{{mobId}}/draft",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "mobs", "{{mobId}}", "draft"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "draft"
+              ]
             },
             "description": "200 con { mobId, draftVersion, model, updatedAt } si existe, 404 explícito (DRAFT_NOT_FOUND) si el mob todavía no tiene ningún draft persistido, 404 (MOB_NOT_FOUND) si el mob no existe."
           }
@@ -248,15 +434,27 @@
           "name": "Autosave del draft",
           "request": {
             "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"model\": { }\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/mobs/{{mobId}}/draft",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "mobs", "{{mobId}}", "draft"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "draft"
+              ]
             },
             "description": "Persiste mob_drafts SOLO si el contenido cambió materialmente respecto al último persistido -- responde { changed, draftVersion, updatedAt }. `changed:false` significa que no se escribió nada (ni siquiera updated_at). Nunca crea una mob_revision. 404 (MOB_NOT_FOUND) si el mob no existe."
           }
@@ -265,15 +463,27 @@
           "name": "Guardar (crea una revisión)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"model\": { }\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/mobs/{{mobId}}/revisions",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "mobs", "{{mobId}}", "revisions"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "revisions"
+              ]
             },
             "description": "Valida el draft actual contra el JSON Schema y crea una fila inmutable en mob_revisions -- 201 si created:true (nueva revisión), 200 si created:false (sin cambios desde la última revisión, no se duplica), 400 (INVALID_DRAFT, con `details`) si falla la validación, 404 (MOB_NOT_FOUND) si el mob no existe."
           }
@@ -290,8 +500,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/mobs/{{mobId}}/generate",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "mobs", "{{mobId}}", "generate"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "generate"
+              ]
             },
             "description": "202 con {\"jobId\": \"<uuid>\"} -- crea la fila ai_jobs (status='running') de inmediato y devuelve el jobId sin esperar a ninguna llamada de IA (el pipeline real corre en otro hilo). Copiar el jobId de la respuesta a la variable de entorno `jobId` para usarlo en las otras dos requests de esta carpeta. 404 (MOB_NOT_FOUND) si el mob no existe. 400 (NO_REFERENCE_IMAGE) si el mob no tiene ninguna imagen de referencia subida (024) todavía."
           }
@@ -300,11 +517,23 @@
           "name": "Eventos de progreso (SSE)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Accept", "value": "text/event-stream" }],
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/jobs/{{jobId}}/events",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "jobs", "{{jobId}}", "events"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{jobId}}",
+                "events"
+              ]
             },
             "description": "Stream SSE (text/event-stream) -- un evento 'progress' por cada avance real, data = {seq, stage, message, progressPct, payload}. stage: analizando_referencia/detectando_silueta/creando_rig/generando_cuboides/completado/fallido/cancelado. payload es null, o {type:'preview_operations', addedOrUpdatedBones, addedOrUpdatedCuboids, removedCuboidIds} (preferido) o {type:'preview_snapshot', model} (solo el evento 'completado', resincronización). Postman no reproduce el stream en vivo como un navegador real -- útil igual para inspeccionar el backlog completo si el job ya terminó (reproduce todo de una vez y cierra). Agregar header 'Last-Event-ID: <seq>' para reanudar desde un punto (AC #3). 404 si el jobId no existe."
           }
@@ -316,8 +545,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/jobs/{{jobId}}/cancel",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "jobs", "{{jobId}}", "cancel"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{jobId}}",
+                "cancel"
+              ]
             },
             "description": "202 -- señala la cancelación; el job se detiene en el próximo punto de control (nunca interrumpe una llamada HTTP a un proveedor de IA ya en vuelo, ver AC #4). 404 (JOB_NOT_FOUND) si el jobId no existe. 409 (INVALID_JOB_STATE) si el job ya alcanzó un estado terminal (completed/failed/cancelled)."
           }
@@ -329,8 +565,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/jobs/{{jobId}}/result",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "jobs", "{{jobId}}", "result"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{jobId}}",
+                "result"
+              ]
             },
             "description": "200 con {jobId, mobId, mobName, cuboidCount, boneCount, textureWidth, textureHeight, fmmCompatible, fmmIssues} -- calculado en vivo desde ai_jobs.proposal_jsonb, nunca re-ejecuta GeometryEngine. fmmCompatible/fmmIssues son el resultado REAL de exportar a .bbmodel (010/011) y correrle FmmCompatibilityValidator (013) encima. 404 (JOB_NOT_FOUND) si el jobId no existe. 409 (JOB_NOT_COMPLETED) si el job todavía no terminó, falló o se canceló."
           }
@@ -342,8 +585,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/jobs/{{jobId}}/apply",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "jobs", "{{jobId}}", "apply"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{jobId}}",
+                "apply"
+              ]
             },
             "description": "201 con {revisionNumber, draftVersion} -- crea mob_revisions (created_by='ai') Y mob_drafts en la MISMA transacción, avanza mobs.current_revision_number (AC #4). 400 (INVALID_DRAFT) si la propuesta no pasa la validación de invariantes. 404 (JOB_NOT_FOUND) si el jobId no existe. 409 (JOB_NOT_COMPLETED) si el job todavía no terminó, falló o se canceló."
           }
@@ -357,15 +607,28 @@
           "name": "Generar plan de edición",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"instruction\": \"Haz las manos más grandes y los hombros más irregulares.\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/mobs/{{mobId}}/ai/edit-geometry",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "mobs", "{{mobId}}", "ai", "edit-geometry"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "ai",
+                "edit-geometry"
+              ]
             },
             "description": "200 con {jobId, summary, beforeCuboidCount, beforeBoneCount, afterCuboidCount, afterBoneCount, changedElements, beforeModel, afterModel} -- síncrono (sin SSE), NUNCA toca mob_drafts/mob_revisions. changedElements ({type, id, name, changeKind}) reutiliza el mismo diff puro de 029. Copiar el jobId de la respuesta a la variable de entorno `jobId` para 'Aplicar un plan de edición'. 400 (NO_BASE_REVISION) si el mob todavía no tiene ninguna revisión guardada. 404 (MOB_NOT_FOUND/DRAFT_NOT_FOUND). 400 (INVALID_EDIT_PROPOSAL) si la IA devuelve una propuesta inválida -- se persiste un ai_jobs 'failed' para auditoría, pero el draft/revisión real nunca cambian."
           }
@@ -377,8 +640,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/jobs/{{jobId}}/apply-edit",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "jobs", "{{jobId}}", "apply-edit"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{jobId}}",
+                "apply-edit"
+              ]
             },
             "description": "201 con {revisionNumber, draftVersion} -- crea mob_revisions (created_by='ai') Y mob_drafts en la misma transacción, mismo mecanismo que 'Usar este modelo' (030). 404 (JOB_NOT_FOUND). 409 (JOB_NOT_COMPLETED) si el job no es un edit completado. 409 (STALE_EDIT_BASE) si el draft/revisión base avanzaron desde que se generó el plan -- no aplica nada; regenerar el plan contra el estado actual."
           }
@@ -395,8 +665,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/mobs/{{mobId}}/export/status",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "mobs", "{{mobId}}", "export", "status"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "export",
+                "status"
+              ]
             },
             "description": "200 con {mobId, mobName, hasSavedRevision, hasUnsavedChanges, fmmCompatible, fmmIssues}. fmmCompatible/fmmIssues se calculan SIEMPRE contra la última revisión GUARDADA (nunca el draft en curso) -- son null/[] cuando hasSavedRevision=false. hasUnsavedChanges=true cuando el draft difiere de la última revisión, o cuando hay draft pero ninguna revisión todavía. 404 (MOB_NOT_FOUND) si el mob no existe."
           }
@@ -408,10 +686,173 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/mobs/{{mobId}}/export/bbmodel",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "mobs", "{{mobId}}", "export", "bbmodel"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "export",
+                "bbmodel"
+              ]
             },
             "description": "200 -- el .bbmodel (JSON) de la última revisión guardada, como descarga (application/octet-stream, Content-Disposition: attachment; filename=\"<nombre-sanitizado>.bbmodel\"). NUNCA lee mob_drafts. 'Guardar y exportar' NO es este endpoint solo -- primero llamar 'Guardar (crea una revisión)' (carpeta Draft/Guardar) con el draft actual, y RECIÉN DESPUÉS esta request. 404 (MOB_NOT_FOUND). 404 (NO_SAVED_REVISION) si el mob nunca tuvo ninguna revisión guardada -- nada que exportar todavía."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Apply de geometría (ticket 043)",
+      "item": [
+        {
+          "name": "Apply resizeCuboid sin caras pintadas",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operations\": [\n    { \"op\": \"resizeCuboid\", \"target\": \"head_main\", \"scale\": [1.5, 1.5, 1.5] }\n  ],\n  \"confirmPaintLoss\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/geometry/apply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "geometry",
+                "apply"
+              ]
+            },
+            "description": "Whitelist cerrada: solo createCuboid/resizeCuboid/removeCuboid (moveCuboid/rotateCuboid/pivot responden 400 UNSUPPORTED_GEOMETRY_OPERATION). Aplica GeometryEngine.apply + UvLayoutSelector sobre el draft actual y lo persiste (mismo mecanismo de mob_drafts que PATCH /draft) -- 200 con { model, draftVersion } si no afecta ninguna cara PAINTED. 404 (DRAFT_NOT_FOUND/MOB_NOT_FOUND) si no hay draft o el mob no existe."
+          }
+        },
+        {
+          "name": "Apply resizeCuboid que afecta una cara PAINTED (requiere confirmación)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operations\": [\n    { \"op\": \"resizeCuboid\", \"target\": \"head_main\", \"scale\": [2, 2, 2] }\n  ],\n  \"confirmPaintLoss\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/geometry/apply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "geometry",
+                "apply"
+              ]
+            },
+            "description": "409 (PAINTED_REGION_RESIZE_CONFIRMATION_REQUIRED, con `details: [\"<cuboidId>:<face>\", ...]`) sin aplicar nada -- reenviar la MISMA operación con confirmPaintLoss:true para confirmar (ver la request siguiente)."
+          }
+        },
+        {
+          "name": "Apply resizeCuboid confirmando pérdida de pintura",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operations\": [\n    { \"op\": \"resizeCuboid\", \"target\": \"head_main\", \"scale\": [2, 2, 2] }\n  ],\n  \"confirmPaintLoss\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/geometry/apply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "geometry",
+                "apply"
+              ]
+            },
+            "description": "200 con { model, draftVersion } -- reempaqueta la(s) cara(s) PAINTED afectada(s) como UNPAINTED en espacio libre y crea una UvReservation (RESIZE_ABANDONED) con el rect viejo."
+          }
+        },
+        {
+          "name": "Apply createCuboid",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operations\": [\n    {\n      \"op\": \"createCuboid\",\n      \"tempId\": \"tmp-1\",\n      \"name\": \"nuevo_cuboid\",\n      \"boneId\": \"head\",\n      \"from\": [-1, 0, -1],\n      \"to\": [1, 2, 1],\n      \"origin\": [0, 1, 0],\n      \"rotation\": [0, 0, 0]\n    }\n  ],\n  \"confirmPaintLoss\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/geometry/apply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "geometry",
+                "apply"
+              ]
+            },
+            "description": "200 con { model, draftVersion } -- mismas reglas del ticket 041 (400 UV_ATLAS_OVERFLOW si no cabe en ningún espacio libre del atlas, nunca crece el atlas ni reempaqueta lo existente)."
+          }
+        },
+        {
+          "name": "Apply removeCuboid",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operations\": [\n    { \"op\": \"removeCuboid\", \"target\": \"arm_right_upper\" }\n  ],\n  \"confirmPaintLoss\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/geometry/apply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "geometry",
+                "apply"
+              ]
+            },
+            "description": "200 con { model, draftVersion } -- mismas reglas del ticket 041 (si el cuboid removido tenía caras PAINTED, sus 6 filas de UvRegion pasan a ORPHAN)."
           }
         }
       ]

@@ -1,9 +1,10 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Cuboid, MobProjectModel } from '../../domain/MobProjectModel'
 import { useDraftModelStore } from '../../editor/draftModelStore'
+import { useGeometryApplyStore } from '../../editor/geometryApplyStore'
 import { useSelectionStore } from '../../editor/selectionStore'
 
 // Ver nota en ThreeViewportService.spec.ts -- jsdom no tiene WebGL real.
@@ -17,8 +18,28 @@ vi.mock('three', async (importOriginal) => {
   return { ...actual, WebGLRenderer: FakeWebGLRenderer }
 })
 
+// Ticket 043: Resize (modo 'scale' del gizmo) pasa a ser server-side
+// (`POST /geometry/apply`, vía `geometryApplyStore`) -- se mockea el
+// cliente HTTP, nunca `fetch` real. Move/Rotate NO se tocan (siguen
+// 100% client-side, sin mock necesario para ellos). La clase de error va
+// DEFINIDA DENTRO del factory (nunca afuera) -- `geometryApplyStore.ts` se
+// importa estáticamente arriba, y ESE import se evalúa antes que
+// cualquier statement posterior del archivo (incluida una clase externa),
+// así que una referencia externa dispara un `ReferenceError` real de TDZ.
+vi.mock('../../editor/geometryApplyApi', () => {
+  class PaintedRegionResizeConfirmationRequiredError extends Error {
+    affectedFaces: { cuboidId: string; face: string }[]
+    constructor(message: string, affectedFaces: { cuboidId: string; face: string }[]) {
+      super(message)
+      this.affectedFaces = affectedFaces
+    }
+  }
+  return { applyGeometry: vi.fn(), PaintedRegionResizeConfirmationRequiredError }
+})
+
 const { threeViewportService } = await import('../ThreeViewportService')
 const { default: ThreeViewport } = await import('../ThreeViewport.vue')
+const { applyGeometry } = await import('../../editor/geometryApplyApi')
 
 function emptyModel(name: string): MobProjectModel {
   return {
@@ -79,6 +100,7 @@ describe('ThreeViewport.vue', () => {
     wrapper = null
     threeViewportService.stopRenderLoop()
     vi.restoreAllMocks()
+    vi.mocked(applyGeometry).mockReset()
   })
 
   it('al montarse, adjunta el canvas compartido dentro de su contenedor y carga el modelo del draft store', () => {
@@ -185,20 +207,94 @@ describe('ThreeViewport.vue', () => {
       const moved = draft.model!.cuboids[0]!
       expect(moved.from[0]).toBeCloseTo(4, 9)
       expect(moved.to[0]).toBeCloseTo(6, 9)
+      // Ticket 043, test de regresión: moveCuboid NUNCA dispara POST /geometry/apply -- 100% client-side.
+      expect(applyGeometry).not.toHaveBeenCalled()
     })
 
-    it('scale: al soltar el drag, redimensiona el cuboid con el scale del gizmo', () => {
+    // -- Ticket 043, Diseño técnico §15: Resize deja de commitear localmente --
+
+    it('scale: al soltar el drag, dispara UNA sola llamada a POST /geometry/apply y aplica el resultado real del backend', async () => {
       const { draft, controls } = setupSelectedCuboid()
+      const resizedByBackend: Cuboid = { ...draft.model!.cuboids[0]!, from: [-2, -1, -1], to: [2, 1, 1] }
+      vi.mocked(applyGeometry).mockResolvedValue({
+        model: { ...draft.model!, cuboids: [resizedByBackend] },
+        draftVersion: 2,
+      })
       controls.setMode('scale')
       controls.dispatchEvent({ type: 'mouseDown', mode: controls.mode })
       controls.object!.scale.set(2, 1, 1)
       controls.dispatchEvent({ type: 'objectChange' })
       controls.dispatchEvent({ type: 'mouseUp', mode: controls.mode })
+      await flushPromises()
 
+      expect(applyGeometry).toHaveBeenCalledTimes(1)
+      expect(applyGeometry).toHaveBeenCalledWith('test-mob', [{ op: 'resizeCuboid', target: 'cube-1', scale: [2, 1, 1] }])
+      // Ticket 040: el resultado se aplica vía commitExternalModel -- geometría real del backend, no un cálculo local.
       const resized = draft.model!.cuboids[0]!
-      // from=[-1,-1,-1] to=[1,1,1] centro=[0,0,0] tamaño=[2,2,2] -> scale.x=2 => nuevo tamaño x=4
       expect(resized.from[0]).toBeCloseTo(-2, 9)
       expect(resized.to[0]).toBeCloseTo(2, 9)
+    })
+
+    it('scale: durante pointermove (objectChange) no se dispara ninguna llamada de red -- solo al soltar', async () => {
+      const { draft, controls } = setupSelectedCuboid()
+      vi.mocked(applyGeometry).mockResolvedValue({ model: draft.model!, draftVersion: 1 })
+      controls.setMode('scale')
+      controls.dispatchEvent({ type: 'mouseDown', mode: controls.mode })
+
+      // N eventos de "arrastre" simulados (equivalente a pointermove) --
+      // el preview es 100% local (Three.js escala el mesh en vivo), cero red.
+      for (let i = 1; i <= 5; i++) {
+        controls.object!.scale.set(1 + i * 0.1, 1, 1)
+        controls.dispatchEvent({ type: 'objectChange' })
+      }
+      expect(applyGeometry).not.toHaveBeenCalled()
+
+      controls.dispatchEvent({ type: 'mouseUp', mode: controls.mode })
+      await flushPromises()
+
+      expect(applyGeometry).toHaveBeenCalledTimes(1) // exactamente 1, al soltar
+    })
+
+    it('scale: si el backend exige confirmación de pérdida de pintura, el preview visual se mantiene y NO se toca el store hasta resolver el modal', async () => {
+      const { draft, controls } = setupSelectedCuboid()
+      const geometryApply = useGeometryApplyStore()
+      const { PaintedRegionResizeConfirmationRequiredError } = await import('../../editor/geometryApplyApi')
+      vi.mocked(applyGeometry).mockRejectedValue(
+        new PaintedRegionResizeConfirmationRequiredError('confirmación requerida', [{ cuboidId: 'cube-1', face: 'north' }]),
+      )
+      const modelBeforeResize = draft.model
+      controls.setMode('scale')
+      controls.dispatchEvent({ type: 'mouseDown', mode: controls.mode })
+      controls.object!.scale.set(2, 1, 1)
+      controls.dispatchEvent({ type: 'objectChange' })
+      controls.dispatchEvent({ type: 'mouseUp', mode: controls.mode })
+      await flushPromises()
+
+      expect(geometryApply.pendingResizeConfirmation).toEqual({
+        cuboidId: 'cube-1', scale: [2, 1, 1], affectedFaces: [{ cuboidId: 'cube-1', face: 'north' }],
+      })
+      // El store NUNCA se tocó -- sigue siendo el modelo de antes del drag.
+      expect(draft.model).toBe(modelBeforeResize)
+
+      // "Cancelar": el store sigue intacto, geometryApply limpia el pendiente.
+      geometryApply.cancelPendingResize()
+      await nextTick()
+      expect(draft.model!.cuboids[0]!.to[0]).toBe(1) // tamaño original, sin cambios
+    })
+
+    it('una operación rechazada (ej. GeometryValidationException del backend) muestra el error sin cambiar el modelo', async () => {
+      const { draft, controls } = setupSelectedCuboid()
+      vi.mocked(applyGeometry).mockRejectedValue(new Error('resizeCuboid: dimensión inválida'))
+      controls.setMode('scale')
+      controls.dispatchEvent({ type: 'mouseDown', mode: controls.mode })
+      controls.object!.scale.set(0, 1, 1)
+      controls.dispatchEvent({ type: 'objectChange' })
+      controls.dispatchEvent({ type: 'mouseUp', mode: controls.mode })
+      await flushPromises()
+
+      const geometryApply = useGeometryApplyStore()
+      expect(geometryApply.lastError).not.toBeNull()
+      expect(draft.model!.cuboids[0]!.from).toEqual([-1, -1, -1]) // sin cambios
     })
 
     it('rotate: al soltar el drag, suma el ángulo del eje dominante a la rotación del cuboid', () => {
@@ -213,20 +309,11 @@ describe('ThreeViewport.vue', () => {
 
       const rotated = draft.model!.cuboids[0]!
       expect(rotated.rotation[2]).toBeCloseTo(90, 6)
+      // Ticket 043, test de regresión: rotateCuboid NUNCA dispara POST /geometry/apply -- 100% client-side.
+      expect(applyGeometry).not.toHaveBeenCalled()
       expect(rotated.rotation[0]).toBe(0)
       expect(rotated.rotation[1]).toBe(0)
     })
 
-    it('una operación rechazada (ej. scale a 0) revierte el mesh a los datos reales sin cambiar el modelo', () => {
-      const { draft, controls } = setupSelectedCuboid()
-      controls.setMode('scale')
-      controls.dispatchEvent({ type: 'mouseDown', mode: controls.mode })
-      controls.object!.scale.set(0, 1, 1) // scale 0 -> resizeCuboid lo rechaza
-      controls.dispatchEvent({ type: 'objectChange' })
-      controls.dispatchEvent({ type: 'mouseUp', mode: controls.mode })
-
-      expect(draft.lastError).not.toBeNull()
-      expect(draft.model!.cuboids[0]!.from).toEqual([-1, -1, -1]) // sin cambios
-    })
   })
 })

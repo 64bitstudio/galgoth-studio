@@ -15,11 +15,25 @@
  * del store al soltar el drag (no en cada frame -- ver Hecho del ticket
  * sobre por qué "commit al soltar" es la estrategia correcta dado que
  * `setModel` reconstruye todos los meshes en cada mutación).
+ *
+ * Ticket 043, Diseño técnico §15: el modo 'scale' (Resize) deja de
+ * commitear localmente vía `draftModelStore.resizeSelectedCuboid` --
+ * durante el drag (`objectChange`), el preview sigue siendo 100% local
+ * (Three.js ya escala el mesh en vivo, sin ninguna llamada de red); solo
+ * al soltar (`mouseUp`, equivalente a `pointerup`) se dispara la ÚNICA
+ * llamada a `POST /geometry/apply` (`useGeometryApplyStore.resizeCuboid`).
+ * Si el backend exige confirmación de pérdida de pintura, el preview
+ * visual del tamaño soltado se deja TAL CUAL (no se toca el mesh ni el
+ * store) mientras `MobEditor.vue` muestra el modal -- un `watch` sobre
+ * `pendingResizeConfirmation` (ver más abajo) refresca el mesh cuando el
+ * modal se resuelve, tanto si fue "Confirmar" como "Cancelar". Move/Rotate
+ * siguen exactamente igual que antes (100% client-side).
  */
 import { MathUtils, Quaternion, Vector3 } from 'three'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Vec3 } from '../domain/MobProjectModel'
 import { useDraftModelStore } from '../editor/draftModelStore'
+import { useGeometryApplyStore } from '../editor/geometryApplyStore'
 import { useSelectionStore } from '../editor/selectionStore'
 import { threeViewportService } from './ThreeViewportService'
 
@@ -31,6 +45,7 @@ const CLICK_DRAG_THRESHOLD_PX = 5
 
 const draft = useDraftModelStore()
 const selection = useSelectionStore()
+const geometryApply = useGeometryApplyStore()
 const container = ref<HTMLDivElement>()
 let pointerDownPosition: { x: number; y: number } | null = null
 
@@ -109,6 +124,7 @@ function handleTransformMouseUp(): void {
   const controls = threeViewportService.transformControls
   const object = controls.object
   const cuboidId = selection.selectedCuboidId
+  const mobId = draft.model?.mobId
   if (!object || !dragStartPosition || !dragStartQuaternion || !cuboidId) {
     resetDragState()
     return
@@ -120,29 +136,55 @@ function handleTransformMouseUp(): void {
     if (localDelta.lengthSq() > 0) {
       draft.moveSelectedCuboid(cuboidId, [localDelta.x, localDelta.y, localDelta.z])
     }
+    revertMeshIfRejected(cuboidId)
   } else if (controls.mode === 'scale') {
     const s = object.scale
-    if (s.x !== 1 || s.y !== 1 || s.z !== 1) {
-      draft.resizeSelectedCuboid(cuboidId, [s.x, s.y, s.z])
+    if ((s.x !== 1 || s.y !== 1 || s.z !== 1) && mobId) {
+      // Ticket 043: commit real vía backend (POST /geometry/apply), no
+      // local -- el preview del drag ya lo mostró Three.js en vivo, sin
+      // red, así que no hace falta tocar el mesh acá en ningún caso: si el
+      // backend confirma, `commitExternalModel` dispara el `watch` de abajo
+      // con la geometría real; si pide confirmación, el mesh se queda tal
+      // cual hasta que `MobEditor.vue` resuelva el modal (Confirmar/Cancelar).
+      geometryApply.resizeCuboid(mobId, cuboidId, [s.x, s.y, s.z])
     }
   } else if (controls.mode === 'rotate' && lastRotation) {
     const delta = axisToRotationDelta(lastRotation.axis, MathUtils.radToDeg(lastRotation.angleRad))
     if (delta) {
       draft.rotateSelectedCuboid(cuboidId, delta)
     }
-  }
-
-  // Si la operación fue rechazada (dimensión inválida, etc.) el modelo del
-  // store NO cambió -- Vue no vuelve a llamar setModel solo, así que el
-  // mesh se queda visualmente en la posición/escala/rotación inválida del
-  // drag. Se fuerza un refresh con los datos reales (sin cambios) para
-  // que el gizmo/mesh vuelvan a la última posición válida.
-  if (draft.lastError && draft.model) {
-    threeViewportService.setModel(draft.model, cuboidId)
+    revertMeshIfRejected(cuboidId)
   }
 
   resetDragState()
 }
+
+/** Si la operación (Move/Rotate, 100% client-side) fue rechazada (dimensión inválida, etc.), el modelo del store NO cambió -- se fuerza un refresh con los datos reales para que el gizmo/mesh vuelvan a la última posición válida. Resize (backend) nunca llega acá -- ver el bloque 'scale' de arriba. */
+function revertMeshIfRejected(cuboidId: string): void {
+  if (draft.lastError && draft.model) {
+    threeViewportService.setModel(draft.model, cuboidId)
+  }
+}
+
+/**
+ * El modal de confirmación de pérdida de pintura (Diseño técnico §2, en
+ * `MobEditor.vue`) se resuelve de 2 formas -- "Confirmar" ya deja
+ * `draft.model` actualizado (vía `commitExternalModel`) ANTES de limpiar
+ * `pendingResizeConfirmation`; "Cancelar" limpia `pendingResizeConfirmation`
+ * SIN tocar `draft.model` (sigue siendo la geometría vieja). En ambos
+ * casos, un refresh del mesh contra `draft.model` deja el resultado
+ * correcto: la geometría real confirmada, o la geometría anterior si se
+ * canceló -- un solo watcher cubre los 2 casos sin que `ThreeViewport`
+ * necesite saber cuál de los 2 botones se usó.
+ */
+watch(
+  () => geometryApply.pendingResizeConfirmation,
+  (pending, previousPending) => {
+    if (!pending && previousPending && draft.model) {
+      threeViewportService.setModel(draft.model, previousPending.cuboidId)
+    }
+  },
+)
 
 function resetDragState(): void {
   dragStartPosition = null
