@@ -4,7 +4,9 @@
 
 ## Resumen ejecutivo
 
-Fase 3 agrega al Technical Alpha ya aprobado la capacidad de **pintar y generar por IA la textura real de un mob**, reemplazando la textura placeholder checkerboard que hoy garantiza únicamente que el export sea válido. Cubre: un editor de textura/UV manual tipo pixel-art sobre el atlas ya calculado por `AutoUv`, con selección cruzada cuboid↔UV y preview 3D en vivo; la integración de ese trabajo con el sistema ya existente de Draft/Command/Revision sin duplicar bitmaps completos por trazo; la resolución del riesgo abierto #7 heredado de Fase 1+2 (qué pasa con una UV que ya no puede reempaquetarse libremente porque tiene textura pintada encima, vía una `StableUvStrategy` nueva); y un pipeline de generación de textura por IA usando **OpenAI (`gpt-image-1`)** como `ImageGenerationProvider`, con el mismo patrón "IA propone, la app valida y aplica con diff" ya probado en geometría (ticket 031).
+Fase 3 agrega al Technical Alpha ya aprobado la capacidad de **pintar y generar por IA la textura real de un mob**, reemplazando la textura placeholder checkerboard que hoy garantiza únicamente que el export sea válido. Cubre: un editor de textura/UV manual tipo pixel-art sobre el atlas ya calculado por `AutoUv`, con selección cruzada cuboid↔UV y preview 3D en vivo; la integración de ese trabajo con el sistema ya existente de Draft/Command/Revision, con Undo/Redo basado en patches (nunca snapshots completos del bitmap) y el bitmap persistido content-addressed con el backend como única autoridad del hash; la resolución del riesgo abierto #7 heredado de Fase 1+2 (qué pasa con una UV que ya no puede reempaquetarse libremente porque tiene textura pintada encima, vía una `StableUvStrategy` nueva con reservas explícitas de espacio abandonado); y un pipeline de generación de textura por IA usando **OpenAI** (modelo configurable, no hardcodeado) como `ImageGenerationProvider`, generando una sola imagen coherente por bone (nunca por cuboid) y con el mismo patrón "IA propone, la app valida y aplica con diff" ya probado en geometría (ticket 031). El exportador (`BBModelExporterV5`/`V4`) es, a partir de esta fase, un serializador puro — nunca calcula ni reempaqueta UV, solo serializa la UV canónica que ya quedó fijada en la Revision.
+
+> **Estado de este documento**: la dirección conceptual está aprobada por el PO; el diseño técnico incorpora 13 correcciones precisas dadas el 9 sep 2026 tras la primera revisión. Queda pendiente el VoBo final sobre esta versión.
 
 ## Objetivo de negocio
 
@@ -23,12 +25,13 @@ Sin cambios respecto a Fase 1+2: **creador de contenido para Minecraft** (usuari
 - Regiones UV etiquetadas por parte del cuerpo/cara.
 - Selección cruzada: seleccionar una cara de un cuboid en el viewport 3D resalta su región UV correspondiente, y viceversa.
 - Preview 3D en vivo reutilizando el mismo `ThreeViewportService` singleton ya existente (008/016), no un viewport nuevo.
-- Herramientas: color picker/paleta, brush, eraser, fill bucket, eyedropper, selection, copy/paste, crop/fit de una imagen pegada a la región seleccionada, undo/redo, grid toggle, control de tamaño de pincel.
-- El tamaño del atlas lo determina la geometría real (vía `AutoUv`/`UvLayoutSelector`), no un parámetro elegido aparte — ver Diseño técnico §10 sobre el campo `textureResolution` del wizard.
+- Herramientas: color picker/paleta, brush, eraser, fill bucket, eyedropper, selection, copy/paste, crop/fit de una imagen pegada a la región seleccionada, undo/redo (basado en patches por región, nunca snapshots completos del bitmap — ver Diseño técnico §9), grid toggle, control de tamaño de pincel.
+- Importar un PNG completo sobre el atlas entero también está en alcance (crop/pad seguro, nunca deformar — ver Diseño técnico §8), además de pegar sobre una región seleccionada.
+- La resolución del atlas tiene dos estados: recomendada/ajustable antes de pintar, y **congelada** en cuanto existe la primera región `PAINTED` — ver Diseño técnico §7.
 
 **Persistencia y revisiones de textura**
 - Integración con el Draft (`mob_drafts`) + autosave con dirty-check, y con las Revisiones (`mob_revisions`) inmutables ya existentes (HU-08/09/22) — "Guardar" crea una revisión que incluye textura y geometría juntas, no dos sistemas de historial separados.
-- Bitmap de textura persistido content-addressed en MinIO (nunca embebido inline en `model_jsonb`) — ver Diseño técnico §3.
+- Bitmap de textura persistido content-addressed en MinIO, con el backend como única autoridad del hash/`storageKey` (nunca embebido inline en `model_jsonb`, nunca confiando en un `storageKey` propuesto por el cliente) — ver Diseño técnico §4/§6.
 
 **`StableUvStrategy` / integridad de UV pintada**
 - Resolución del riesgo abierto #7 de Fase 1+2: una vez que una región UV tiene textura pintada o generada, un cambio de geometría ya no puede reempaquetarla libremente.
@@ -37,12 +40,12 @@ Sin cambios respecto a Fase 1+2: **creador de contenido para Minecraft** (usuari
 - **Eliminación de un cuboid con textura pintada**: sus 6 caras quedan reservadas como huérfanas (`ORPHAN`), no reutilizables este ciclo — prioriza que Undo siempre recupere el contenido exacto, acepta el costo de espacio de atlas desperdiciado (decisión del PO).
 
 **Generación de textura por IA**
-- Pipeline completo (master prompt §12): análisis de material/paleta de la imagen de referencia ya subida en Fase 2 → mapeo semántico de caras (vía `StructuredReasoningProvider`/Claude) → layout UV determinista → generación/inpainting por región vía **OpenAI (`gpt-image-1`)** → compositor de atlas → limpieza de píxeles/paleta → preview/diff.
+- Pipeline completo (master prompt §12): análisis de material/paleta de la imagen de referencia ya subida en Fase 2 → mapeo semántico de caras (vía `StructuredReasoningProvider`/Claude, `TexturePlan`) → una **`TextureGenerationSheet` por bone** con el layout UV determinista ya resuelto → **una sola llamada de imagen a OpenAI por bone** (todas sus caras/cuboids juntos, para garantizar coherencia de estilo/paleta — nunca una llamada independiente por cuboid) → slicing determinista → compositor de atlas → limpieza de píxeles/paleta → preview/diff. Batching en varias llamadas solo como fallback explícito si un bone excede los límites técnicos del modelo configurado.
 - **4 opciones de estilo**: Fiel a la referencia / Minecraft Vanilla / Pixel Art / Realista (decisión del PO: fiel al mockup 08, no solo los 3 del master prompt original).
 - Nivel de detalle, y **regenerar solo un bone completo** (decisión del PO sobre granularidad — no cara individual, no todo el atlas).
-- Si OpenAI devuelve una imagen que no respeta las dimensiones exactas de la región objetivo, se recorta/escala automáticamente — sin reintento, sin error, salvo que el propio recorte falle técnicamente (decisión del PO).
-- Patrón "IA propone, la app valida y aplica" con diff Antes/Después obligatorio — nunca se aplica el resultado de la IA directo sin mostrarlo primero (mismo espíritu que 031, para píxeles en vez de geometría).
-- `ImageGenerationProvider`: implementación real `OpenAiImageProvider` + `MockImageProvider` de tests real (no solo placeholder de interfaz), mismo patrón de reproducibilidad (provider/model/prompt version/schema version/reference IDs) que las otras dos interfaces ya implementadas.
+- Si un slice de la imagen generada no respeta las dimensiones exactas de su región objetivo, se recorta/escala automáticamente — sin reintento, sin error, salvo que el propio recorte falle técnicamente (decisión del PO).
+- Patrón "IA propone, la app valida y aplica" con diff Antes/Después obligatorio — nunca se aplica el resultado de la IA directo sin mostrarlo primero (mismo espíritu que 031, para píxeles en vez de geometría). El Apply es **atómico**: bitmap, `MobProjectModel`, draft y revisión se actualizan como una sola unidad, o ninguno (ver Diseño técnico §10).
+- `ImageGenerationProvider`: implementación real `OpenAiImageProvider` + `MockImageProvider` de tests real (no solo placeholder de interfaz), modelo de imagen **configurable** (`OPENAI_IMAGE_MODEL`, nunca hardcodeado), mismo patrón de reproducibilidad (provider/model real usado/prompt version/schema version/reference IDs) que las otras dos interfaces ya implementadas.
 
 **Pantallas 07 y 08**
 - Fidelidad al Visual Contract y a los mockups `07_editor_textura.png`/`08_generador_textura_ia.png`.
@@ -56,7 +59,7 @@ Sin cambios respecto a Fase 1+2: **creador de contenido para Minecraft** (usuari
 - **Sistema de capas tipo Photoshop** — una sola superficie de textura editable por mob (master prompt principio #9, explícito).
 - **Generación de textura en batch para múltiples mobs simultáneamente** — el pipeline es por mob, igual patrón que el resto de las APIs.
 - **Selección múltiple de distintas partes/cuboides simultáneas** para pintar o generar a la vez — una región/bone enfocado por vez.
-- **Importador de `.bbmodel` o de proyectos completos externos** — sigue vigente la decisión de Fase 1+2. Distinto de pegar una imagen dentro del editor de textura (HU-28), que sí está en alcance.
+- **Importador de `.bbmodel` o de proyectos completos externos** — sigue vigente la decisión de Fase 1+2. Distinto de importar un PNG dentro del editor de textura, sea sobre una región seleccionada o sobre el atlas completo (HU-28), que sí está en alcance.
 - **Sistema de animación / biblioteca de animaciones** — sigue fuera (Fase 4).
 - **Checkpoints nombrados / restore de revisión específica** — sigue fuera; el historial de textura sigue las mismas reglas ya vigentes (Undo/Redo lineal en cliente + revisiones inmutables creadas solo por Guardar/Apply).
 - **Autenticación / multi-tenencia** — sigue sin login.
@@ -92,7 +95,7 @@ para ubicar visualmente qué parte de la textura corresponde a qué parte del mo
 Criterios de aceptación:
 - Dado que estoy en el tab Textura con el viewport 3D visible, cuando hago clic en una cara de un cuboid en el viewport, entonces la región UV correspondiente se resalta/enfoca en el editor 2D.
 - Dado que selecciono una región UV en el editor 2D, cuando lo hago, entonces la cara correspondiente se resalta en el preview 3D.
-- La selección por cara se implementa extendiendo el raycast ya existente (017) con la normal del triángulo intersectado (nativo de la geometría, ver Diseño técnico §7) en un store nuevo y separado del de selección de cuboid completo — sin modificar el contrato de selección ya usado por 017/031/036.
+- La selección por cara se implementa etiquetando cada cara/grupo de material de la geometría Three.js con `FaceName` de forma determinista en su construcción (`buildCuboidMesh`), y `pickCuboidFaceAt` resuelve `{ cuboidId, face }` a partir de ese etiquetado (`intersection.face.materialIndex`), nunca calculando la cara desde la normal del triángulo — la normal queda solo como validación/fallback (ver Diseño técnico §14). Vive en un store nuevo y separado del de selección de cuboid completo — sin modificar el contrato de selección ya usado por 017/031/036.
 ```
 
 **HU-26**
@@ -118,30 +121,38 @@ Criterios de aceptación:
 - Dado que uso el Selector (eyedropper), cuando hago clic sobre un píxel, entonces el color activo pasa a ser el de ese píxel.
 - Dado que cambio el tamaño de pincel/borrador, cuando pinto, entonces el trazo respeta ese tamaño en píxeles del atlas, no píxeles de pantalla.
 - Dado que activo el toggle de cuadrícula, cuando lo activo, entonces se superpone una grilla de píxeles como ayuda visual (nunca se guarda como parte de la textura).
-- Dado que uso Deshacer/Rehacer sobre ediciones de textura, cuando lo hago, entonces opera sobre una pila independiente de la del editor de geometría (ver Diseño técnico §8) — Ctrl+Z en el tab Textura nunca deshace un cambio de geometría y viceversa.
+- Dado que uso Deshacer/Rehacer sobre ediciones de textura, cuando lo hago, entonces cada acción de usuario (un trazo completo de pincel/borrador entre `pointerdown` y `pointerup`, un fill, un paste) es una única unidad de Undo implementada como un `TexturePatchCommand` acotado al rectángulo mínimo tocado — nunca una copia completa del bitmap (ver Diseño técnico §9). Opera sobre una pila independiente de la del editor de geometría — Ctrl+Z en el tab Textura nunca deshace un cambio de geometría y viceversa.
 ```
 
 **HU-28**
 ```
 Como creador de contenido para Minecraft
-quiero poder copiar/pegar una imagen y ajustarla (crop/fit) a la región UV seleccionada
+quiero poder importar una imagen sobre una región UV seleccionada o sobre el atlas completo
 para reutilizar arte externo o partes de otra textura sin redibujar a mano
 
 Criterios de aceptación:
-- Dado que tengo una región UV seleccionada, cuando pego una imagen de tamaño distinto a la región, entonces se me ofrece ajustarla (recorte o escala) a las dimensiones exactas de la región antes de confirmar.
-- Dado que confirmo el ajuste, cuando se aplica, entonces la región seleccionada queda reemplazada por el contenido ajustado, registrado como una operación de Undo.
-- Este ciclo cubre pegado acotado a una región UV seleccionada. Pegar un PNG que cubra el atlas completo de una sola vez (mencionado también en el master prompt §11) queda como pregunta abierta de ticket (ver Riesgos #10) — no bloquea el resto de esta HU.
+- (A, región seleccionada) Dado que tengo una región UV seleccionada, cuando pego una imagen de tamaño distinto a la región, entonces se me ofrece ajustarla a las dimensiones exactas de la región antes de confirmar; al confirmar, la región queda reemplazada, registrado como una operación de Undo.
+- (B, atlas completo) Dado que importo un PNG sobre el atlas completo con dimensiones EXACTAS a las vigentes, cuando lo hago, entonces se muestra una confirmación/diff antes de reemplazar el atlas completo.
+- (B, atlas completo) Dado que importo un PNG de dimensiones DISTINTAS a las vigentes, cuando lo hago, entonces se me ofrece ÚNICAMENTE crop (recortar excedente) y/o pad (agregar margen transparente) — nunca escalado/resize, para no introducir blur/aliasing sobre el canvas pixel-perfect ya decidido.
+- Dado cualquiera de los dos casos (A o B), cuando no confirmo explícitamente el ajuste ofrecido, entonces no se aplica nada — nunca se deforma la imagen silenciosamente.
+- Dado que confirmo un import de atlas completo, cuando se aplica, entonces es UNA única operación de Undo (un solo `TexturePatchCommand` con `rect` = atlas completo), sin importar si hubo crop/pad de por medio.
+- Dado que el atlas ya está congelado (existe al menos una región `PAINTED`, ver HU-29), cuando importo un PNG de dimensiones distintas a las congeladas, entonces se aplica el mismo criterio de crop/pad hacia esas dimensiones fijas — nunca las cambia.
+- Exportar la textura como PNG independiente sigue fuera de alcance — esta HU es exclusivamente sobre IMPORT.
 ```
 
 **HU-29**
 ```
 Como creador de contenido para Minecraft
-quiero que el editor de textura respete la resolución real del atlas de mi mob
-para que el atlas tenga el tamaño correcto sin calcularlo yo mismo
+quiero que la resolución del atlas de mi mob se recomiende automáticamente antes de pintar y quede protegida una vez que empiezo a pintar
+para no perder trabajo por un cambio de tamaño posterior
 
 Criterios de aceptación:
-- Dado un mob cuyo MobProjectModel.texture ya tiene dimensiones fijadas por AutoUv/UvLayoutSelector, cuando abro el editor de textura, entonces el canvas usa exactamente esas dimensiones.
-- El campo "Resolución de textura" del paso Configuración del wizard IA (ticket 027) deja de ser un parámetro vinculante — confirmado que hoy es solo un `<select>` visual sin efecto en backend/MobProjectModel (verificado en el código actual por `architect`). El atlas de arranque sigue usando el default ya fijado en el ticket 028 (128×128) y crece/rechaza según la geometría real, como ya hace hoy (ver Diseño técnico §10). El detalle de copy/UX de remover o resignificar ese campo del wizard es un handoff a `ux-ui-designer` al desglosar el ticket.
+- (Antes de pintar) Dado un mob sin ninguna región PAINTED todavía, cuando se calcula el atlas, entonces el sistema recomienda una resolución adecuada a la geometría real: para presets Minecraft (baseType ≠ custom) la dimensión "x1" es la que AlphaAutoPackStrategy calcula para esa geometría, con un perfil "x2" disponible como upgrade explícito (mismo layout UV, atlas al doble de resolución lineal); para modelos custom, se recomienda la potencia de 2 inmediatamente superior al footprint real.
+- (Antes de pintar) Dado que el AutoUv inicial no cabe en la resolución vigente, cuando esto ocurre, entonces se permite un upgrade explícito (x1→x2, o la siguiente potencia de 2 para custom) — nunca un crecimiento silencioso.
+- (Después de pintar) Dado que existe al menos una región PAINTED, cuando se intenta cambiar width/height del atlas, entonces la operación no tiene efecto — quedan congelados mientras exista contenido pintado (ver Diseño técnico §7).
+- (Después de pintar) Dado que una región nueva no cabe en el espacio libre del atlas ya congelado, cuando esto ocurre, entonces se lanza UvAtlasOverflowException — el atlas nunca crece para hacerle espacio.
+- El campo "Resolución de textura" del wizard IA (ticket 027) deja de ser un parámetro vinculante enviado al backend — a lo sumo dispara el upgrade explícito descrito arriba, antes de que exista contenido pintado. El detalle de copy/UX es un handoff a `ux-ui-designer` al desglosar el ticket.
+- **Pregunta abierta para el PO antes de desglosar este ticket** (ver Riesgos): confirmar si "x1" para presets Minecraft debe ser el tamaño calculado por AutoUv para la geometría real de ese mob (lectura asumida en el diseño técnico), o una tabla de dimensiones canónicas fijas por especie vanilla — cambia la UX del paso de Configuración.
 ```
 
 ### Épica K: Persistencia y revisiones de textura
@@ -154,7 +165,8 @@ para no perder trabajo si cierro el navegador sin hacer clic en Guardar
 
 Criterios de aceptación:
 - Dado que edito píxeles de la textura, cuando dejo de interactuar por unos segundos, entonces el draft (mob_drafts) se actualiza incluyendo el estado actual de texture/uv, con el mismo criterio de dirty-check "solo en cambio material" ya usado para geometría (HU-08/HU-22) — sin crear una mob_revision.
-- El dirty-check compara el `storageKey` (hash de contenido del bitmap) en vez del bitmap completo — comparación O(1), equivalente semánticamente, sin cambios al mecanismo de `DraftPersistenceService` ya existente (ver Diseño técnico §3/§4).
+- El dirty-check compara el `storageKey` (hash de contenido del bitmap) en vez del bitmap completo — comparación O(1), equivalente semánticamente, sin cambios al mecanismo de `DraftPersistenceService` ya existente (ver Diseño técnico §5/§6).
+- El `storageKey` comparado es siempre el que el BACKEND devolvió al subir el bitmap (`PUT /texture`) — nunca uno calculado y propuesto solo por el cliente (ver Diseño técnico §6).
 ```
 
 **HU-31**
@@ -166,7 +178,8 @@ para tener un único punto de retorno confiable para todo el mob
 Criterios de aceptación:
 - Dado cambios pendientes de textura y/o geometría en el draft, cuando hago clic en "Guardar", entonces se crea una nueva mob_revision (mismo mecanismo de HU-09/HU-22) cuyo snapshot incluye el estado completo de texture/uv junto con bones/cuboids.
 - Dado que no hice ningún cambio (ni de geometría ni de textura) desde la última revisión, cuando abro "Guardar", entonces la acción sigue deshabilitada/no genera una revisión duplicada.
-- El bitmap de textura se persiste content-addressed en MinIO (`textures/{sha256}.png`), nunca embebido inline en `mob_revisions.model_jsonb` — dos revisiones consecutivas sin cambio de bitmap comparten la misma clave automáticamente, sin lógica de deduplicación explícita (ver Diseño técnico §3).
+- El bitmap de textura se persiste content-addressed en MinIO (`textures/{sha256}.png`), calculado/verificado y decodificado por el BACKEND (nunca confiando en un `storageKey` propuesto por el cliente) — dos revisiones consecutivas sin cambio de bitmap comparten la misma clave automáticamente, sin lógica de deduplicación explícita (ver Diseño técnico §4/§6).
+- Dado un `PUT /texture` todavía pendiente de confirmación, cuando hago clic en "Guardar", entonces la creación de la Revision espera (flush) el `storageKey` oficial del backend antes de escribirse — una Revision jamás apunta a un `storageKey` no persistido (ver Diseño técnico §6).
 ```
 
 **HU-32**
@@ -176,7 +189,8 @@ quiero que el Command stack de Undo/Redo de textura tenga un alcance claro respe
 para que el usuario entienda qué deshace cada Ctrl+Z según el tab activo
 
 Criterios de aceptación:
-- El Command stack de textura es independiente del de geometría (018/019) — cada tab (Modelo/Textura) mantiene su propia pila de Undo/Redo, sin cruce entre ellas (decisión de diseño técnico, ver §8: snapshotear el bitmap completo por cada trazo de pincel en la misma pila que geometría sería órdenes de magnitud más pesado en memoria).
+- El Command stack de textura es independiente del de geometría (018/019) — cada tab (Modelo/Textura) mantiene su propia pila de Undo/Redo, sin cruce entre ellas.
+- Cada Command de textura es un `TexturePatchCommand { rect, beforePixels, afterPixels }` acotado al rectángulo mínimo tocado — nunca una copia completa del bitmap (ver Diseño técnico §9). Esto es lo que hace viable en memoria que la pila sea independiente: snapshotear el bitmap completo por cada trazo sería órdenes de magnitud más pesado que un Command de geometría.
 ```
 
 ### Épica L: `StableUvStrategy` / integridad de UV pintada
@@ -189,9 +203,10 @@ para no perder pintura por un ajuste posterior de geometría
 
 Criterios de aceptación:
 - Dado un cuboid con al menos una cara UV en estado PAINTED, cuando lo redimensiono (Move/Scale del editor manual, o una edición por IA vía HU-17/HU-18) de forma que cambia el footprint de esa cara, entonces el sistema detiene la operación y muestra un aviso explícito de qué caras se verían afectadas, pidiendo confirmación antes de proceder.
-- Dado que confirmo la operación, cuando se aplica, entonces las caras afectadas se reempaquetan en espacio libre del atlas (nunca sobre otra región PAINTED/ORPHAN) y quedan en estado UNPAINTED en su nueva ubicación — el bitmap anterior permanece en su posición original como espacio de atlas no reutilizado este ciclo (ver Diseño técnico §2 y el diagrama de estados de UvRegionStatus).
+- Dado que confirmo la operación, cuando se aplica, entonces las caras afectadas se reempaquetan en espacio verdaderamente libre del atlas (nunca sobre otra región PAINTED/ORPHAN ni sobre una reserva/tombstone existente) y quedan en estado UNPAINTED en su nueva ubicación — el rect anterior queda registrado explícitamente como una `UvReservation` (tombstone), nunca vuelve a asignarse este ciclo (ver Diseño técnico §1/§2 y el diagrama de estados de UvRegionStatus).
 - Dado que cancelo la confirmación, cuando lo hago, entonces el resize no se aplica y el cuboid mantiene su tamaño anterior.
 - Dado que la misma situación se origina por una edición conversacional por IA (HU-17/HU-18) que redimensiona un cuboid con textura existente, cuando esto ocurra, entonces el diff Antes/Después de esa propuesta muestra explícitamente qué caras perderían su ubicación de pintado — el botón "Aplicar cambios" de esa pantalla sirve como la confirmación explícita, sin un segundo diálogo (ver Diseño técnico §2).
+- Dado que arrastro el handle de resize de un cuboid, cuando muevo el puntero (`pointermove`), entonces veo un preview 100% local sin ninguna llamada al backend — la operación canónica (y, si aplica, el chequeo de confirmación de esta HU) solo se dispara al soltar (`pointerup`), nunca en cada frame del arrastre (ver Diseño técnico §15).
 ```
 
 **HU-34**
@@ -201,8 +216,8 @@ quiero que agregar un cuboid nuevo (manual o por IA) siga asignando su UV autom�
 para seguir usando el mismo flujo simple de AutoUv que ya conozco
 
 Criterios de aceptación:
-- Dado un atlas con una o más regiones ya pintadas, cuando agrego un cuboid nuevo, entonces la estrategia activa (`UvLayoutSelector` → `StableUvStrategy`) le asigna espacio verdaderamente libre del atlas (nunca una región PAINTED u ORPHAN) sin mover ni reempaquetar ninguna región ya pintada existente.
-- Dado que el atlas no tiene espacio libre suficiente para el cuboid nuevo, cuando esto ocurre, entonces la creación se rechaza con un error explícito (mismo tipo/forma que `UvAtlasOverflowException` ya existente) — el atlas NUNCA crece automáticamente ni reempaqueta regiones pintadas/huérfanas para hacerle espacio.
+- Dado un atlas con una o más regiones ya pintadas, cuando agrego un cuboid nuevo, entonces la estrategia activa (`UvLayoutSelector` → `StableUvStrategy`) le asigna espacio verdaderamente libre del atlas — el atlas completo menos TODAS las regiones existentes (sin importar su estado) menos TODAS las reservas/tombstones (`UvReservation`) — sin mover ni reempaquetar nada de eso.
+- Dado que el atlas no tiene espacio libre suficiente para el cuboid nuevo, cuando esto ocurre, entonces la creación se rechaza con `UvAtlasOverflowException` — el atlas NUNCA crece automáticamente ni reempaqueta regiones pintadas/huérfanas/reservadas para hacerle espacio.
 ```
 
 **HU-35**
@@ -227,7 +242,7 @@ para obtener una textura utilizable sin pintar todo a mano
 Criterios de aceptación:
 - Dado un mob con geometría ya usable (revision_number >= 1), cuando entro al tab Textura y elijo "Generar con IA", entonces veo 4 opciones de estilo (Fiel a la referencia / Minecraft Vanilla / Pixel Art / Realista) y un control de nivel de detalle (bajo-alto), siguiendo el mockup 08.
 - Dado que confirmo la generación, cuando se dispara, entonces se reutiliza la MISMA imagen de referencia ya subida en Fase 2 — no se pide subir una imagen nueva.
-- Dado que el pipeline corre (análisis de material/paleta vía Claude → mapeo semántico de caras → layout UV determinista → generación/inpainting por región vía OpenAI → compositor de atlas → limpieza de píxeles/paleta), cuando se muestra el progreso al usuario, entonces sigue el mismo patrón de progreso por etapas vía SSE ya usado en generación de geometría (HU-11), reutilizando `ai_job_events` con nuevos valores de `stage` (ver Diseño técnico §6).
+- Dado que el pipeline corre (análisis de material/paleta vía Claude → `TextureGenerationSheet` por bone → UNA llamada de imagen a OpenAI por bone → slicing determinista → compositor de atlas → limpieza de píxeles/paleta), cuando se muestra el progreso al usuario, entonces sigue el mismo patrón de progreso por etapas vía SSE ya usado en generación de geometría (HU-11), reutilizando `ai_job_events` con nuevos valores de `stage` y el esquema formal de `preview_texture_patch` (ver Diseño técnico §13).
 ```
 
 **HU-37**
@@ -239,7 +254,7 @@ para corregir una parte puntual sin perder el trabajo ya hecho en el resto del a
 Criterios de aceptación:
 - Dado que tengo un bone seleccionado (selector "Parte a generar" del mockup 08, con granularidad de bone completo — agrupa todas las caras de todos los cuboids de ese bone), cuando confirmo "Regenerar textura", entonces solo las regiones de ese bone se reemplazan — el resto del atlas permanece intacto.
 - Dado que el bone regenerado tenía textura pintada a mano previamente en alguna de sus caras, cuando la regeneración por IA se ejecuta, entonces el flujo de diff Antes/Después (HU-38) muestra explícitamente que se sobrescribirá contenido pintado a mano — no solo contenido generado previamente por IA — antes de aplicarse.
-- Dado que un bone tiene varios cuboids, cuando se regenera, entonces se emite una llamada de generación por cada cuboid del bone, agrupadas bajo un único paso de progreso/una única unidad de Undo — el usuario nunca ve llamadas separadas, solo "Regenerando: <nombre del bone>" (ver Diseño técnico §5).
+- Dado que un bone tiene varios cuboids, cuando se regenera, entonces se genera UNA sola imagen coherente para todo el bone (`TextureGenerationSheet`, todas sus caras/cuboids en la misma llamada a OpenAI) y se reparte de vuelta a cada cuboid/cara vía slicing determinista — nunca una llamada independiente por cuboid con estilo potencialmente distinto. El usuario ve un único paso de progreso/una única unidad de Undo: "Regenerando: <nombre del bone>". Batching en varias llamadas ocurre solo como fallback explícito si el bone excede los límites técnicos del modelo configurado, nunca como camino silencioso (ver Diseño técnico §11).
 ```
 
 **HU-38**
@@ -251,7 +266,7 @@ para decidir con confianza si lo acepto, sin que la IA escriba directo sobre mi 
 Criterios de aceptación:
 - Dado que la generación/regeneración de textura por IA termina, cuando llego a la pantalla de resultado, entonces veo un Antes/Después de la región afectada (o del atlas completo, si fue "Modelo completo") — nunca se aplica directo sin esta revisión.
 - Dado el resultado propuesto, cuando lo reviso, entonces tengo Apply/Reject explícitos — Reject no modifica ni el draft ni ninguna revisión.
-- Dado que hago Apply, cuando se confirma, entonces el resultado se integra al draft de textura, sujeto a un chequeo de conflicto: si CUALQUIER parte del draft/revisión compartido avanzó desde que se generó la propuesta — geometría o textura, ambas viven en el mismo MobProjectModel — se responde 409 y la propuesta se descarta, informando al usuario (mismo mecanismo ya usado por HU-18, ver Diseño técnico §9).
+- Dado que hago Apply, cuando se confirma, entonces primero se verifica el conflicto (si CUALQUIER parte del draft/revisión compartido avanzó desde que se generó la propuesta — geometría o textura, ambas viven en el mismo MobProjectModel — se responde 409 y la propuesta se descarta, informando al usuario, mismo mecanismo ya usado por HU-18); si no hay conflicto, el bitmap, el `MobProjectModel`, el draft y una nueva mob_revision se actualizan de forma **atómica** — todo o nada, nunca un estado parcial (ver Diseño técnico §10/§16). Después de un Apply exitoso y un refresh, se obtiene exactamente la textura aplicada.
 ```
 
 **HU-39**
@@ -261,19 +276,19 @@ quiero que cada llamada de generación de textura por IA registre proveedor/mode
 para poder auditar y reproducir cualquier resultado, mismo patrón ya usado para geometría (HU-13)
 
 Criterios de aceptación:
-- Dado que se dispara una generación de textura, cuando se persiste el job, entonces se guardan provider=openai, modelo (`gpt-image-1`), versión de prompt, versión de esquema del `TexturePlan`, IDs de imagen(es) de referencia usadas y la propuesta resultante — mismo criterio que `ai_jobs` ya existente, extendido con nuevos `job_type` (`generate_texture`, `edit_texture`) y una columna `target_bone_id` nullable (ver Diseño técnico §12).
-- Dado que `ImageGenerationProvider` ya existe como interfaz (ticket 025), cuando se implemente `OpenAiImageProvider` este ciclo, entonces se extiende de forma aditiva con `generateTextureRegion(TextureGenerationRequest)` (ver Diseño técnico §5) sin romper el método existente `generateImage(String)`.
+- Dado que se dispara una generación de textura, cuando se persiste el job, entonces se guardan provider=openai, el modelo REAL configurado en ese momento (vía `OPENAI_IMAGE_MODEL`, nunca un literal fijo — ver Diseño técnico §12), versión de prompt, versión de esquema del `TexturePlan`, IDs de imagen(es) de referencia usadas y la propuesta resultante — mismo criterio que `ai_jobs` ya existente, extendido con nuevos `job_type` (`generate_texture`, `edit_texture`) y una columna `target_bone_id` nullable.
+- Dado que `ImageGenerationProvider` ya existe como interfaz (ticket 025), cuando se implemente `OpenAiImageProvider` este ciclo, entonces se extiende de forma aditiva con `generateTextureSheet(TextureGenerationSheetRequest)` (ver Diseño técnico §11) sin romper el método existente `generateImage(String)`.
 - Dado el patrón ya establecido en el ticket 025 (interfaz + implementación real + MockProvider de tests), cuando se implemente `OpenAiImageProvider`, entonces `MockImageProvider` se completa con un doble determinista real y utilizable en tests (el de 025 es hoy solo un placeholder de interfaz sin proveedor real detrás).
 ```
 
 **HU-40**
 ```
 Como sistema
-quiero recortar/escalar automáticamente una imagen de OpenAI que no respeta los límites de la región UV objetivo
+quiero recortar/escalar automáticamente cada slice de la sheet generada que no respete las dimensiones de su región UV objetivo
 para no corromper el atlas con contenido mal alineado, sin reintentos ni interrupciones innecesarias
 
 Criterios de aceptación:
-- Dado que OpenAI devuelve una imagen cuyas dimensiones no coinciden exactamente con las esperadas para la región objetivo, cuando `TextureCompositorService` la recibe, entonces la recorta/escala automáticamente al tamaño exacto esperado antes de componerla en el atlas — sin reintentar la llamada ni mostrar error al usuario.
+- Dado que `TextureSheetSlicer` extrae un slice de la imagen generada por OpenAI y sus dimensiones no coinciden exactamente con las esperadas para su `atlasUvRect` objetivo, cuando `TextureCompositorService` lo recibe, entonces lo recorta/escala automáticamente al tamaño exacto esperado antes de componerlo en el atlas — sin reintentar la llamada de generación ni mostrar error al usuario.
 - Dado que el propio recorte/decodificación de la imagen falla técnicamente (imagen corrupta, formato inesperado), cuando esto ocurre, entonces se lanza un error explícito (`TextureGenerationFailedException`, mismo patrón que `InvalidGeometryProposalException`) y no se aplica nada — nunca se compone un atlas parcialmente corrupto.
 ```
 
@@ -312,142 +327,343 @@ para confirmar que Fase 3 entrega valor real de forma determinista
 Criterios de aceptación:
 - Dado un mob con geometría ya usable (revision_number >= 1 desde Fase 1+2), cuando pinto manualmente y/o genero por IA parte de su textura y hago clic en "Guardar", entonces se crea una nueva mob_revision cuyo model_jsonb refleja la textura actualizada, no el placeholder.
 - Dado que exporto el mob (mismo flujo de HU-19/ticket 032 ya existente), cuando genero el .bbmodel, entonces el archivo incluye la textura real pintada/generada — la textura placeholder checkerboard (`PlaceholderTexture`, ticket 011) queda reservada solo para mobs sin ninguna región pintada todavía.
-- Dado el .bbmodel exportado con textura real, cuando lo abro en Blockbench, entonces abre sin diálogos de reparación — la UV sigue siendo válida (el exportador ya no recomputa UV desde cero si hay regiones pintadas, ver Diseño técnico §2 "Hallazgo A") y la textura embebida corresponde exactamente al atlas usado por esa UV.
+- Dado el .bbmodel exportado con textura real, cuando lo abro en Blockbench, entonces abre sin diálogos de reparación — el exportador NUNCA recomputa ni reempaqueta la UV (serializa exactamente la UV canónica de la Revision, ver Diseño técnico §3) y la textura embebida corresponde exactamente al atlas usado por esa UV.
+- Dado que exporto una Revision legacy de Fase 1+2 (sin regiones pintadas), cuando el `UvLayout` almacenado difiere de lo que `AlphaAutoPackStrategy` calcularía hoy, entonces `LegacyUvNormalizationService` normaliza en memoria ANTES del exportador (nunca dentro de él, nunca persistido de vuelta a la Revision) — el export sigue siendo idéntico al de hoy para esos mobs (ver Diseño técnico §3).
 - Dado que valido el modelo (HU-20 ya existente), cuando corre la validación, entonces sigue sin errores pendientes, ahora también con contenido de textura real en vez de placeholder.
 ```
 
 ## Diseño técnico
 
-Antes de entrar en los puntos, dos hallazgos reales de la arquitectura de Fase 1+2 que este diseño debe cerrar (no son preguntas al PO — son consecuencias técnicas directas de sus decisiones, resueltas aquí):
+> **Nota de versión**: esta sección reemplaza por completo la versión anterior, tras 13 correcciones técnicas precisas del PO (aprueba la dirección conceptual, VoBo final todavía pendiente). Donde una corrección revierte una decisión previa se dice explícitamente — no se disimula. Ningún punto de la lista "sin cambios" del PO (§18) fue reabierto.
 
-> **Hallazgo A** — `BBModelExporterV5.export(model, uvLayoutStrategy)` (ticket 011) siempre recomputa la UV desde cero vía `AlphaAutoPackStrategy` antes de exportar. Esto era correcto y deliberado en Fase 1+2 (no existía textura pintada, así que recomputar desde la misma geometría es determinista y produce el mismo resultado). En Fase 3 sería destructivo: exportar un mob con textura pintada volvería a empaquetar todo el atlas ignorando dónde está el arte real. Se resuelve en el punto 2.
+Dos hallazgos de Fase 1+2 seguían pendientes de cierre en el diseño anterior:
+
+> **Hallazgo A — REVERTIDO por decisión directa del PO.** La versión anterior de este documento proponía que `BBModelExporterV5` invocara `UvLayoutSelector` (y por lo tanto, indirectamente, pudiera caer en `AlphaAutoPackStrategy`) para decidir si recomputar UV o no. El PO lo rechaza explícitamente: **el exportador nunca debe invocar `UvLayoutSelector` ni ninguna estrategia de layout, ni siquiera en el caso "sin regiones pintadas"**. A partir de Fase 3 el exportador es un serializador puro: exporta EXACTAMENTE la UV que ya está en la Revision, punto. Se cierra en el punto 3.
 >
-> **Hallazgo B** — el editor manual (018/036) calcula AutoUv 100% client-side y el backend nunca lo revalida en `autosave`/`Guardar`. En Fase 1+2 esto era inocuo (el backend siempre recomputaba en export de todas formas). En Fase 3, con `StableUvStrategy` protegiendo regiones pintadas/huérfanas, un cliente que calcule su propia UV localmente podría saltarse esa protección por completo. Se resuelve en el punto 2.
+> **Hallazgo B — sin cambios respecto al diseño anterior.** El editor manual calcula geometría/UV client-side sin que el backend lo revalide en autosave. Sigue resuelto por el mismo mecanismo: el backend (`GeometryEngine.apply` vía `POST /geometry/apply`) es la única autoridad para las 3 operaciones que tocan UV. Se detalla en el punto 2, y su disparo pasa a ser exclusivamente en `pointerup` (punto 15, corrección #10).
 
-### 1. Extensión de `MobProjectModel`: `TextureDocument` y `UvLayout`
+### 1. `UvRegion`, `UvRegionStatus` y `UvReservation` (tombstone explícito de espacio abandonado)
 
-`TextureDocument(int width, int height, String storageKey)` no cambia de forma — solo de semántica: `storageKey` pasa de "siempre null, salvo el placeholder sintetizado al exportar" a ser la clave real, content-addressed, de la textura pintada (ver punto 3). Cero cambio de esquema JSON para este record.
-
-`UvRegion` necesita un campo nuevo para representar el estado que exige `StableUvStrategy`:
+**Qué cambia respecto al diseño anterior**: se agrega `UvReservation` como concepto nuevo. La corrección del PO identifica un gap real: `UvRegion` está indexada por `(cuboidId, face)` de un cuboid **vivo**. Cuando un resize confirmado mueve una cara `PAINTED` a una ubicación nueva, la ÚNICA fila de `UvRegion` para esa clave se actualiza en el sitio (mismo `cuboidId`/`face`, `rect` nuevo, status `UNPAINTED`) — el `rect` viejo, que debía quedar reservado como "atlas garbage no reutilizable este ciclo", no tiene dónde vivir: se pierde silenciosamente y ese espacio podría reasignarse por error a un Add posterior en el mismo ciclo. `ORPHAN` no tiene este problema (el `cuboidId` deja de resolver a un cuboid vivo, pero la fila de `UvRegion` permanece intacta en la lista con su `rect` original). El problema es específico del caso resize.
 
 ```java
+package com.galgothstudio.backend.domain.model;
+
 public record UvRegion(String cuboidId, FaceName face, Vec4 rect, UvRegionStatus status) {}
 
 public enum UvRegionStatus { UNPAINTED, PAINTED, ORPHAN }
+
+/**
+ * Tombstone explícito de espacio de atlas abandonado que NO puede
+ * describirse como UvRegion porque ya no corresponde a ningún
+ * (cuboidId, face) vivo o vigente -- típicamente el rect que un cuboid
+ * PAINTED ocupaba antes de un resize confirmado que lo reubicó.
+ * sourceCuboidId/sourceFace son solo trazabilidad para debug/QA, no
+ * se usan para resolver ocupación (eso lo hace `rect`).
+ */
+public record UvReservation(
+        String id,
+        Vec4 rect,
+        UvReservationReason reason,
+        String sourceCuboidId,
+        FaceName sourceFace) {}
+
+public enum UvReservationReason { RESIZE_ABANDONED }
 ```
 
-- **`UNPAINTED`**: región asignada a un cuboid/cara vivo, sin arte real todavía.
-- **`PAINTED`**: región de un cuboid/cara vivo con al menos un píxel editado por el usuario o compuesto por IA. Es un flag explícito que la app actualiza en el mismo commit que pinta — no derivado por diff de píxeles contra el placeholder (frágil y costoso).
-- **`ORPHAN`**: tombstone de una región cuyo `cuboidId` ya no existe en `model.cuboids()` (el cuboid fue eliminado). Se conserva solo para bookkeeping de espacio ocupado.
+`UvLayout` gana un campo aditivo:
 
-### 2. Contrato `StableUvStrategy`
+```java
+public record UvLayout(int textureWidth, int textureHeight, List<UvRegion> regions, List<UvReservation> reservations) {}
+```
 
-`UvLayoutStrategy.layout(List<Cuboid>, int, int)` no puede, tal cual, soportar comportamiento "estable" — no tiene forma de saber qué regiones ya están pintadas ni de representar huérfanas. Se resuelve con **extensión aditiva, no ruptura**: un método `default` nuevo en la interfaz que preserva 100% compatibilidad con `AlphaAutoPackStrategy` (cero cambios en esa clase):
+- **`UNPAINTED`**: región de un cuboid/cara vivo, sin arte real todavía.
+- **`PAINTED`**: región de un cuboid/cara vivo con al menos un píxel editado a mano o compuesto por IA. Flag explícito que la app actualiza en el mismo commit que pinta — nunca derivado por diff de píxeles.
+- **`ORPHAN`**: fila cuyo `cuboidId` ya no existe en `model.cuboids()` (cuboid eliminado). Se conserva solo para bookkeeping de espacio ocupado; su `rect` original nunca se mueve.
+- **`UvReservation`**: tombstone de espacio que NO corresponde a ninguna fila de `UvRegion` viva — el caso concreto de esta fase es el `rect` abandonado de un resize destructivo confirmado.
+
+`Undo` (snapshot completo de `MobProjectModel`, ticket 019) revierte `reservations` igual que revierte `regions`/`cuboids` — sin lógica adicional: un Undo después de un resize confirmado hace desaparecer la reserva junto con el resto del cambio, porque es un campo más del mismo agregado inmutable.
+
+Contratos espejo a actualizar de forma aditiva (mismo mecanismo ya usado para `status`): `frontend/src/domain/MobProjectModel.ts`, `contracts/schemas/mob-project-model.schema.json`.
+
+### 2. Resolución de estrategia UV para los llamadores del motor de geometría
+
+**Esto sigue siendo necesario — solo que ya NO para el exportador (ver punto 3).** `GeometryEngine.apply`, `GeometryPlannerService` y `AiGeometryEditPlannerService` siguen necesitando decidir, en el momento de aplicar una operación de geometría, si el packing puede recalcularse libremente (`AlphaAutoPackStrategy`, comportamiento de Fase 1+2) o si debe preservar contenido pintado (`StableUvStrategy`, nuevo esta fase).
+
+`UvLayoutStrategy.layout(List<Cuboid>, int, int)` gana una sobrecarga `default` aditiva, cero cambios en `AlphaAutoPackStrategy`:
 
 ```java
 public interface UvLayoutStrategy {
     Result layout(List<Cuboid> cuboids, int textureWidth, int textureHeight); // sin cambios
 
-    default Result layout(List<Cuboid> cuboids, int textureWidth, int textureHeight, List<UvRegion> previousRegions) {
+    default Result layout(List<Cuboid> cuboids, int textureWidth, int textureHeight, UvLayout previousLayout) {
         return layout(cuboids, textureWidth, textureHeight); // default: reflow completo
     }
 }
 ```
 
-`StableUvStrategy implements UvLayoutStrategy` sobreescribe la sobrecarga de 4 argumentos; su versión de 3 argumentos delega a `layout(cuboids, w, h, List.of())`.
+`StableUvStrategy implements UvLayoutStrategy` sobreescribe la sobrecarga de 4 argumentos (recibe el `UvLayout` completo, no solo la lista de regiones, para poder leer también `reservations`); su versión de 3 argumentos delega a `layout(cuboids, w, h, UvLayout(w, h, List.of(), List.of()))`.
 
-**`UvLayoutSelector implements UvLayoutStrategy`** (nuevo, `domain/uv/`), marcado `@Primary`, inyectado en todos los puntos que hoy reciben `UvLayoutStrategy` (`GeometryEngine.apply`, `GeometryPlannerService`, `AiGeometryEditPlannerService`, `BBModelExporterV5`). Regla de decisión determinista:
+**`UvLayoutSelector implements UvLayoutStrategy`** (`domain/uv/`, `@Primary`), inyectado ÚNICAMENTE en `GeometryEngine.apply`, `GeometryPlannerService`, `AiGeometryEditPlannerService` — **el exportador queda fuera de esta lista de inyección a partir de esta revisión** (cambio directo respecto al diseño anterior, que sí lo incluía). Regla de decisión sin cambios:
 
-- si `previousRegions` no contiene ningún `PAINTED`/`ORPHAN` → delega en `AlphaAutoPackStrategy` (comportamiento de Fase 1+2, byte-idéntico).
+- si `previousLayout.regions()` no contiene ningún `PAINTED`/`ORPHAN` → delega en `AlphaAutoPackStrategy`.
 - si contiene al menos uno → delega en `StableUvStrategy`.
 
-`GeometryEngine.apply(model, ops, uvLayoutStrategy)` cambia su invocación interna a `uvLayoutStrategy.layout(cuboids, w, h, model.uv().regions())`. `StableUvStrategy` reutiliza (no duplica) la matemática de box-unwrap ya verificada de `AlphaAutoPackStrategy` — se extraen a un helper compartido (`BoxUvMath`).
+`GeometryEngine.apply(model, ops, uvLayoutStrategy)` invoca `uvLayoutStrategy.layout(cuboids, w, h, model.uv())` (pasa el `UvLayout` completo, no solo `regions()`, para que `StableUvStrategy` pueda leer `reservations`). `StableUvStrategy` reutiliza la matemática de box-unwrap ya verificada de `AlphaAutoPackStrategy` vía el helper compartido `BoxUvMath`.
 
-**Algoritmo concreto, los 3 casos ya decididos por el PO:**
+**"Espacio verdaderamente libre" — definición única, usada por los 3 casos**: atlas completo MENOS la unión de los `rect` de TODAS las filas de `regions` (sin importar su `status` — hasta una `UNPAINTED` de un cuboid vivo está ocupada) MENOS la unión de los `rect` de TODAS las filas de `reservations`.
+
+**Algoritmo concreto, los 3 casos ya decididos por el PO (actualizado con reservas):**
 
 | Caso | Detección | Resultado |
 |---|---|---|
-| **Resize con cara(s) `PAINTED`** | El nuevo `from`/`to` cambia el footprint de al menos una cara ya `PAINTED` | Lanza `PaintedRegionResizeConfirmationRequiredException` (misma familia que `UvAtlasOverflowException`) con el detalle de qué caras se verían afectadas. Solo tras confirmación explícita reempaqueta esas caras en espacio libre y las marca `UNPAINTED` en su nueva ubicación — los píxeles viejos permanecen físicamente en el bitmap (atlas garbage aceptado). |
-| **Add sin espacio libre** | El footprint del cuboid nuevo no cabe en ninguna región verdaderamente libre (atlas menos la unión de TODAS las regiones existentes, sin importar su estado) | Rechaza con el mismo tipo/forma de error que `UvAtlasOverflowException` — nunca crece el atlas, nunca reempaqueta pintadas/huérfanas. |
-| **Delete con textura pintada** | El cuboid removido tiene ≥1 cara `PAINTED` | Las 6 caras de ESE cuboid (bloque único) pasan a `ORPHAN` — más simple de razonar/deshacer que huérfanas parciales, y Undo (019, snapshot completo) recupera el estado exacto sin lógica adicional. |
+| **Resize con cara(s) `PAINTED`** | El nuevo `from`/`to` cambia el footprint de al menos una cara ya `PAINTED` | Lanza `PaintedRegionResizeConfirmationRequiredException` con el detalle de qué caras se verían afectadas. Solo tras confirmación explícita: (1) agrega una `UvReservation(id=nuevo, rect=rectViejo, reason=RESIZE_ABANDONED, sourceCuboidId, sourceFace)` por cada cara afectada, (2) reempaqueta esas caras en espacio verdaderamente libre (definición de arriba) y actualiza su `UvRegion` existente con el `rect` nuevo y `status=UNPAINTED`. |
+| **Add sin espacio libre** | El footprint del cuboid nuevo no cabe en ningún espacio verdaderamente libre | Rechaza con `UvAtlasOverflowException` — nunca crece el atlas, nunca reempaqueta regiones ni reservas existentes. |
+| **Delete con textura pintada** | El cuboid removido tiene ≥1 cara `PAINTED` | Las 6 caras de ESE cuboid (bloque único) pasan a `status=ORPHAN` en su fila existente de `UvRegion` — no se crea `UvReservation` (no hace falta: la fila sigue viva con su `rect` original, solo el `cuboidId` deja de resolver). |
 
-**Vía manual vs. vía IA — ninguna se salta la protección (cierra el Hallazgo B):**
+**Vía manual vs. vía IA — ninguna se salta la protección (Hallazgo B):**
 
-- **Vía IA (031, `AiGeometryEditPlannerService`)**: ya pasa por `GeometryEngine.apply`. Si dispara `PaintedRegionResizeConfirmationRequiredException`, se captura y se refleja en el diff (`ChangedElement`) como "N caras perderán su arte por este cambio" — el botón "Aplicar cambios" (ya una confirmación explícita de HU-18) sirve como la confirmación.
-- **Vía manual (018/036)**: no existe hoy ningún paso de revisión antes de aplicar. Se agrega un endpoint síncrono nuevo — **`POST /api/mobs/{mobId}/geometry/apply`** (nuevo `MobGeometryController` en `project/api/`, respaldado por un nuevo servicio en `project/geometry/` que invoca el `GeometryEngine`/`UvLayoutSelector` ya canónicos de `domain/geometry`/`domain/uv` — mismo patrón de separación ya usado por `project/draft/DraftPersistenceService`) — solo para las 3 operaciones que tocan UV (`createCuboid`, `resizeCuboid`, `removeCuboid`; nunca `moveCuboid`/`rotateCuboid`/pivot, que no afectan UV y siguen 100% client-side + autosave debounced, sin regresión de latencia en el drag). Si el backend devuelve la excepción de confirmación, el frontend muestra el modal y reenvía la misma operación con un flag `confirmPaintLoss: true`.
+- **Vía IA (`AiGeometryEditPlannerService`)**: ya pasa por `GeometryEngine.apply`. Si dispara `PaintedRegionResizeConfirmationRequiredException`, se refleja en el diff como "N caras perderán su arte por este cambio" — el botón "Aplicar cambios" (ya una confirmación explícita) sirve como la confirmación.
+- **Vía manual**: **`POST /api/mobs/{mobId}/geometry/apply`** (`MobGeometryController`, `project/api/`, respaldado por un servicio en `project/geometry/` que invoca `GeometryEngine`/`UvLayoutSelector` de `domain/geometry`/`domain/uv`) — solo para `createCuboid`/`resizeCuboid`/`removeCuboid` (nunca `moveCuboid`/`rotateCuboid`/pivot, que no afectan UV y siguen 100% client-side). El disparo de este endpoint, para resize, es exclusivamente al soltar el drag — ver punto 15. Si el backend devuelve la excepción de confirmación, el frontend muestra el modal y reenvía la misma operación con `confirmPaintLoss: true`.
 
-**Cierra el Hallazgo A**: `BBModelExporterV5.export(model, uvLayoutStrategy)` invoca `UvLayoutSelector` en vez de `AlphaAutoPackStrategy` directo — si la revisión no tiene ninguna región pintada/huérfana (100% de los mobs de Fase 1+2), el comportamiento es idéntico al actual; si tiene, exporta la UV tal cual está almacenada, sin recomputar. Cambio aditivo, retrocompatible.
+### 3. El exportador NO resuelve UV — reversión de Hallazgo A + migración legacy explícita
 
-### 3. Persistencia eficiente de textura en revisiones
+**Decisión directa del PO, revierte el diseño anterior.** `BBModelExporterV4`/`V5` deja de recibir un `UvLayoutStrategy` como parámetro — su firma cambia de `export(model, uvLayoutStrategy)` a `export(model)`. El exportador:
 
-**Decisión: bitmap content-addressed en MinIO.** Clave `textures/{sha256-hex}.png`, global — el hash ya desambigua, permite dedup incluso entre mobs distintos con bitmaps idénticos. `TextureDocument.storageKey` guarda esa clave; el bitmap **nunca** se embebe inline (ni base64) en `model_jsonb`/`draft_model_jsonb`.
+1. Nunca invoca `UvLayoutSelector`, `AlphaAutoPackStrategy` ni `StableUvStrategy`.
+2. Nunca muta ni reempaqueta el `UvLayout`/`regions` que recibe dentro de `model`.
+3. Serializa EXACTAMENTE `model.uv()` y `model.texture()` tal como llegan — la UV canónica de esa Revision, sin excepciones (ni siquiera para el caso "cero regiones pintadas", que en el diseño anterior sí recomputaba).
 
-Se descarta diffs binarios por región: cada `mob_revisions` es hoy un snapshot completo e independiente (`MobExportService.exportBbmodel` lee UNA fila en aislamiento) — introducir deltas solo para textura rompería esa auto-contención, obligando a reconstruir contra una cadena de revisiones para exportar cualquiera de ellas.
+Esto es un cambio de firma interna de un método Java, no un contrato de API externo — la `GET /api/mobs/{mobId}/export` sigue devolviendo bytes idénticos para el 100% de los mobs de Fase 1+2 (ver mecanismo de compatibilidad abajo). No requiere VoBo dedicado bajo la regla de "cambios que rompen compatibilidad" porque ningún contrato externo ni esquema de datos cambia — se señala igual por transparencia.
 
-Efecto directo: dos revisiones consecutivas que no cambiaron el bitmap comparten el mismo `storageKey` — dedup automático y gratuito. `mob_drafts` usa el mismo mecanismo.
+**Dónde vive entonces "resolver qué estrategia usar"**: exclusivamente en los 3 llamadores de motor del punto 2 (`GeometryEngine.apply`, `GeometryPlannerService`, `AiGeometryEditPlannerService`), en el momento en que se APLICA un cambio de geometría — nunca en el momento de exportar. Por diseño, cuando se llega al export, `model.uv()` YA es la UV canónica final decidida por esos llamadores en su momento; el exportador no tiene (ni necesita) opinión sobre UV.
 
-Flujo de escritura: el editor de píxeles (Web Worker/OffscreenCanvas) exporta el bitmap compuesto, calcula SHA-256 (Web Crypto) y lo sube vía `PUT /api/mobs/{mobId}/texture` (mismo patrón de bytes crudos que `thumbnailApi.ts`, ticket 023) — el backend sube a MinIO solo si la clave no existe ya (idempotente) y devuelve el `storageKey`.
+**Mecanismo explícito de compatibilidad/migración para revisiones legacy** (nuevo, corrección #1 — "previo al exporter, no escondido dentro de la serialización"): las revisiones de Fase 1+2 no tienen `status` en sus regiones (se deserializan con default `UNPAINTED` — ver punto 17) y, como el exportador de esa fase SIEMPRE recomputaba UV vía `AlphaAutoPackStrategy` en cada export, nunca hubo garantía fuerte de que el `UvLayout` efectivamente ALMACENADO en esas revisiones coincida byte a byte con lo que `AlphaAutoPackStrategy` produciría hoy contra la misma geometría (implementaciones de box-unwrap pueden haber tenido ajustes menores entre iteraciones de 006/007). Se agrega `LegacyUvNormalizationService` (nuevo, `domain/uv/`):
 
-GC de bitmaps huérfanos en MinIO queda explícitamente fuera de alcance este ciclo (mismo criterio que la retención de `mob_revisions` en Fase 1+2).
+- Se invoca como un paso EXPLÍCITO y SEPARADO por `MobExportService`, ANTES de llamar a `BBModelExporterV5.export(model)` — nunca dentro del exportador ni de su método de serialización:
 
-### 4. Dirty-check/autosave para textura
+```java
+MobProjectModel normalized = legacyUvNormalizationService.normalizeIfSafe(revisionModel);
+byte[] bbmodel = bbModelExporterV5.export(normalized);
+```
 
-**Decisión: valor completo del `MobProjectModel`, sin caso especial.** Como `storageKey` ya ES un hash del contenido, el `.equals()` estructural de records que `DraftPersistenceService.autosave`/`saveRevision` ya usan (ticket 020) compara strings de clave — O(1), equivalente semánticamente a comparar el bitmap completo. No se necesita un checksum separado ni lógica nueva.
+- `normalizeIfSafe(model)` es un no-op (devuelve `model` sin tocar) salvo que se cumplan AMBAS condiciones: (a) `model.uv().regions()` no contiene ningún `PAINTED`/`ORPHAN` (garantiza que no hay nada pintado que perder — condición de seguridad, no una heurística), y (b) el `UvLayout` almacenado difiere estructuralmente de lo que `AlphaAutoPackStrategy.layout(cuboids, w, h)` calcularía hoy contra esa misma geometría. Cuando ambas se cumplen, devuelve un `MobProjectModel` con el `UvLayout` recalculado — **transitorio, en memoria, solo para esa llamada de export**, nunca persistido de vuelta a la Revision (las revisiones son inmutables por diseño; no se reabre esa invariante).
+- Determinístico e idempotente: exportar la misma Revision legacy dos veces produce el mismo `.bbmodel` byte a byte.
+- Un test de regresión (ya previsto en el diseño anterior) deserializa una fixture real de una revisión de Fase 1+2 y confirma que el export sigue siendo idéntico al de hoy.
 
-### 5. `OpenAiImageProvider`
+### 4. Persistencia content-addressed de textura (sin cambios de fondo)
 
-`ImageGenerationProvider.generateImage(String prompt)` (definida en 025, sin implementación real) se extiende de forma aditiva:
+**Decisión de Fase 1+2/diseño anterior, sin cambios**: bitmap en MinIO, clave `textures/{sha256-hex}.png`, global (dedup automático incluso entre mobs). `TextureDocument.storageKey` guarda esa clave; el bitmap **nunca** se embebe inline en `model_jsonb`. Se descartan diffs binarios por región — cada `mob_revisions` sigue siendo un snapshot completo e independiente. GC de bitmaps huérfanos sigue fuera de alcance este ciclo. Lo que SÍ cambia es quién tiene la autoridad sobre el hash/`storageKey` — ver punto 6.
+
+### 5. Dirty-check/autosave para textura (sin cambios de fondo)
+
+**Sin cambios**: como `storageKey` sigue siendo un hash de contenido, el `.equals()` estructural de records que `DraftPersistenceService` ya usa compara strings de clave — O(1). Único matiz nuevo: el `storageKey` que se compara es siempre el que el BACKEND devolvió en el `PUT /texture` (punto 6), nunca uno que el cliente haya propuesto por su cuenta.
+
+### 6. Integridad de `storageKey` — el backend es la autoridad, no el frontend
+
+**Nueva sección — corrección #6.** El frontend puede seguir calculando SHA-256 client-side (Web Crypto) como optimización pura: evitar re-subir bytes que ya sabe que existen en MinIO. Eso NUNCA es la fuente de verdad.
+
+**Flujo `PUT /api/mobs/{mobId}/texture`:**
+
+1. El cliente sube los bytes crudos del PNG compuesto (mismo patrón de bytes crudos que `thumbnailApi.ts`).
+2. El backend **siempre**: decodifica la imagen recibida (rechaza explícitamente si no es un PNG válido/decodificable — nunca confía en el `Content-Type` declarado), calcula él mismo el SHA-256 sobre los bytes decodificados/canónicos, sube a MinIO bajo `textures/{sha256-hex}.png` (idempotente — solo si la clave no existe ya), y devuelve ese `storageKey` en la respuesta.
+3. El cliente usa EXACTAMENTE el `storageKey` de la respuesta para referenciarlo en `TextureDocument` — nunca uno que haya calculado o propuesto él mismo, incluso si en el 100% de los casos normales coinciden.
+
+**Flush obligatorio antes de crear una Revision** (mismo criterio para "Guardar" y para "Apply" de una propuesta de IA — punto 10): la acción de guardar/aplicar debe esperar (await) la respuesta del `PUT /texture` pendiente y su `storageKey` oficial ANTES de invocar el endpoint que crea la `mob_revision`. Una Revision jamás debe apuntar a un `storageKey` que todavía no está confirmado persistido en MinIO. Como defensa en profundidad (contra un cliente que por bug no respete ese orden), el servicio que crea la Revision (`DraftPersistenceService.saveRevision` y el nuevo método de Apply de textura, punto 10) verifica la existencia del `storageKey` referenciado en MinIO antes de escribir la fila — si no existe, lanza un error explícito en vez de escribir una referencia colgante.
+
+### 7. Resolución del atlas — dos estados: pre-pintado y post-pintado
+
+**Reescritura completa — corrección #3.** El diseño anterior mantenía la frase ambigua "128×128 y crece/rechaza" sin diferenciar dos momentos con reglas distintas.
+
+**Estado A — ANTES de que exista contenido `PAINTED`** (mob recién creado, o con geometría pero sin ningún píxel pintado/generado todavía):
+
+- El sistema recomienda/selecciona una resolución de atlas adecuada a la geometría real ya calculada por `AutoUv` — no un valor fijo global.
+- **Presets Minecraft** (`BaseType` ≠ `CUSTOM`: `HUMANOID`, `ARACHNID`, `QUADRUPED`, `FLYING`): la dimensión canónica ("x1") es el tamaño que `AlphaAutoPackStrategy` calcula para esa geometría concreta (no una tabla fija por especie — este dominio no modela mobs vanilla específicos, solo arquetipos). Se permite un perfil "x2" como upgrade explícito: mismo layout UV (mismos rects relativos), atlas al doble de resolución lineal (ancho y alto ×2) — más espacio por píxel para detalle, sin tocar el packing. El upgrade es una acción explícita del usuario en el paso de Configuración, nunca automático.
+- **Modelos `CUSTOM`**: se recomienda la dimensión power-of-two inmediatamente superior al footprint real calculado por `AutoUv` (p. ej. footprint de 100×70 → recomienda 128×128).
+- Si el `AutoUv` inicial no cabe en la resolución por defecto, se permite un upgrade explícito (mismo mecanismo x1→x2, o a la siguiente potencia de 2 para `CUSTOM`) — nunca un crecimiento silencioso.
+- El campo "Resolución de textura" del wizard IA dejó de ser vinculante desde el diseño anterior; sigue así — es, cuando mucho, la forma de disparar este upgrade explícito antes de pintar, nunca un valor que el backend reciba como parámetro ciego.
+
+**Estado B — DESPUÉS del primer contenido `PAINTED`** (al menos una región tiene `status=PAINTED`):
+
+- `TextureDocument.width`/`height` quedan **congelados** — inmutables mientras exista al menos una región `PAINTED` en la Revision/draft activo.
+- `StableUvStrategy` **nunca** crece el atlas para hacerle espacio a nada, bajo ninguna circunstancia.
+- Si una región nueva (Add de cuboid, o el upgrade de resolución) no cabe en el "espacio verdaderamente libre" (definición del punto 2), se lanza `UvAtlasOverflowException` — mismo tipo ya existente, mismo criterio que el caso "Add sin espacio libre".
+- El picker de resolución del wizard/editor deja de tener efecto alguno una vez cruzado este umbral — UX debe reflejar esto (deshabilitado o informativo), detalle de `ux-ui-designer` al desglosar el ticket.
+
+La transición A→B es unidireccional dentro de un mismo ciclo de vida del mob: una vez que existe `PAINTED`, no hay vuelta atrás a "atlas mutable" salvo que TODO el contenido pintado se elimine (fuera de alcance diseñar ese caso — no hay mecanismo de "despintar todo" en esta fase).
+
+### 8. Importación de PNG — contrato técnico de HU-28 (región seleccionada + atlas completo)
+
+**Corrección #4 — cierra la pregunta abierta de HU-28: SÍ se soporta importar sobre el atlas completo este ciclo.** Dos caminos, ambos dentro de alcance:
+
+**(A) Pegar/importar imagen dentro de una región UV seleccionada** (ya diseñado, sin cambios): si el tamaño difiere del de la región, se ofrece ajuste antes de confirmar; al confirmar, la región queda reemplazada, registrado como una operación de Undo (ver punto 9 — ahora expresado como un único `TexturePatchCommand` acotado al `rect` de esa región).
+
+**(B) Importar un PNG sobre el atlas completo** (nuevo, en alcance):
+
+- **Dimensiones exactas** (coinciden con `TextureDocument.width`/`height` vigentes): se muestra una confirmación/diff (mismo patrón visual que el diff Antes/Después de IA) antes de reemplazar el atlas completo.
+- **Dimensiones distintas**: se ofrece ÚNICAMENTE **crop** (recortar el excedente cuando la imagen importada es más grande en algún eje) y/o **pad** (agregar margen transparente cuando es más chica) — nunca escalado/resize. Justificación: escalar implica resamplear píxeles, lo que introduce blur/aliasing y viola directamente la decisión ya aprobada e inmodificable de "canvas pixel-perfect sin antialiasing" (§18). Crop y pad son las únicas dos operaciones que preservan cada píxel importado sin resamplear — por eso son las "seguras" que la corrección del PO pide ofrecer. Si el usuario quiere una densidad de píxel distinta, debe pre-escalar la imagen fuera de Galgoth Studio.
+- **Nunca se deforma silenciosamente**: sin crop/pad explícitamente confirmado por el usuario, no se aplica nada.
+- **Una única operación de Undo**: el reemplazo completo del atlas (post crop/pad si aplicó) es UN `TexturePatchCommand` con `rect` = atlas completo — nunca N comandos.
+- Si el atlas está en Estado B (post-pintado, congelado — punto 7), importar un PNG de dimensiones distintas a las congeladas sigue el mismo criterio de crop/pad hacia esas dimensiones fijas — nunca las cambia.
+- Exportar la textura como PNG independiente sigue fuera de alcance (sin cambios) — esto es exclusivamente sobre IMPORT.
+
+### 9. Undo/Redo de textura basado en patches — `TexturePatchCommand`
+
+**Reescritura completa — corrección #5.** "Pila independiente por tab" (Modelo vs. Textura) sigue siendo la decisión correcta y NO se reabre — lo que faltaba era el mecanismo real de cada Command individual dentro de esa pila. Snapshotear el bitmap completo por cada trazo es inviable en memoria (un atlas de 256×256 son 256KB+ sin comprimir, por Command, por trazo).
+
+```ts
+// frontend/src/editor/texture/TexturePatchCommand.ts
+interface TexturePatchCommand {
+  rect: { x: number; y: number; width: number; height: number } // bounding box mínimo tocado
+  beforePixels: Uint8ClampedArray // solo los píxeles de rect, ANTES
+  afterPixels: Uint8ClampedArray  // solo los píxeles de rect, DESPUÉS
+}
+```
+
+- **Brush/erase**: el `rect` es el bounding box acumulado de TODO el trazo entre `pointerdown` y `pointerup` — un trazo completo de arrastre es UN Command, no uno por evento `pointermove` intermedio ("una acción de usuario = una unidad de Undo", tal como pide la corrección).
+- **Fill (cubeta)**: `rect` = bounding box de la región contigua rellenada.
+- **Paste/import de región** (HU-28-A): `rect` = la región UV seleccionada.
+- **Import de atlas completo** (HU-28-B): `rect` = atlas completo (ver punto 8).
+- **Apply de generación IA** (HU-36/HU-37/HU-38): `rect` = unión de los `atlasUvRect` de todas las caras tocadas por esa generación (un bone completo, o todos los bones si fue generación de "Modelo completo") — un solo Apply = un solo Command, sin importar cuántos bones/cuboids/llamadas de sheet involucró internamente (ver punto 11).
+- Undo aplica `beforePixels` sobre `rect`; Redo aplica `afterPixels` — operación O(área del rect), nunca O(atlas completo).
+- La pila de textura (`textureEditorStore.ts`) sigue siendo 100% independiente de la de geometría (019) — Ctrl+Z en el tab Textura nunca toca la pila de Modelo y viceversa (sin cambios respecto al diseño anterior, solo se define ahora el "cómo").
+
+### 10. Atomicidad del Apply de textura
+
+**Nueva sección — corrección #11.** El Apply de una propuesta de IA (HU-38) debe dejar SIEMPRE uno de dos estados válidos: todo aplicado, o nada aplicado — nunca un estado parcial donde, por ejemplo, el bitmap ya está en MinIO pero la Revision no lo referencia, o el draft avanzó pero la Revision no.
+
+**Nota de diseño explícita**: esto es una divergencia deliberada respecto al Apply de geometría ya existente (`AiEditService.applyEdit` → `DraftPersistenceService.applyGenerationProposal`, que SOLO actualiza el draft — la Revision se crea después, en un "Guardar" separado). La corrección del PO lista explícitamente `mob_revision` y `current_revision_number` como parte de lo que el Apply de TEXTURA debe actualizar atómicamente — a diferencia de geometría, aquí Apply crea la Revision en el mismo movimiento. Se documenta así para que no se lea como inconsistencia entre ambos flujos: es intencional, específico de este tipo de propuesta.
+
+**Mecanismo, en orden:**
+
+1. **Flush de MinIO PRIMERO, fuera de la transacción de base de datos** (punto 6): el bitmap resultante ya debe estar persistido bajo su `storageKey` content-addressed antes de que arranque el paso 2. Como la clave es el hash del contenido, escribirlo especulativamente es seguro — no hay forma de que quede "a medias" de forma observable (`PUT` a MinIO es atómico a nivel de objeto).
+2. **UNA transacción Postgres** (`@Transactional`, mismo patrón que `saveRevision`/`applyGenerationProposal` ya existentes) que en un solo commit: actualiza `mob_drafts` (nuevo `draft_version`), inserta la fila de `mob_revisions` (snapshot completo, texture+geometría juntas, referenciando el `storageKey` ya confirmado), y actualiza `mobs.current_revision_number`. Si cualquier paso falla, la transacción entera hace rollback — ningún row queda a medio escribir.
+3. Si el paso 1 tuvo éxito pero el 2 falla/hace rollback, el resultado es un blob huérfano en MinIO sin ninguna Revision que lo referencie — exactamente el mismo tipo de "garbage aceptado sin GC este ciclo" que ya está decidido para reservas de UV y bitmaps huérfanos (sin cambio de política).
+4. **Reject no modifica ninguno de los dos** — ni MinIO (no hay flush) ni Postgres.
+5. Después de un Apply exitoso, cualquier `GET` de draft/modelo posterior lee post-commit — el usuario obtiene EXACTAMENTE la textura aplicada, nunca un estado intermedio, porque el `200 OK` de la respuesta de Apply solo se emite después de que la transacción del paso 2 comprometió.
+
+El chequeo de conflicto 409 (`base_revision_number`/`base_draft_version`, sin cambios respecto al diseño anterior) ocurre ANTES de iniciar este flujo — si hay conflicto, ni el flush de MinIO ni la transacción llegan a ejecutarse.
+
+### 11. Generación de textura por IA — `TextureGenerationSheet` por bone (reemplaza el diseño de "una llamada por cuboid")
+
+**Reescritura completa — corrección #7, cambia la estrategia principal del diseño anterior.** El diseño anterior emitía una llamada a `generateTextureRegion` POR CUBOID del bone — esto nunca se implementó (sin VoBo, sin código escrito), así que no hay compatibilidad que romper; se reemplaza directamente. El problema real que resolvía mal: cada cuboid del mismo bone podía salir con estilo/paleta ligeramente distintos al venir de llamadas de imagen independientes.
+
+**Nueva forma**: `TexturePlan` global (Claude, sin cambios) → `TextureGenerationSheet` **por bone** → `ImageGenerationProvider` → UNA imagen temporal con TODAS las caras/cuboids de ese bone → slicing determinista → `TextureCompositorService` → atlas.
+
+```java
+package com.galgothstudio.backend.aiorchestrator.texture;
+
+public record TextureGenerationSheet(
+    String boneId,
+    String boneName,
+    List<CuboidFacePlacement> placements,
+    String semanticLabel,     // del TexturePlan, ej. "cabeza", "torso frontal"
+    String dominantPalette,   // del TexturePlan
+    String materialNotes,     // del TexturePlan
+    String referenceImageId,  // la misma imagen de referencia ya subida en Fase 2
+    int sheetWidth,
+    int sheetHeight) {}        // dimensiones de la imagen temporal a generar
+
+public record CuboidFacePlacement(
+    String cuboidId,
+    FaceName face,
+    Vec4 sheetRect,      // posición/tamaño de esta cara DENTRO de la imagen temporal generada
+    Vec4 atlasUvRect,    // footprint UV REAL de esta cara en el atlas final -- destino del slicing
+    Vec3 relativeSize,   // dimensiones relativas del cuboid dentro del bone
+    String orientationHint) {} // ej. "front"/"side"/"top", resuelto desde FaceName + rotación del bone
+```
+
+`ImageGenerationProvider` (interfaz de ticket 025) se extiende de forma aditiva sobre `generateImage(String)` (el único método que ya existía y se conserva):
 
 ```java
 public interface ImageGenerationProvider {
     byte[] generateImage(String prompt); // se conserva
 
-    byte[] generateTextureRegion(TextureGenerationRequest request);
+    byte[] generateTextureSheet(TextureGenerationSheetRequest request);
 
-    record TextureGenerationRequest(
+    record TextureGenerationSheetRequest(
         String prompt, byte[] referenceImageBytes,
-        int targetWidth, int targetHeight, String style) {}
+        int sheetWidth, int sheetHeight, String style) {}
 }
 ```
 
-`OpenAiImageProvider implements ImageGenerationProvider` (nuevo, `aiorchestrator/provider/`) usa `gpt-image-1` vía `POST /v1/images/edits` (con máscara/imagen base) cuando hay región existente que preservar/inpaintear, o `POST /v1/images/generations` para la primera pasada. **Nota para el ticket de implementación**: verificar el identificador de modelo vigente contra la documentación real de OpenAI al momento de implementar — la arquitectura se compromete a la familia `gpt-image-*` + endpoint de edits, no a una versión de string congelada aquí.
+**Pipeline, paso a paso:**
 
-**Split de responsabilidades ("IA propone, la app valida y aplica"):**
+1. **`TexturePlan` — `StructuredReasoningProvider` (Claude), sin cambios respecto al diseño anterior**: etiqueta semántica por bone, paleta dominante/acento, notas de material por cara.
+2. **`TextureGenerationSheetPlanner` (nuevo, `aiorchestrator/texture/`, 100% determinista, sin IA)**: para el/los bone(s) objetivo (uno si es regenerar-un-bone HU-37, todos si es generación inicial HU-36), arma un `TextureGenerationSheet` con el layout INTERNO de la imagen temporal (una disposición tipo grid de las caras del bone, optimizada para una sola imagen coherente — distinta del layout UV final del atlas) y calcula, para cada cara, su `atlasUvRect` real vía `AutoUv`/`UvLayoutSelector` ya resuelto.
+3. **Composición de prompt — determinista**: estilo (uno de los 4) + `semanticLabel` + `dominantPalette`/`materialNotes` del `TexturePlan` + orientación de cada cara.
+4. **Llamada a `ImageGenerationProvider.generateTextureSheet(...)`**: **UNA sola llamada de imagen por bone cuando es técnicamente posible** — reduce costo/latencia y, sobre todo, resuelve el problema real (todas las caras del bone salen de la MISMA generación, mismo estilo/paleta garantizado por construcción, no por instrucción de prompt).
+5. **`TextureSheetSlicer` (nuevo, `aiorchestrator/texture/`) — determinista**: recorta de la imagen generada, para cada `CuboidFacePlacement`, el sub-rect `sheetRect` correspondiente.
+6. **`TextureCompositorService` (sin cambios de responsabilidad, ahora opera por slice en vez de por llamada completa)**: por cada slice, si sus dimensiones no calzan exactamente con el `atlasUvRect` esperado, recorta/escala automáticamente (decisión ya vigente del PO, sin cambios); compone sobre una COPIA del atlas actual; corre limpieza de píxeles/paleta para estilos Pixel Art/Minecraft Vanilla.
+7. **`ai_jobs` bookkeeping**: sin cambios de esquema — ver punto 12 para el detalle del campo `model`.
 
-1. **Paleta + mapeo semántico de caras — `StructuredReasoningProvider` (Claude), paso separado, ANTES de OpenAI.** Nueva salida validada `TexturePlan` (mismo patrón de `contracts/schemas/` que `ModelIntent`): etiqueta semántica por bone, paleta dominante/acento, notas de material por cara. Se hace con Claude para no acoplar el paso de razonamiento estructurado a qué proveedor de imágenes esté activo.
-2. **Resolución determinista de layout — 100% código, sin IA.** Granularidad de regeneración = bone (decisión del PO); un bone puede tener varios cuboids, cada uno con su propio footprint. Se emite **una llamada a `generateTextureRegion` por cuboid del bone**, agrupadas bajo un único paso de progreso/una única unidad de Undo.
-3. **Composición de prompt — código determinista**: estilo (uno de los 4) + etiqueta semántica + paleta del `TexturePlan` + orientación de cara.
-4. **Llamada a OpenAI** → bytes PNG crudos.
-5. **`TextureCompositorService` (nuevo, `aiorchestrator/texture/`) — determinista**: recorta/escala automáticamente al tamaño exacto esperado si OpenAI no lo respetó (decisión del PO); compone sobre una COPIA del atlas actual (nunca sobre el bitmap persistido en vivo); corre limpieza de píxeles (posterizado/snap a paleta para estilos Pixel Art/Minecraft Vanilla — algoritmo exacto es detalle de ticket).
-6. **`ai_jobs` bookkeeping**: nuevos `job_type` (`generate_texture`, `edit_texture`), mismo esquema (`provider='openai'`, `model`, `prompt_version`, `schema_version` del `TexturePlan`, `reference_ids`).
+**Fallback/batching explícito (nunca el camino por defecto)**: si `sheetWidth`×`sheetHeight` de un bone excede los límites técnicos del modelo de imagen configurado (dimensión/resolución máxima soportada — detalle a verificar al implementar, depende de qué `OPENAI_IMAGE_MODEL` esté activo, punto 12), `TextureGenerationSheetPlanner` divide el bone en N sub-sheets (bin-packing determinista de sus cuboids/caras) y dispara N llamadas — cada una queda registrada explícitamente (ej. `stage=generando_bone_X (parte 2/3)` en el SSE, ver punto 13) para que nunca sea una llamada "silenciosa" indistinguible del camino normal de una sola llamada.
 
-### 6. Progreso de generación de textura vía SSE
+### 12. Configuración del modelo de imagen de OpenAI
 
-Reutiliza `ai_job_events`/SSE tal cual (`GET /api/jobs/{jobId}/events`, replay por `Last-Event-ID`) — nada lo acopla a geometría. Se agregan nuevos valores de `stage` (`analizando_paleta`, `mapeando_caras`, `generando_bone_X`, `componiendo_atlas`, `limpiando_pixeles`). Cada evento lleva un `preview_texture_patch` en `payload_jsonb` (parche recién compuesto + su rect, no el atlas completo repetido).
+**Corrección #8.** Ningún literal `gpt-image-1` en dominio ni en lógica de negocio. Mismo patrón de configuración ya usado para Claude (`ai.claude.model`), pero explícitamente sobreescribible por variable de entorno (a diferencia de `ai.claude.model`, que hoy es un literal fijo en `application.properties` — aquí se pide explícitamente que sea configurable):
 
-### 7. Selección de cara individual en el viewport 3D
+```properties
+# application.properties
+ai.openai.api-key=${OPENAI_API_KEY:}
+ai.openai.image-model=${OPENAI_IMAGE_MODEL:gpt-image-1}
+ai.openai.base-url=https://api.openai.com
+```
 
-`ThreeViewportService.pickCuboidIdAt` raycastea contra `mesh.userData.cuboidId` (un mesh = un cuboid completo) — no hay tagging por cara. Se extiende de forma aditiva: la misma intersección de raycast expone `intersection.face.normal` — se mapea esa normal (compuesta con la rotación del mesh) a `NORTH/SOUTH/EAST/WEST/UP/DOWN` reusando los ejes canónicos de `CoordinateSystemContract`. Cero cambios a `buildMobScene.ts`. Nueva función `pickCuboidFaceAt`; la selección de cara vive en un store separado (`textureSelectionStore.ts`, sibling de `selectionStore.ts`) — no se sobrecarga el contrato de `selectionStore.ts` que 017/031/036 ya dependen de él tal cual.
+- `OpenAiImageProvider` lee `ai.openai.image-model` (vía `@Value` o `@ConfigurationProperties`, mismo mecanismo ya usado) y lo usa como el modelo en toda llamada a `/v1/images/generations` y `/v1/images/edits` — nunca hardcodeado en el cuerpo de la petición.
+- `ai_jobs.model` (columna `text not null` ya existente, sin cambio de esquema) registra el VALOR REAL configurado en el momento de la llamada — nunca un literal fijo en el código que arma la fila de `ai_jobs`. Si mañana `OPENAI_IMAGE_MODEL` cambia, jobs viejos y nuevos siguen siendo auditables porque cada uno guardó lo que realmente se usó.
+- Ambos endpoints (`/v1/images/generations` para la primera pasada sin región existente que preservar, `/v1/images/edits` con máscara/imagen base para inpaint) se mantienen según las capacidades vigentes del modelo configurado — verificar contra la documentación real de OpenAI al momento de implementar el ticket, la arquitectura se compromete a la familia de modelos vía configuración, no a una versión de string congelada aquí.
 
-### 8. Alcance del Undo/Redo de textura
+### 13. Progreso de generación de textura vía SSE — esquema formal de `preview_texture_patch`
 
-**Decisión: pila independiente por tab (Modelo vs. Textura).** El Command stack de geometría (019) funciona porque cada paso es una referencia liviana a un `MobProjectModel` completo (records inmutables). Un trazo de pincel puede tocar miles de píxeles — snapshotear el bitmap completo por cada Command de textura sería órdenes de magnitud más pesado que un Command de geometría. Compartir una sola pila obligaría a que todo Command de geometría cargue también un snapshot de textura y viceversa. Los tabs Modelo/Textura ya son una frontera natural: cada uno opera su propio store/pila (`textureEditorStore.ts` nuevo).
+**Formalización — corrección #12.** Reutiliza `ai_job_events`/SSE tal cual (`GET /api/jobs/{jobId}/events`, replay por `Last-Event-ID`). Nuevos valores de `stage`: `analizando_paleta`, `mapeando_caras`, `generando_bone_X` (o `generando_bone_X (parte N/M)` en el caso de fallback/batching del punto 11), `componiendo_atlas`, `limpiando_pixeles`.
 
-### 9. Conflicto 409 al aplicar una propuesta de textura
+Esquema exacto del payload `preview_texture_patch` (en `payload_jsonb` del evento):
 
-**Decisión: contra CUALQUIER avance del draft/revisión compartido, no solo textura.** Geometría y textura viven en el MISMO `MobProjectModel`/misma fila de `mob_drafts`/`mob_revisions`. Se reutiliza literalmente el mismo chequeo ya implementado en `AiEditService.applyEdit` (`current_revision_number != base_revision_number || draft_version != base_draft_version` → 409) para jobs `generate_texture`/`edit_texture`.
+```ts
+type PreviewTexturePatchEvent = {
+  type: 'preview_texture_patch'
+  rect: { x: number; y: number; width: number; height: number }
+} & (
+  | { encoding: 'base64'; data: string }   // PNG del parche, base64, cuando el parche es pequeño
+  | { encoding: 'asset_url'; url: string } // asset temporal (MinIO, mismo PUT idempotente), cuando es grande
+)
+```
 
-### 10. `textureResolution` del wizard vs. atlas real
+**Umbral inline vs. asset temporal**: **32 KB del payload base64 codificado** (~24 KB de PNG crudo) es el corte. Por debajo o igual, `encoding: 'base64'` con los bytes inline en el evento SSE; por encima, se sube el parche como un asset temporal (mismo mecanismo idempotente de MinIO, sin garantía de retención a largo plazo — es solo para refrescar la UI durante el streaming) y se emite `encoding: 'asset_url'`. Rationale: mantiene cada frame SSE chico (no satura conexiones lentas ni arriesga los límites de buffer del proxy nginx ya afinado en el ticket 038), evita duplicar el costo de un parche grande en cada evento.
 
-**Decisión: se reemplaza por un valor derivado del atlas.** El tamaño real del atlas lo determina el packing de la geometría real, y eso ocurre DESPUÉS de que el wizard pide `textureResolution` (antes de que exista geometría). Mantenerlo como parámetro vinculante reintroduciría dos fuentes de verdad del tamaño del atlas que pueden discrepar. Se quita el picker como parámetro vinculante (o queda puramente cosmético, nunca enviado al backend) — el atlas de arranque sigue usando el default ya fijado en el ticket 028 (128×128) y crece/rechaza según la geometría real. El detalle de copy/UX es handoff a `ux-ui-designer` al desglosar el ticket.
+**Estos previews NUNCA se persisten como textura definitiva** — son exclusivamente para refrescar el atlas en pantalla durante el streaming; ni el `rect`+`data` inline ni el asset temporal de `asset_url` tocan `textures/{sha256}.png` ni ninguna fila de `mob_drafts`/`mob_revisions`. Lo único que persiste algo real es Apply (punto 10).
 
-### 11. Compatibilidad con revisiones existentes de Fase 1+2
+### 14. Selección de cara determinista en el viewport 3D
 
-Las filas viejas de `mob_revisions`/`mob_drafts` tienen `uv.regions[].status` ausente y `texture.storageKey = null`. Se resuelve sin migración de datos: `UvRegion.status` se deserializa con un default explícito (`UNPAINTED`) cuando el campo falta — un `MobProjectModel` viejo carga con TODAS sus regiones `UNPAINTED`, por lo que `UvLayoutSelector` cae en la rama `AlphaAutoPackStrategy` (comportamiento idéntico a hoy) y el exportador sintetiza el placeholder checkerboard como siempre. Cambio de esquema puramente aditivo con default seguro. Se agrega un test de regresión que deserializa una fixture real de una revisión de Fase 1+2 y confirma round-trip/export idénticos.
+**Reescritura completa — corrección #9.** El diseño anterior dependía de `intersection.face.normal` como mecanismo PRIMARIO de `pickCuboidFaceAt`. Se invierte: el etiquetado se hace en la construcción de la geometría, la normal queda como fallback/validación.
 
-### 12. Nuevas tablas/columnas Postgres
+- En `buildCuboidMesh` (`buildMobScene.ts`), cada `BoxGeometry` ya tiene 6 grupos de material en un orden fijo y documentado de Three.js (`+x, -x, +y, -y, +z, -z`). Al construir el mesh, se etiqueta explícitamente `mesh.userData.faceNamesByGroup: FaceName[6]`, resuelto una sola vez a partir de los ejes canónicos de `CoordinateSystemContract` (mismo mapeo que ya usa el resto del proyecto para no introducir una segunda fuente de verdad de orientación). Cero cambios a la forma en que `buildMobGroup` compone la escena.
+- `pickCuboidFaceAt(clientX, clientY)` (nuevo): raycastea igual que `pickCuboidIdAt` (ticket 017, sin cambios), y de la intersección toma `intersection.face.materialIndex` (el índice de grupo, nativo de Three.js, no depende de calcular nada) para indexar directamente `mesh.userData.faceNamesByGroup[materialIndex]` → `FaceName` de forma determinista.
+- `intersection.face.normal` se conserva solo como validación/fallback (ej. assert en dev de que la normal esperada del `FaceName` resuelto, compuesta con la rotación del mesh, coincide aproximadamente con la normal real reportada) — nunca como el mecanismo que decide el resultado.
+- La selección de cara vive en un store nuevo y separado (`textureSelectionStore.ts`, sibling de `selectionStore.ts`) — no se sobrecarga el contrato de `selectionStore.ts` que 017/031/036 ya dependen de él tal cual.
 
-Como texture/UV viven dentro del mismo `model_jsonb`/`draft_model_jsonb` ya existente, el cambio relacional es mínimo:
+### 15. Resize manual — preview local en `pointermove`, commit único en `pointerup`
+
+**Corrección #10, cierra un gap real del diseño anterior.** El endpoint `POST /geometry/apply` (punto 2) NO se llama en cada frame del drag:
+
+- **Durante `pointermove`**: el usuario ve un preview 100% local — la geometría del cuboid se actualiza visualmente en el viewport (tamaño en vivo del drag), sin ninguna llamada al backend. El editor NO intenta mostrar durante el arrastre cuál sería el resultado final de UV (evita el problema de Hallazgo B: el cliente no calcula UV autoritativa) — la textura de las caras afectadas se mantiene sin cambios visuales hasta el commit.
+- **Solo al `pointerup`** (o al confirmar el valor si se edita por input numérico) se envía la operación canónica a `POST /geometry/apply`.
+- Si el backend responde `PaintedRegionResizeConfirmationRequiredException`, el frontend restaura/mantiene el preview visual apropiado (el tamaño que el usuario soltó, sin aplicar aún el efecto sobre UV) y muestra el diálogo de confirmación.
+- "Confirmar" reenvía la MISMA operación con `confirmPaintLoss: true` — mismo mecanismo ya descrito en el punto 2, ahora explícitamente disparado solo al soltar, nunca durante el arrastre.
+- El diagrama de secuencia ya existente en este documento (sección `## Diagramas`) ya representaba una única llamada `POST` por operación — no requiere cambios de diagrama, solo esta aclaración de prosa sobre cuándo exactamente se dispara.
+
+### 16. Conflicto 409 al aplicar una propuesta de textura (sin cambios de fondo)
+
+**Sin cambios respecto al diseño anterior.** Geometría y textura viven en el MISMO `MobProjectModel`/misma fila de `mob_drafts`/`mob_revisions`. Se reutiliza el mismo chequeo ya implementado (`current_revision_number != base_revision_number || draft_version != base_draft_version` → 409) para jobs `generate_texture`/`edit_texture`. Este chequeo corre ANTES del flujo de atomicidad del punto 10 — si hay conflicto, no se toca ni MinIO ni Postgres.
+
+### 17. Compatibilidad con revisiones existentes de Fase 1+2
+
+**Sin cambios de fondo respecto al diseño anterior**, más el nuevo mecanismo del punto 3: `UvRegion.status` se deserializa con default explícito `UNPAINTED` cuando el campo falta (revisiones legacy) — un `MobProjectModel` viejo carga con TODAS sus regiones `UNPAINTED` y `reservations=[]`. `UvLayoutSelector` (para los llamadores del punto 2) cae en la rama `AlphaAutoPackStrategy`. Para EXPORTAR esas revisiones legacy, `LegacyUvNormalizationService` (punto 3) decide si hace falta normalizar en memoria antes de serializar. Cambio de esquema puramente aditivo con default seguro, sin migración de datos.
+
+### 18. Nuevas tablas/columnas Postgres
+
+Sin cambios respecto al diseño anterior — `target_bone_id` sigue siendo la única columna nueva, y sigue sin ser necesaria ninguna columna nueva para la corrección #8 (modelo de OpenAI configurable): `ai_jobs.model` ya es `text not null` genérico, solo cambia qué valor de runtime se le escribe (punto 12).
 
 ```sql
 -- V3__ai_jobs_texture_job_types.sql
@@ -458,11 +674,36 @@ alter table ai_jobs add constraint ai_jobs_job_type_check
 alter table ai_jobs add column target_bone_id text; -- nullable; qué bone se regeneró
 ```
 
-Deliberadamente sin tabla nueva para bitmaps de textura: MinIO ya es la fuente de verdad del contenido (content-addressed). Tampoco tabla nueva para huérfanas: viven dentro de `uv.regions` del JSONB.
+Deliberadamente sin tabla nueva para bitmaps (MinIO ya es la fuente de verdad content-addressed) ni para reservas de UV (`UvReservation` vive dentro de `uv.reservations` del mismo JSONB que ya contiene `uv.regions`).
 
-### 13. Riesgos confirmados como pendientes de ticket (no bloquean VoBo)
+### 19. Puntos confirmados sin cambios (corrección #13)
 
-Mismo criterio que Fase 1+2 (riesgos #1/#3 de ese documento): formatos de imagen adicionales más allá de PNG, límites de tamaño/resolución de textura, cuotas/rate-limiting de OpenAI, y moderación de contenido de imágenes generadas — se definen al desglosar el ticket correspondiente de Épica M, no cambian alcance ni arquitectura de este documento.
+Ninguno de estos se reabre — se listan para que el documento sea autocontenido:
+
+- Editor sin sistema general de layers (una sola superficie de textura editable por mob).
+- Canvas pixel-perfect sin antialiasing (invariante que además fundamenta la regla de crop/pad-nunca-scale del punto 8).
+- Selección UV↔3D cruzada, ahora con face picking determinista (punto 14).
+- Preview 3D en vivo reutilizando el `ThreeViewportService` singleton existente.
+- Herramientas brush/eraser/fill/eyedropper/selection, ahora con el mecanismo de Undo por patches (punto 9).
+- Grid visual (nunca se persiste como parte de la textura).
+- Undo independiente POR TAB (Modelo vs. Textura) — se refinó CÓMO (punto 9), no que sea independiente.
+- Bitmap fuera del `model_jsonb` (punto 4).
+- MinIO content-addressed (punto 4/6).
+- `StableUvStrategy` como concepto (puntos 1/2/7).
+- Diff Before/After obligatorio para IA, nunca se aplica directo.
+- Conflicto por `base_revision_number`+`base_draft_version` (punto 16).
+- SSE como mecanismo de progreso, ahora con el esquema formal de `preview_texture_patch` (punto 13).
+- OpenAI como `ImageGenerationProvider` (punto 11/12).
+- Claude como `StructuredReasoningProvider` para `TexturePlan` (punto 11).
+- Mockup 07/08 como fuente visual.
+- Animación permanece "Próximamente".
+- El export final abre en Blockbench sin reparación — reforzado, no debilitado, por el punto 3 (el exportador ya no reempaqueta nada que pudiera introducir una UV distinta a la que Blockbench ya validó al guardarse).
+
+### 20. Preguntas abiertas nuevas de esta revisión (para el "Riesgos y preguntas abiertas" del documento)
+
+Las 13 correcciones fueron precisas; solo queda genuinamente ambigua una interpretación con impacto de producto real:
+
+1. **Semántica exacta de "perfiles x1/x2" para presets Minecraft (punto 7)**: este diseño asume que "x1" es la dimensión que `AlphaAutoPackStrategy` calcula para la geometría real de ESE mob (no una tabla fija por especie — el dominio actual no modela mobs vanilla específicos, solo arquetipos `HUMANOID`/`ARACHNID`/`QUADRUPED`/`FLYING`) y que "x2" es el mismo layout UV al doble de resolución lineal. La lectura alternativa —una tabla de dimensiones canónicas fijas por tipo de mob vanilla real (ej. 64×32 para esqueleto)— no encaja con el modelo de dominio actual y requeriría agregar ese concepto desde cero. Se pide confirmación explícita del PO sobre cuál de las dos lecturas es la intención antes de tickets de Épica J/HU-29, porque cambia UX del paso de Configuración del wizard.
 
 ## Diagramas
 
@@ -487,10 +728,19 @@ stateDiagram-v2
     PAINTED --> UNPAINTED: resize confirmado\n(confirmPaintLoss=true)
     note right of PAINTED
         La cara se reempaqueta en espacio LIBRE
-        nuevo y queda UNPAINTED ahí. El bitmap
-        viejo, en su posición original, queda
-        como garbage aceptado — no se re-visita,
-        no hay GC este ciclo.
+        nuevo y queda UNPAINTED ahí. El rect
+        viejo se registra explícitamente como
+        UvReservation (tombstone, reason=
+        RESIZE_ABANDONED) — no se re-visita,
+        no hay GC este ciclo, y ese rect NUNCA
+        vuelve a asignarse.
+    end note
+
+    note left of UNPAINTED
+        Una UvReservation también cuenta como
+        "ocupado" para Add/resize futuros — el
+        espacio verdaderamente libre excluye
+        regiones activas Y reservas/tombstones.
     end note
 
     UNPAINTED --> ORPHAN: delete del cuboid dueño\n(bloque completo de sus 6 caras)
@@ -522,15 +772,18 @@ sequenceDiagram
 
     note over U,ED: Move/Rotate NO pasan por este flujo — siguen 100% client-side + autosave (018)
 
-    U->>ED: arrastra handle de resize del cuboid
-    ED->>API: POST geometry/apply { op: resize, ... }
+    U->>ED: pointerdown + pointermove (arrastra handle de resize)
+    ED->>ED: preview 100% LOCAL, sin llamadas al backend
+    U->>ED: pointerup (suelta el handle)
+    ED->>API: POST geometry/apply { op: resize, ... } (ÚNICA llamada, al soltar)
     API->>ENGINE: apply(operation)
     ENGINE->>SEL: resuelve estrategia UV
-    SEL-->>ENGINE: previousRegions tiene PAINTED/ORPHAN → StableUvStrategy
+    SEL-->>ENGINE: previousLayout tiene PAINTED/ORPHAN → StableUvStrategy
     ENGINE->>ENGINE: detecta caras PAINTED afectadas por el nuevo tamaño
     ENGINE-->>API: throw PaintedRegionResizeConfirmationRequiredException(caras afectadas)
     API-->>ED: 4xx con detalle de qué caras se perderían
 
+    ED->>ED: mantiene el preview visual del tamaño soltado (sin aplicar aún efecto sobre UV)
     ED->>U: modal "esto reubica el pintado de N caras — ¿continuar?"
 
     alt Usuario cancela
@@ -542,7 +795,7 @@ sequenceDiagram
         API->>ENGINE: apply(operation, confirmPaintLoss=true)
         ENGINE->>SEL: resuelve estrategia UV (mismo resultado: StableUvStrategy)
         SEL-->>ENGINE: StableUvStrategy
-        ENGINE->>ENGINE: reempaqueta caras afectadas en espacio libre,\nmarca UNPAINTED en su nueva ubicación
+        ENGINE->>ENGINE: crea UvReservation(rect viejo, RESIZE_ABANDONED),\nreempaqueta caras afectadas en espacio verdaderamente libre,\nmarca UNPAINTED en su nueva ubicación
         ENGINE-->>API: geometría + UV aplicados
         API-->>ED: 200 OK
         ED->>U: refleja el resize + reset visual de textura en esas caras
@@ -560,14 +813,16 @@ sequenceDiagram
     participant FE as Frontend
     participant ORCH as ai-orchestrator
     participant REASON as StructuredReasoningProvider (Claude)
-    participant IMG as OpenAiImageProvider (gpt-image-1)
+    participant PLAN as TextureGenerationSheetPlanner
+    participant IMG as OpenAiImageProvider (modelo configurable)
+    participant SLICE as TextureSheetSlicer
     participant COMP as TextureCompositorService
     participant JOBS as ai_jobs / ai_job_events (SSE)
     participant STORE as MinIO + mob_revisions
 
-    U->>FE: elige estilo (1 de 4) + nivel de detalle + boneId opcional
+    U->>FE: elige estilo (1 de 4) + nivel de detalle + boneId (o todos)
     FE->>ORCH: POST /ai/generate-texture (o edit-texture)
-    ORCH->>JOBS: insert ai_jobs (status=running, base_revision_number, base_draft_version)
+    ORCH->>JOBS: insert ai_jobs (status=running, model=config actual,\nbase_revision_number, base_draft_version)
     ORCH-->>FE: 202 { jobId }
     FE->>ORCH: GET /api/jobs/{jobId}/events (abre SSE)
 
@@ -576,23 +831,28 @@ sequenceDiagram
     ORCH->>JOBS: evento stage=analizando_paleta
     JOBS-->>FE: SSE
 
-    ORCH->>ORCH: resuelve determinísticamente cuboids del bone objetivo\n(o de todos) y sus footprints UV reales (AutoUv/UvLayoutSelector)
-    ORCH->>JOBS: evento stage=mapeando_caras
-    JOBS-->>FE: SSE
+    loop por cada bone objetivo (uno si es HU-37, todos si es HU-36)
+        ORCH->>PLAN: arma TextureGenerationSheet(bone)
+        PLAN->>PLAN: resuelve cuboids/caras del bone,\natlasUvRect real (AutoUv/UvLayoutSelector),\nlayout interno de la sheet
+        PLAN-->>ORCH: TextureGenerationSheet + CuboidFacePlacement[]
+        ORCH->>JOBS: evento stage=mapeando_caras
+        JOBS-->>FE: SSE
 
-    loop por cada cuboid del bone
-        ORCH->>ORCH: compone prompt (estilo + etiqueta semántica +\npaleta del TexturePlan + orientación de cara)
-        ORCH->>IMG: generateTextureRegion(prompt, ¿región existente?)
-        note right of IMG: /v1/images/edits si hay región que preservar/inpaintear,\n/v1/images/generations en la primera pasada
-        IMG-->>ORCH: bytes PNG de esa región
+        ORCH->>ORCH: compone UN prompt (estilo + etiqueta semántica +\npaleta/material del TexturePlan, para TODO el bone)
+        ORCH->>IMG: generateTextureSheet(sheet) — UNA sola llamada de imagen
+        note right of IMG: fallback/batching explícito y visible en el stage\nsolo si el bone excede límites técnicos del modelo
+        IMG-->>ORCH: bytes PNG de la sheet completa del bone
         ORCH->>JOBS: evento stage=generando_bone_X
         JOBS-->>FE: SSE
-        ORCH->>COMP: compone parche sobre COPIA en memoria del atlas actual
-        COMP->>COMP: si dimensiones no calzan: recorta/escala automático
+
+        ORCH->>SLICE: recorta cada CuboidFacePlacement.sheetRect de la sheet
+        SLICE-->>ORCH: N slices, uno por cara/cuboid del bone
+        ORCH->>COMP: compone cada slice sobre su atlasUvRect,\nsobre COPIA en memoria del atlas actual
+        COMP->>COMP: si un slice no calza: recorta/escala automático
         COMP->>COMP: limpieza de píxeles/paleta (Pixel Art / Minecraft Vanilla)
-        COMP-->>ORCH: atlas en memoria actualizado + rect del parche
-        ORCH->>JOBS: evento stage=componiendo_atlas|limpiando_pixeles,\npayload: preview_texture_patch (parche+rect, NO el atlas completo)
-        JOBS-->>FE: SSE — actualiza preview incremental en el viewport
+        COMP-->>ORCH: atlas en memoria actualizado + rects de los parches
+        ORCH->>JOBS: evento stage=componiendo_atlas|limpiando_pixeles,\npayload: preview_texture_patch{rect,encoding,data|url}
+        JOBS-->>FE: SSE — actualiza preview incremental en el viewport\n(NUNCA se persiste como textura definitiva)
     end
 
     ORCH->>JOBS: update ai_jobs status=completed, proposal_jsonb
@@ -613,37 +873,42 @@ sequenceDiagram
         end
         alt draft y revisión vigentes
             rect rgb(224, 255, 224)
-                STORE->>STORE: sube bitmap resultante a MinIO\ntextures/{sha256}.png (dedup automático si el hash ya existe)
-                STORE->>STORE: crea mob_revision (texture+geometry juntas en el mismo snapshot)
+                STORE->>STORE: 1) sube bitmap resultante a MinIO textures/{sha256}.png\n(backend calcula/verifica el hash, dedup automático)
+                STORE->>STORE: 2) UNA transacción: mob_drafts + mob_revisions\n+ current_revision_number — todo o nada
             end
-            STORE-->>FE: 200 aplicado
+            STORE-->>FE: 200 aplicado — refresh trae EXACTAMENTE esta textura
         end
     end
 ```
 
-Mismo lenguaje visual que el diagrama de IA de geometría ya aprobado (rect rojo = único desenlace de conflicto, rect verde = único punto que persiste): el bloque de conflicto verifica geometría **o** textura indistintamente porque comparten el mismo draft, y el SSE nunca manda el atlas completo — solo el parche y su rectángulo, evento a evento.
+Mismo lenguaje visual que el diagrama de IA de geometría ya aprobado (rect rojo = único desenlace de conflicto, rect verde = único punto que persiste, y ahora explícitamente atómico — ver Diseño técnico §10): el bloque de conflicto verifica geometría **o** textura indistintamente porque comparten el mismo draft, y el SSE nunca manda el atlas completo — solo el parche y su rectángulo, evento a evento, con el transporte formal de `preview_texture_patch` (Diseño técnico §13). La diferencia central respecto a la versión anterior de este diagrama: el loop externo es **por bone**, no por cuboid — una sola llamada de imagen genera todas las caras de ese bone juntas.
 
 ### Diagrama de componentes — extensión de la arquitectura
 
 ```mermaid
 flowchart LR
-    subgraph CALLERS["Llamadores existentes de UvLayoutStrategy (módulo de cada uno sin cambio)"]
+    subgraph CALLERS["Llamadores de UvLayoutStrategy — SOLO al APLICAR cambios de geometría"]
         GE["GeometryEngine.apply"]
         GPS["GeometryPlannerService"]
         AGEPS["AiGeometryEditPlannerService"]
-        EXP5["BBModelExporterV5"]
     end
 
-    SEL["UvLayoutSelector\nimplements UvLayoutStrategy\n(NUEVO, domain/uv — único punto de inyección)"]
+    SEL["UvLayoutSelector\nimplements UvLayoutStrategy\n(NUEVO, domain/uv)"]
     ALPHA["AlphaAutoPackStrategy\n(existente, Fase 1+2, sin cambios)"]
-    STABLE["StableUvStrategy\n(NUEVO, domain/uv)"]
+    STABLE["StableUvStrategy\n(NUEVO, domain/uv —\nconsidera PAINTED/ORPHAN Y UvReservation)"]
 
     GE --> SEL
     GPS --> SEL
     AGEPS --> SEL
-    EXP5 --> SEL
-    SEL -- "previousRegions sin PAINTED/ORPHAN\n→ idéntico a Fase 1+2" --> ALPHA
-    SEL -- "previousRegions con ≥1 PAINTED/ORPHAN\n→ preserva regiones pintadas" --> STABLE
+    SEL -- "layout sin PAINTED/ORPHAN\n→ idéntico a Fase 1+2" --> ALPHA
+    SEL -- "layout con ≥1 PAINTED/ORPHAN\n→ preserva regiones + reservas" --> STABLE
+
+    subgraph EXPORT["Export — el exportador NUNCA decide UV"]
+        LEGACY["LegacyUvNormalizationService\n(NUEVO, domain/uv —\nsolo si 0 regiones pintadas Y difiere de AlphaAutoPack)"]
+        EXP5["BBModelExporterV5.export(model)\n(firma sin UvLayoutStrategy —\nserializa model.uv() tal cual, nunca lo muta)"]
+    end
+    MOBEXPORT["MobExportService"] -- "revisionModel" --> LEGACY
+    LEGACY -- "model normalizado en memoria\n(no persistido) o sin cambio" --> EXP5
 
     subgraph AIPROV["Interfaces de proveedor de IA (ya existentes)"]
         REASONI["StructuredReasoningProvider"]
@@ -651,21 +916,26 @@ flowchart LR
         IMGI["ImageGenerationProvider\n(interfaz ya existente, antes sin implementación)"]
     end
     CLAUDEP["ClaudeProvider\n(implementa Reasoning + Vision, sin cambio)"]
-    OPENAIP["OpenAiImageProvider\n(NUEVO, aiorchestrator/provider —\ngpt-image-1 vía /v1/images/edits y /generations)"]
+    OPENAIP["OpenAiImageProvider\n(NUEVO, aiorchestrator/provider —\nmodelo configurable vía OPENAI_IMAGE_MODEL,\n/v1/images/edits y /generations)"]
 
     REASONI -. implementado por .-> CLAUDEP
     VISIONI -. implementado por .-> CLAUDEP
     IMGI -. implementado por .-> OPENAIP
 
-    ORCHNODE["aiorchestrator\n(orquesta el loop de generate-texture por cuboid)"]
+    ORCHNODE["aiorchestrator\n(orquesta la generación por bone)"]
+    PLANNER["TextureGenerationSheetPlanner\n(NUEVO, aiorchestrator/texture —\narma la sheet por bone, determinista)"]
     ORCHNODE --> REASONI
+    ORCHNODE --> PLANNER
+    PLANNER --> ORCHNODE
     ORCHNODE --> IMGI
 
-    COMPOSITOR["TextureCompositorService\n(NUEVO, aiorchestrator/texture —\ncompone parches sobre copia en memoria del atlas)"]
-    OPENAIP -- "bytes PNG de la región" --> COMPOSITOR
+    SLICER["TextureSheetSlicer\n(NUEVO, aiorchestrator/texture)"]
+    COMPOSITOR["TextureCompositorService\n(aiorchestrator/texture —\ncompone slices sobre copia en memoria del atlas)"]
+    OPENAIP -- "bytes PNG de la sheet del bone" --> SLICER
+    SLICER -- "N slices" --> COMPOSITOR
     COMPOSITOR -- "atlas en memoria actualizado" --> ORCHNODE
 
-    ENDPOINT["POST /api/mobs/{mobId}/geometry/apply\n(NUEVO, project/api/MobGeometryController\n+ project/geometry, mismo patrón que project/draft)"]
+    ENDPOINT["POST /api/mobs/{mobId}/geometry/apply\n(NUEVO, project/api/MobGeometryController\n+ project/geometry, mismo patrón que project/draft —\ndisparado solo al pointerup, nunca en cada frame)"]
     FE["Editor manual (frontend)"] -- "Resize / Add / Remove cuboid\n(Move/Rotate: sin cambio, 100% client-side)" --> ENDPOINT
     ENDPOINT --> GE
 ```
@@ -674,29 +944,33 @@ flowchart LR
 
 Documentadas para resolverse a nivel de ticket — no bloquean el VoBo de este documento porque no cambian alcance ni arquitectura (mismo criterio que Fase 1+2):
 
-1. **Convención exacta de etiquetado de regiones UV** (HU-24) cuando los bones tienen nombres libres/arbitrarios (asignados por la IA o por el usuario, no un esqueleto fijo tipo vanilla Minecraft) — se define con `ux-ui-designer` al crear el ticket del editor.
-2. **Formatos de imagen de referencia adicionales soportados** para el análisis de material/paleta — se define en el ticket de `ai-orchestrator`/Épica M.
-3. **Límite de tamaño/resolución de textura** — se define en el ticket de `AutoUv`/Épica J.
-4. **Cuotas/rate-limiting y control de costo de llamadas a OpenAI** por mob y/o por sesión — extiende el riesgo #3 ya abierto en Fase 1+2 (equivalente para Claude) a este nuevo proveedor; se define en el ticket de `ai-orchestrator`.
-5. **Control de contenido/moderación** sobre las imágenes generadas por OpenAI — se define en el ticket de `ai-orchestrator`.
-6. **¿Soporta este ciclo pegar un PNG completo sobre TODO el atlas de una sola vez** (mencionado en master prompt §11), o solo pegado acotado a una región seleccionada (HU-28)? — se define al desglosar el ticket del editor manual.
-7. **Retención/GC de bitmaps huérfanos en MinIO** — sin política de poda este ciclo (mismo criterio que la retención de `mob_revisions` en Fase 1+2).
+1. **Semántica exacta de "perfiles x1/x2" para presets Minecraft** (Diseño técnico §7, HU-29) — este documento asume que "x1" es la dimensión que `AlphaAutoPackStrategy` calcula para la geometría real de ese mob (no una tabla fija de dimensiones canónicas por especie vanilla, concepto que el dominio actual no modela). La lectura alternativa (tabla fija por tipo de mob) cambiaría la UX del wizard y requeriría agregar ese concepto desde cero. **Requiere confirmación explícita del PO** antes de desglosar el ticket de Épica J/HU-29 — es la única pregunta genuinamente nueva que dejó la revisión de correcciones del 9 sep 2026.
+2. **Convención exacta de etiquetado de regiones UV** (HU-24) cuando los bones tienen nombres libres/arbitrarios (asignados por la IA o por el usuario, no un esqueleto fijo tipo vanilla Minecraft) — se define con `ux-ui-designer` al crear el ticket del editor.
+3. **Formatos de imagen de referencia adicionales soportados** para el análisis de material/paleta — se define en el ticket de `ai-orchestrator`/Épica M.
+4. **Límite absoluto de tamaño/resolución de textura** (tope superior, distinto de la semántica x1/x2 del punto 1) — se define en el ticket de `AutoUv`/Épica J.
+5. **Cuotas/rate-limiting y control de costo de llamadas a OpenAI** por mob y/o por sesión — extiende el riesgo #3 ya abierto en Fase 1+2 (equivalente para Claude) a este nuevo proveedor; se define en el ticket de `ai-orchestrator`.
+6. **Control de contenido/moderación** sobre las imágenes generadas por OpenAI — se define en el ticket de `ai-orchestrator`.
+7. **Límites técnicos exactos de dimensión/resolución del modelo de OpenAI configurado** (Diseño técnico §11, umbral de fallback/batching de `TextureGenerationSheet`) — se verifica contra la documentación real del proveedor al implementar el ticket de Épica M.
+8. **Retención/GC de bitmaps huérfanos en MinIO** (incluye ahora también `UvReservation` sin reclamo de espacio) — sin política de poda este ciclo (mismo criterio que la retención de `mob_revisions` en Fase 1+2).
 
 ## Impacto estimado
 
 Lista tentativa de tickets a desglosar con el skill `nuevo-ticket` tras el VoBo — no definitiva:
 
-1. `MobProjectModel`: extensión de `UvRegion`/`UvRegionStatus`, contratos TS + DTOs Java + JSON Schemas actualizados en `contracts/` (HU-24, HU-29).
-2. `UvLayoutSelector` + `StableUvStrategy` + `BoxUvMath` compartido + `PaintedRegionResizeConfirmationRequiredException` (HU-33, HU-34, HU-35).
-3. `POST /api/mobs/{mobId}/geometry/apply` (nuevo `MobGeometryController`/`project/geometry`) + wiring del flujo de confirmación en el editor manual (HU-33).
-4. Persistencia content-addressed de textura en MinIO (`PUT /api/mobs/{mobId}/texture`, dirty-check por `storageKey`) + migración `V3__ai_jobs_texture_job_types.sql` (HU-30, HU-31, HU-39).
-5. Editor de textura/UV manual: canvas 2D/OffscreenCanvas, herramientas (brush/eraser/fill/eyedropper/selection/copy-paste/undo-redo/grid), `textureEditorStore.ts` con pila de Undo independiente (HU-27, HU-28, HU-32).
-6. Selección cruzada cuboid↔UV: `pickCuboidFaceAt`, `textureSelectionStore.ts`, resaltado bidireccional 2D↔3D (HU-25, HU-26).
-7. Pantalla del editor de textura (mockup 07), tab "Textura" pasa a funcional (HU-41).
-8. `OpenAiImageProvider` (interfaz extendida `ImageGenerationProvider.generateTextureRegion`) + `MockImageProvider` real de tests (HU-39, HU-40).
-9. `TexturePlan` (contrato + validación de schema) vía `StructuredReasoningProvider`/Claude (HU-36).
-10. `TextureCompositorService` (recorte/escala automático, limpieza de píxeles/paleta) (HU-40).
-11. Pipeline completo de generación/regeneración de textura por IA + SSE con nuevos `stage` + diff Antes/Después + Apply/Reject con conflicto 409 (HU-36, HU-37, HU-38).
-12. Pantalla del generador IA de textura (mockup 08) (HU-42).
-13. Actualización de `BBModelExporterV5` para no recomputar UV cuando hay regiones pintadas (Hallazgo A) + fixtures nuevas contra Blockbench real con textura pintada (HU-43).
-14. Suite de aceptación E2E de Fase 3 (análoga a HU-23/ticket 033) (HU-43).
+1. `MobProjectModel`: extensión de `UvRegion`/`UvRegionStatus` + `UvReservation`/`UvReservationReason` nuevos, contratos TS + DTOs Java + JSON Schemas actualizados en `contracts/` (HU-24, HU-29, HU-33/34/35).
+2. `UvLayoutSelector` + `StableUvStrategy` (considera regiones y reservas) + `BoxUvMath` compartido + `PaintedRegionResizeConfirmationRequiredException` — inyectado SOLO en `GeometryEngine.apply`/`GeometryPlannerService`/`AiGeometryEditPlannerService`, nunca en el exportador (HU-33, HU-34, HU-35).
+3. `POST /api/mobs/{mobId}/geometry/apply` (nuevo `MobGeometryController`/`project/geometry`) + wiring del flujo de confirmación en el editor manual, con preview local en `pointermove` y commit único en `pointerup` (HU-33).
+4. Resolución de atlas en dos estados: recomendación/upgrade explícito x1↔x2 (Minecraft) o power-of-two (custom) antes de pintar, congelado + `UvAtlasOverflowException` después (HU-29) — **bloqueado en la confirmación del PO sobre semántica x1/x2 (Riesgos #1)**.
+5. Persistencia content-addressed de textura con el backend como autoridad de hash (`PUT /api/mobs/{mobId}/texture` decodifica/valida/calcula SHA-256 server-side), dirty-check por `storageKey`, flush obligatorio antes de crear Revision + migración `V3__ai_jobs_texture_job_types.sql` (HU-30, HU-31, HU-39).
+6. `TexturePatchCommand` (Undo/Redo de textura por patches, nunca snapshot completo) + `textureEditorStore.ts` con pila independiente — brush/erase/fill/paste/import producen patches acotados a su `rect` (HU-27, HU-32).
+7. Editor de textura/UV manual: canvas 2D/OffscreenCanvas, herramientas (brush/eraser/fill/eyedropper/selection/copy-paste/grid) (HU-27).
+8. Import de PNG — región seleccionada (crop/fit) y atlas completo (crop/pad seguro, nunca escalar, un solo Undo) (HU-28).
+9. Selección cruzada cuboid↔UV con face picking determinista: etiquetado `FaceName` en la construcción de la geometría Three.js, `pickCuboidFaceAt`, `textureSelectionStore.ts` (HU-25, HU-26).
+10. Pantalla del editor de textura (mockup 07), tab "Textura" pasa a funcional (HU-41).
+11. `OpenAiImageProvider` con modelo configurable (`OPENAI_IMAGE_MODEL`, nunca hardcodeado) — interfaz extendida `ImageGenerationProvider.generateTextureSheet` + `MockImageProvider` real de tests (HU-39, HU-40).
+12. `TexturePlan` (contrato + validación de schema) vía `StructuredReasoningProvider`/Claude (HU-36).
+13. `TextureGenerationSheetPlanner` + `TextureSheetSlicer` + `TextureCompositorService` — generación por bone (una sola llamada de imagen cuando es posible, fallback/batching explícito si no) (HU-37, HU-40).
+14. Pipeline completo de generación/regeneración de textura por IA + SSE con nuevos `stage` y esquema formal de `preview_texture_patch` (umbral inline/asset) + diff Antes/Después + Apply/Reject **atómico** con conflicto 409 (HU-36, HU-37, HU-38).
+15. Pantalla del generador IA de textura (mockup 08) (HU-42).
+16. `BBModelExporterV5`/`V4`: cambio de firma a `export(model)` — nunca invoca ninguna `UvLayoutStrategy`, serializa `model.uv()` tal cual + `LegacyUvNormalizationService` (paso explícito previo, solo para revisiones legacy seguras) + fixtures nuevas contra Blockbench real con textura pintada (HU-43).
+17. Suite de aceptación E2E de Fase 3 (análoga a HU-23/ticket 033) (HU-43).
