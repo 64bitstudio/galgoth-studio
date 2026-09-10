@@ -22,8 +22,37 @@ vi.mock('three', async (importOriginal) => {
   return { ...actual, WebGLRenderer: FakeWebGLRenderer }
 })
 
+// Ticket 048 -- el decode real de PNG depende de `createImageBitmap`/canvas
+// 2D real, ninguno de los dos existe en jsdom (ver docstring de
+// `pngImportDecode.ts`); se mockea acá para poder ejercitar el flujo de
+// import end-to-end (selector de región -> TextureImportPanel -> store).
+vi.mock('../pngImportDecode', () => ({
+  decodePngFileToAtlasBuffer: vi.fn(),
+  PngDecodeError: class PngDecodeError extends Error {},
+}))
+
 const { threeViewportService } = await import('../../../viewport/ThreeViewportService')
 const { default: TextureCanvas } = await import('../TextureCanvas.vue')
+const { decodePngFileToAtlasBuffer } = await import('../pngImportDecode')
+const mockDecode = vi.mocked(decodePngFileToAtlasBuffer)
+
+function solidPixels(width: number, height: number, color: [number, number, number, number]): Uint8ClampedArray {
+  const pixels = new Uint8ClampedArray(width * height * 4)
+  for (let i = 0; i < pixels.length; i += 4) {
+    pixels.set(color, i)
+  }
+  return pixels
+}
+
+const FAKE_PNG_FILE = new File([new Uint8Array([1])], 'x.png', { type: 'image/png' })
+
+async function selectImportFile(wrapper: ReturnType<typeof mount>, file: File): Promise<void> {
+  const input = wrapper.get('input[aria-label="Archivo PNG a importar"]').element as HTMLInputElement
+  Object.defineProperty(input, 'files', { value: [file], configurable: true })
+  input.dispatchEvent(new Event('change'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await wrapper.vm.$nextTick()
+}
 
 const EMPTY_FACES = {
   north: { uv: [0, 0, 0, 0] as [number, number, number, number], texture: null },
@@ -388,5 +417,86 @@ describe('TextureCanvas.vue', () => {
     w.get('input[aria-label="Color activo"]')
     w.get('input[aria-label="Tamaño de pincel en píxeles del atlas"]')
     w.get('select[aria-label="Región UV a enfocar"]')
+  })
+
+  describe('ticket 048 -- import de PNG (región seleccionada y atlas completo)', () => {
+    beforeEach(() => mockDecode.mockReset())
+
+    it('AC B (atlas completo): con "Todas las caras" seleccionado (default), el destino del import es el atlas completo -- un solo TexturePatchCommand con rect = atlas completo', async () => {
+      const w = mountCanvas(modelWith({ width: 4, height: 4 }))
+      mockDecode.mockResolvedValue({ pixels: solidPixels(4, 4, [9, 9, 9, 255]), width: 4, height: 4 })
+      const store = useTextureEditorStore()
+      const recordSpy = vi.spyOn(store, 'recordPatch')
+
+      await selectImportFile(w, FAKE_PNG_FILE)
+      const confirmButton = w.findAll('button').find((b) => b.text() === 'Confirmar import')!
+      await confirmButton.trigger('click')
+
+      expect(recordSpy).toHaveBeenCalledTimes(1)
+      expect(recordSpy).toHaveBeenCalledWith({ x: 0, y: 0, width: 4, height: 4 }, expect.any(Uint8ClampedArray), expect.any(Uint8ClampedArray))
+      expect(pixelAt(store.atlas!.pixels, 4, 0, 0)).toEqual([9, 9, 9, 255])
+      expect(pixelAt(store.atlas!.pixels, 4, 3, 3)).toEqual([9, 9, 9, 255])
+    })
+
+    it('AC A (región seleccionada): al elegir una región específica, el import queda ACOTADO a esa región -- el resto del atlas no cambia', async () => {
+      const region: UvRegion = { cuboidId: 'c1', face: 'north', rect: [1, 1, 3, 3], status: 'unpainted' }
+      const model = modelWith({ width: 6, height: 6, cuboids: [cuboid('c1', 'Cabeza')], regions: [region] })
+      const w = mountCanvas(model)
+      await w.get('select[aria-label="Región UV a enfocar"]').setValue('c1:north')
+      mockDecode.mockResolvedValue({ pixels: solidPixels(2, 2, [200, 0, 0, 255]), width: 2, height: 2 })
+      const store = useTextureEditorStore()
+      const recordSpy = vi.spyOn(store, 'recordPatch')
+
+      await selectImportFile(w, FAKE_PNG_FILE)
+      const confirmButton = w.findAll('button').find((b) => b.text() === 'Confirmar import')!
+      await confirmButton.trigger('click')
+
+      expect(recordSpy).toHaveBeenCalledTimes(1)
+      expect(recordSpy).toHaveBeenCalledWith({ x: 1, y: 1, width: 2, height: 2 }, expect.any(Uint8ClampedArray), expect.any(Uint8ClampedArray))
+      expect(pixelAt(store.atlas!.pixels, 6, 1, 1)).toEqual([200, 0, 0, 255])
+      expect(pixelAt(store.atlas!.pixels, 6, 2, 2)).toEqual([200, 0, 0, 255])
+      // Fuera de la región: intacto.
+      expect(pixelAt(store.atlas!.pixels, 6, 0, 0)).toEqual([0, 0, 0, 0])
+      expect(pixelAt(store.atlas!.pixels, 6, 5, 5)).toEqual([0, 0, 0, 0])
+    })
+
+    it('AC B (dimensiones distintas + atlas congelado, ticket 042): con una región PAINTED existente, importar un PNG de otro tamaño hace crop/pad hacia las dimensiones VIGENTES del atlas -- nunca las cambia', async () => {
+      const region: UvRegion = { cuboidId: 'c1', face: 'north', rect: [0, 0, 4, 4], status: 'painted' }
+      const model = modelWith({ width: 4, height: 4, cuboids: [cuboid('c1', 'Cabeza')], regions: [region] })
+      const w = mountCanvas(model) // selector queda en "Todas las caras" -> destino = atlas completo
+      mockDecode.mockResolvedValue({ pixels: solidPixels(10, 10, [5, 5, 5, 255]), width: 10, height: 10 }) // más grande que el atlas congelado
+      const store = useTextureEditorStore()
+
+      await selectImportFile(w, FAKE_PNG_FILE)
+      expect(w.text()).toContain('recortará')
+      const confirmButton = w.findAll('button').find((b) => b.text() === 'Confirmar import')!
+      await confirmButton.trigger('click')
+
+      // El atlas SIGUE siendo 4x4 -- el import nunca lo creció ni lo redujo.
+      expect(store.atlas!.width).toBe(4)
+      expect(store.atlas!.height).toBe(4)
+      expect(pixelAt(store.atlas!.pixels, 4, 0, 0)).toEqual([5, 5, 5, 255])
+    })
+
+    it('sin confirmación explícita, el atlas/región permanece sin cambios (A o B)', async () => {
+      const w = mountCanvas(modelWith({ width: 4, height: 4 }))
+      mockDecode.mockResolvedValue({ pixels: solidPixels(4, 4, [1, 1, 1, 1]), width: 4, height: 4 })
+      const store = useTextureEditorStore()
+      const before = store.atlas!.pixels.slice()
+
+      await selectImportFile(w, FAKE_PNG_FILE)
+      // No se hace click en Confirmar -- el atlas debe seguir intacto.
+      expect(store.atlas!.pixels).toEqual(before)
+
+      const cancelButton = w.findAll('button').find((b) => b.text() === 'Cancelar')!
+      await cancelButton.trigger('click')
+      expect(store.atlas!.pixels).toEqual(before)
+    })
+
+    it('a11y: el botón de importar tiene texto visible y el input de archivo tiene aria-label', () => {
+      const w = mountCanvas(modelWith({ width: 4, height: 4 }))
+      expect(w.find('input[aria-label="Archivo PNG a importar"]').exists()).toBe(true)
+      expect(w.findAll('button').some((b) => b.text().includes('Importar PNG'))).toBe(true)
+    })
   })
 })

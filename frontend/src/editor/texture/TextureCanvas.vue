@@ -19,6 +19,13 @@
  * ensambla la pantalla completa del mockup 07 (eso es el ticket 050) --
  * este componente es la pieza que 050 va a montar.
  *
+ * Ticket 048 -- agrega import de PNG (`TextureImportPanel.vue`), tanto
+ * sobre la región enfocada por el selector de arriba como sobre el
+ * atlas completo cuando el selector está en "Todas las caras" (ver
+ * `importTargetRect`/`importTargetLabel` más abajo -- reutiliza el
+ * MISMO selector de foco de región de 047 en vez de agregar un segundo
+ * control redundante).
+ *
  * Arquitectura de dos capas superpuestas, deliberada:
  * - canvas (bitmap real, canvasRef): tamaño intrínseco EXACTO al atlas
  *   (atlas.width/atlas.height en px de canvas, nunca más) -- ahí se
@@ -81,9 +88,11 @@ import {
   type RgbaColor,
 } from './pixelTools'
 import { ALL_REGIONS_VALUE, buildSelectableRegions, regionKey, type SelectableRegion } from './regionLabels'
+import type { TextureRect } from './TexturePatchCommand'
 import { readRectFrom } from './textureRectBuffer'
 import { useTextureEditorStore } from './textureEditorStore'
 import { useTextureSelectionStore } from './textureSelectionStore'
+import TextureImportPanel from './TextureImportPanel.vue'
 
 type Tool = 'brush' | 'eraser' | 'fill' | 'eyedropper'
 
@@ -156,6 +165,30 @@ function isRegionSelected(region: SelectableRegion): boolean {
 function regionRect(region: SelectableRegion): { x: number; y: number; width: number; height: number } {
   const [x0, y0, x1, y1] = region.rect
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
+}
+
+// -- Ticket 048: destino del import de PNG -------------------------------
+// Reutiliza el selector de región de 047 en vez de un control nuevo:
+// "Todas las caras" -> AC (B) atlas completo; una región puntual -> AC
+// (A) esa región seleccionada. `resolveImportTarget` se pasa como
+// FUNCIÓN (no como prop de valor) a `TextureImportPanel` -- ver su
+// docstring para la razón (evita una carrera con el timing de
+// reactividad de Vue justo después del montaje, cuando el atlas todavía
+// no cargó).
+const selectedRegion = computed<SelectableRegion | null>(() => selectableRegions.value.find((region) => regionKey(region) === selectedRegionKey.value) ?? null)
+
+const importTargetLabel = computed<string>(() => (selectedRegion.value ? `la región "${selectedRegion.value.label}"` : 'el atlas completo'))
+
+function resolveImportTarget(): { rect: TextureRect; label: string } {
+  const region = selectedRegion.value
+  const rect = region ? regionRect(region) : { x: 0, y: 0, width: atlasWidth.value, height: atlasHeight.value }
+  const label = region ? `la región "${region.label}"` : 'el atlas completo'
+  return { rect, label }
+}
+
+function handleImported(): void {
+  syncDataTexture()
+  redraw()
 }
 
 function swatchLabel(color: string): string {
@@ -462,6 +495,8 @@ function handlePointerUp(event: PointerEvent): void {
         Tamaño de pincel (píxeles del atlas)
         <input v-model.number="brushSize" type="number" aria-label="Tamaño de pincel en píxeles del atlas" :min="MIN_BRUSH_SIZE" :max="MAX_BRUSH_SIZE" class="texture-canvas__number-input" />
       </label>
+
+      <TextureImportPanel :target-label="importTargetLabel" :resolve-target="resolveImportTarget" @imported="handleImported" />
     </aside>
 
     <div class="texture-canvas__stage-wrapper">
