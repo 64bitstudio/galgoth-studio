@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -46,6 +48,13 @@ class SchemaConstraintsTest {
 		return id;
 	}
 
+	/** `fk_ai_jobs_base_revision` (V1) exige que `(mob_id, base_revision_number)` resuelva a una fila real de `mob_revisions` -- necesario para probar `generate_texture`/`edit_texture` (V3), que SIEMPRE corren sobre un mob con geometría ya usable. */
+	private void aMobRevision(UUID mobId, int revisionNumber) {
+		jdbc.update(
+				"insert into mob_revisions (id, mob_id, revision_number, model_jsonb, created_by) values (?, ?, ?, '{}'::jsonb, 'user')",
+				UUID.randomUUID(), mobId, revisionNumber);
+	}
+
 	@Test
 	void mobs_current_revision_number_toma_default_0_cuando_se_omite() {
 		UUID projectId = aProject();
@@ -76,18 +85,29 @@ class SchemaConstraintsTest {
 		assertThat(count).isEqualTo(1);
 	}
 
-	@Test
-	void ai_jobs_edit_rechaza_base_revision_o_draft_version_nulos() {
+	/**
+	 * S5976: unifica 3 tests casi idénticos -- mismo INSERT exacto (sin
+	 * `base_revision_number`/`base_draft_version`), solo cambia el valor
+	 * de `job_type`: `edit`/`generate_texture` violan
+	 * `chk_ai_jobs_base_values_by_type` por `base_*` nulos, y
+	 * `not_a_real_job_type` viola la whitelist de `job_type` -- ambas
+	 * causas distintas, mismo tipo de excepción verificado
+	 * (`DataIntegrityViolationException`).
+	 */
+	@ParameterizedTest
+	@ValueSource(strings = {"edit", "generate_texture", "not_a_real_job_type"})
+	void ai_jobs_rechaza_insercion_invalida_por_job_type_o_base_nulos(String jobType) {
 		UUID projectId = aProject();
 		UUID mobId = aMob(projectId);
+		UUID jobId = UUID.randomUUID();
 
 		assertThatThrownBy(() -> jdbc.update(
 				"""
 				insert into ai_jobs
 				  (id, mob_id, job_type, status, provider, model, prompt_version, schema_version)
-				values (?, ?, 'edit', 'running', 'claude', 'claude-fable-5-1', 'v1', 'v1')
+				values (?, ?, ?, 'running', 'claude', 'claude-fable-5-1', 'v1', 'v1')
 				""",
-				UUID.randomUUID(), mobId))
+				jobId, mobId, jobType))
 				.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
@@ -141,6 +161,64 @@ class SchemaConstraintsTest {
 				Integer.class);
 
 		assertThat(count).isZero();
+	}
+
+	/** Ticket 054 (V3), Diseño técnico §18 -- `generate_texture`/`edit_texture` se comportan como `edit` en cuanto a exigir `base_*` NOT NULL (ver el comentario de la migración: HALLAZGO real sobre `chk_ai_jobs_base_values_by_type`). */
+	@Test
+	void ai_jobs_generate_texture_acepta_base_revision_y_draft_version_no_nulos() {
+		UUID projectId = aProject();
+		UUID mobId = aMob(projectId);
+		aMobRevision(mobId, 1);
+
+		jdbc.update(
+				"""
+				insert into ai_jobs
+				  (id, mob_id, job_type, status, provider, model, prompt_version, schema_version, base_revision_number, base_draft_version)
+				values (?, ?, 'generate_texture', 'running', 'claude', 'claude-fable-5-1', 'v1', 'v1', 1, 1)
+				""",
+				UUID.randomUUID(), mobId);
+
+		Integer count = jdbc.queryForObject(
+				"select count(*) from ai_jobs where mob_id = ? and job_type = 'generate_texture'", Integer.class, mobId);
+		assertThat(count).isEqualTo(1);
+	}
+
+	@Test
+	void ai_jobs_edit_texture_acepta_target_bone_id_y_base_valores_no_nulos() {
+		UUID projectId = aProject();
+		UUID mobId = aMob(projectId);
+		aMobRevision(mobId, 1);
+		UUID jobId = UUID.randomUUID();
+
+		jdbc.update(
+				"""
+				insert into ai_jobs
+				  (id, mob_id, job_type, status, provider, model, prompt_version, schema_version, base_revision_number, base_draft_version, target_bone_id)
+				values (?, ?, 'edit_texture', 'running', 'openai', 'gpt-image-2.5-sunburst-2026-09-08', 'texture-sheet-v1', 'texture-sheet-v1', 1, 1, 'bone-1')
+				""",
+				jobId, mobId);
+
+		String targetBoneId = jdbc.queryForObject("select target_bone_id from ai_jobs where id = ?", String.class, jobId);
+		assertThat(targetBoneId).isEqualTo("bone-1");
+	}
+
+	@Test
+	void ai_jobs_target_bone_id_es_nullable() {
+		UUID projectId = aProject();
+		UUID mobId = aMob(projectId);
+		aMobRevision(mobId, 1);
+		UUID jobId = UUID.randomUUID();
+
+		jdbc.update(
+				"""
+				insert into ai_jobs
+				  (id, mob_id, job_type, status, provider, model, prompt_version, schema_version, base_revision_number, base_draft_version)
+				values (?, ?, 'generate_texture', 'running', 'claude', 'claude-fable-5-1', 'v1', 'v1', 1, 1)
+				""",
+				jobId, mobId);
+
+		String targetBoneId = jdbc.queryForObject("select target_bone_id from ai_jobs where id = ?", String.class, jobId);
+		assertThat(targetBoneId).isNull();
 	}
 
 }

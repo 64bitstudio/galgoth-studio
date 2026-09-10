@@ -61,11 +61,23 @@ export interface TextureDocument {
  */
 export type UvRegionStatus = 'unpainted' | 'painted' | 'orphan'
 
+/**
+ * Ticket 054. Origen del contenido de una UvRegion PAINTED -- 'hand'
+ * (pintado a mano) o 'ai' (compuesto por el pipeline de generación de
+ * textura por IA). `undefined`/`null` (el JSON legacy completo anterior
+ * a 054, y toda región pintada a mano por el editor manual -- 047 -- que
+ * todavía no escribe este campo explícitamente) se trata como origen
+ * desconocido/posible pintado a mano por quien lo interprete -- nunca se
+ * asume 'ai' por default.
+ */
+export type UvPaintOrigin = 'hand' | 'ai'
+
 export interface UvRegion {
   cuboidId: string
   face: FaceName
   rect: [number, number, number, number]
   status: UvRegionStatus
+  paintedBy?: UvPaintOrigin | null
 }
 
 /** Ticket 040. Único valor este ciclo: el rect que una cara PAINTED ocupaba antes de un resize destructivo confirmado que la reubicó. */

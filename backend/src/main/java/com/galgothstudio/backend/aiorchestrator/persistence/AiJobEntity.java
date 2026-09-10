@@ -60,6 +60,10 @@ public class AiJobEntity {
 	@Column(name = "base_draft_version")
 	private Integer baseDraftVersion;
 
+	/** Ticket 054 (V3 migration) -- nullable: NULL para `job_type='generate_texture'` (todos los bones), poblado para `job_type='edit_texture'` (regeneración de un bone puntual, HU-37). */
+	@Column(name = "target_bone_id")
+	private String targetBoneId;
+
 	@JdbcTypeCode(SqlTypes.JSON)
 	@Column(name = "proposal_jsonb", columnDefinition = "jsonb")
 	private String proposalJson;
@@ -166,6 +170,14 @@ public class AiJobEntity {
 
 	public void setBaseDraftVersion(Integer baseDraftVersion) {
 		this.baseDraftVersion = baseDraftVersion;
+	}
+
+	public String getTargetBoneId() {
+		return targetBoneId;
+	}
+
+	public void setTargetBoneId(String targetBoneId) {
+		this.targetBoneId = targetBoneId;
 	}
 
 	public String getProposalJson() {

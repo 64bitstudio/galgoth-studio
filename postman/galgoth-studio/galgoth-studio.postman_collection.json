@@ -339,12 +339,27 @@
           "name": "Subir bitmap de textura (content-addressed)",
           "request": {
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "image/png" }],
-            "body": { "mode": "file", "file": {} },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "image/png"
+              }
+            ],
+            "body": {
+              "mode": "file",
+              "file": {}
+            },
             "url": {
               "raw": "{{baseUrl}}/api/mobs/{{mobId}}/texture",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "mobs", "{{mobId}}", "texture"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "texture"
+              ]
             },
             "description": "Body: bytes crudos de un PNG (elegir un archivo local en la pestaña Body > binary de Postman) -- NO JSON, NO multipart. El backend decodifica/valida la imagen (400 INVALID_TEXTURE si no es un PNG válido, nunca confía en el Content-Type declarado), calcula ÉL MISMO el SHA-256 sobre los bytes canónicos re-codificados y sube a MinIO bajo textures/{sha256-hex}.png -- idempotente (no vuelve a subir si la key ya existe). 200 con { storageKey }, siempre el que el backend calculó -- el contrato no acepta ninguno propuesto por el cliente. 404 (MOB_NOT_FOUND) si el mob no existe."
           }
@@ -670,6 +685,81 @@
               ]
             },
             "description": "201 con {revisionNumber, draftVersion} -- crea mob_revisions (created_by='ai') Y mob_drafts en la misma transacción, mismo mecanismo que 'Usar este modelo' (030). 404 (JOB_NOT_FOUND). 409 (JOB_NOT_COMPLETED) si el job no es un edit completado. 409 (STALE_EDIT_BASE) si el draft/revisión base avanzaron desde que se generó el plan -- no aplica nada; regenerar el plan contra el estado actual."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Generación de textura IA (ticket 054)",
+      "item": [
+        {
+          "name": "Generar/regenerar textura por IA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"style\": \"pixel_art\",\n  \"detailLevel\": \"medium\",\n  \"boneId\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/{{mobId}}/ai/generate-texture",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "{{mobId}}",
+                "ai",
+                "generate-texture"
+              ]
+            },
+            "description": "202 con {\"jobId\": \"<uuid>\"} -- reutiliza la MISMA imagen de referencia ya subida en Fase 2 (nunca pide una nueva). style: uno de faithful/minecraft_vanilla/pixel_art/realistic. detailLevel: low/medium/high. boneId null/ausente -> HU-36 (genera TODOS los bones con geometria, job_type=generate_texture); boneId presente -> HU-37 (regenera solo ese bone, job_type=edit_texture). Copiar el jobId de la respuesta a la variable de entorno `jobId`. El progreso se sigue con el mismo endpoint SSE ya existente de la carpeta 'Generacion IA' (GET /api/jobs/{jobId}/events), con nuevos valores de stage: analizando_paleta, mapeando_caras, generando_bone_<id>, componiendo_atlas, limpiando_pixeles. 404 (MOB_NOT_FOUND). 400 (NO_BASE_REVISION) si el mob todavia no tiene ninguna revision guardada. 400 (NO_REFERENCE_IMAGE) si no hay imagen de referencia. 400 (INVALID_TEXTURE_GENERATION_REQUEST) si style/detailLevel son invalidos, o el bone/mob no tiene ningun cuboid. 400 (TEXTURE_TARGET_BONE_NOT_FOUND) si boneId no existe en el modelo."
+          }
+        },
+        {
+          "name": "Obtener diff Antes/Despues de una propuesta de textura",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{jobId}}/texture-result",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{jobId}}",
+                "texture-result"
+              ]
+            },
+            "description": "200 con {jobId, mobId, wholeModel, touchedBoneIds, touchedFaces, hasHandPaintedOverwrite, beforeAtlasPngBase64, afterAtlasPngBase64} -- diff Antes/Despues de una propuesta de generacion/regeneracion de textura ya completada (HU-38). touchedFaces[].handPaintedOverwrite=true senala explicitamente que esa cara tenia contenido PINTADO A MANO (o de origen desconocido) que esta propuesta sobrescribiria -- no solo contenido generado previamente por IA (HU-37 AC#2). hasHandPaintedOverwrite=true si al menos una cara lo tiene. Nunca re-ejecuta el pipeline. 404 (JOB_NOT_FOUND). 409 (JOB_NOT_COMPLETED) si el job no es un job de textura completado."
+          }
+        },
+        {
+          "name": "Apply de la propuesta de textura (atomico)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{jobId}}/apply-texture",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{jobId}}",
+                "apply-texture"
+              ]
+            },
+            "description": "201 con {revisionNumber, draftVersion} -- ATOMICO (Diseno tecnico Sec10): (1) sube el bitmap compuesto a MinIO PRIMERO, fuera de la transaccion (backend calcula/verifica el hash real, mismo mecanismo que PUT /texture, 045); (2) UNA transaccion Postgres que actualiza mob_drafts + inserta mob_revisions (textura+geometria juntas) + avanza mobs.current_revision_number -- todo o nada. 'Reject' no es un endpoint -- simplemente no se llama a este (la propuesta queda sin aplicar, nada se toco). 404 (JOB_NOT_FOUND). 409 (JOB_NOT_COMPLETED). 409 (STALE_TEXTURE_BASE) si CUALQUIER parte del draft/revision compartido (geometria O textura) avanzo desde que se genero la propuesta -- se descarta sin tocar nada."
           }
         }
       ]

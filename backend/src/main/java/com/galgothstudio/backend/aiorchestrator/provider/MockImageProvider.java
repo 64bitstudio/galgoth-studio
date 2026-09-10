@@ -26,6 +26,10 @@ public class MockImageProvider implements ImageGenerationProvider {
 	/** Tamaño de celda del tablero de ajedrez sintético -- valor de diseño arbitrario, solo necesita ser &gt;0 y menor que las dimensiones típicas de un sheet de test. */
 	private static final int CHECKER_CELL_SIZE = 8;
 
+	/** Mismos literales que {@code MockVisionProvider}/{@code MockReasoningProvider} (`PROVIDER_NAME`/`DEFAULT_MODEL`, ticket 025) -- consistencia entre los 3 dobles de proveedor del proyecto. Ticket 054 sube `provider()`/`model()` a la interfaz. */
+	private static final String PROVIDER_NAME = "mock";
+	private static final String DEFAULT_MODEL = "mock-model";
+
 	private byte[] nextImage = new byte[0];
 	private byte[] nextTextureSheet;
 
@@ -41,6 +45,16 @@ public class MockImageProvider implements ImageGenerationProvider {
 	@Override
 	public byte[] generateImage(String prompt) {
 		return nextImage;
+	}
+
+	@Override
+	public String provider() {
+		return PROVIDER_NAME;
+	}
+
+	@Override
+	public String model() {
+		return DEFAULT_MODEL;
 	}
 
 	@Override

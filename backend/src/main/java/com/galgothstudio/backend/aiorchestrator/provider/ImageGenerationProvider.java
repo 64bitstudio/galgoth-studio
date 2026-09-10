@@ -19,6 +19,25 @@ public interface ImageGenerationProvider {
 	byte[] generateImage(String prompt);
 
 	/**
+	 * Nombre del proveedor activo (`"openai"`/`"mock"`) -- mismo valor que
+	 * persiste en `ai_jobs.provider`. Extensión aditiva del ticket 054: a
+	 * diferencia de {@link VisionModelProvider}/{@link StructuredReasoningProvider},
+	 * cuyas respuestas ya viajan empaquetadas en un {@link AiProviderResponse}
+	 * (con `provider`/`model` incluidos), {@link #generateTextureSheet} solo
+	 * devuelve {@code byte[]} -- sin esto, `TextureGenerationService` (054)
+	 * no tendría forma de saber qué proveedor/modelo REAL persistir en
+	 * `ai_jobs` (HU-39) sin un `instanceof` frágil contra la implementación
+	 * concreta activa. Cambio interno (ningún contrato HTTP/esquema de
+	 * datos se ve afectado), implementado en el mismo PR por AMBOS
+	 * implementadores existentes -- reportado explícitamente por
+	 * transparencia.
+	 */
+	String provider();
+
+	/** Modelo REAL configurado en este proveedor (nunca un literal fijo) -- mismo valor que persiste en `ai_jobs.model`. Ver Javadoc de {@link #provider()}. */
+	String model();
+
+	/**
 	 * Genera UNA imagen temporal con el contenido completo de una
 	 * {@code TextureGenerationSheet} (Diseño técnico §11 -- una llamada por
 	 * bone, nunca por cuboid). {@code referenceImageBytes} nulo/vacío

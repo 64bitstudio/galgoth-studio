@@ -138,6 +138,11 @@
       "type": "string",
       "enum": ["unpainted", "painted", "orphan"]
     },
+    "uvPaintOrigin": {
+      "description": "Ticket 054. Origen del contenido de una uvRegion PAINTED -- 'hand' (pintado a mano) o 'ai' (compuesto por el pipeline de generación de textura por IA). null/ausente (todo JSON legacy anterior a 054, y toda región pintada a mano por el editor manual, ticket 047, que todavía no escribe este campo explícitamente) se trata como origen desconocido/posible pintado a mano por quien lo interprete -- nunca se asume 'ai' por default.",
+      "type": ["string", "null"],
+      "enum": ["hand", "ai", null]
+    },
     "uvRegion": {
       "type": "object",
       "additionalProperties": false,
@@ -151,7 +156,8 @@
           "minItems": 4,
           "maxItems": 4
         },
-        "status": { "$ref": "#/$defs/uvRegionStatus" }
+        "status": { "$ref": "#/$defs/uvRegionStatus" },
+        "paintedBy": { "$ref": "#/$defs/uvPaintOrigin" }
       }
     },
     "uvReservationReason": {
