@@ -6,7 +6,7 @@
  * de ruta separada (ver header de ese archivo). Mismo criterio de
  * `<dialog>` nativo que `AppDialog.vue` (foco/tab-trap/Escape gratis del
  * navegador, mismo hallazgo real de Sonar S6819 ya documentado ahí) --
- * acá además se ancla al borde derecho a todo lo alto en vez de
+ * acá además se ancla al borde derecho a lo alto completo en vez de
  * centrarse, y desliza al abrir/cerrar. Mockup con VoBo del PO:
  * https://claude.ai/code/artifact/a3514398-4fc4-430f-96b2-40299c0038a4
  *
