@@ -61,11 +61,11 @@ import IconDuplicate from '../design-system/icons/IconDuplicate.vue'
 import IconTrash from '../design-system/icons/IconTrash.vue'
 import IconUndo from '../design-system/icons/IconUndo.vue'
 import IconRedo from '../design-system/icons/IconRedo.vue'
+import { MODIFIER_KEY, isEditableTarget } from './keyboardShortcuts'
 
 type TransformMode = 'translate' | 'scale' | 'rotate'
 
 /** Ticket 039 -- el tooltip de Undo/Redo muestra el atajo REAL ya cableado en `handleKeydown` (nunca uno inventado): `metaKey` en Mac, `ctrlKey` en el resto. */
-const MODIFIER_KEY = /mac/i.test(navigator.platform || navigator.userAgent) ? 'Cmd' : 'Ctrl'
 const UNDO_SHORTCUT = `${MODIFIER_KEY}+Z`
 const REDO_SHORTCUT = `${MODIFIER_KEY}+Shift+Z`
 
@@ -94,10 +94,6 @@ const canSave = computed(() => !!draft.model && !saving.value)
 function setMode(newMode: TransformMode): void {
   mode.value = newMode
   threeViewportService.setTransformMode(newMode)
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
 }
 
 function handleKeydown(event: KeyboardEvent): void {

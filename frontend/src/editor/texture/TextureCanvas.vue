@@ -99,11 +99,14 @@ import IconEraser from '../../design-system/icons/IconEraser.vue'
 import IconEyedropper from '../../design-system/icons/IconEyedropper.vue'
 import IconGrid from '../../design-system/icons/IconGrid.vue'
 import IconHand from '../../design-system/icons/IconHand.vue'
+import IconUndo from '../../design-system/icons/IconUndo.vue'
+import IconRedo from '../../design-system/icons/IconRedo.vue'
 import IconWarning from '../../design-system/icons/IconWarning.vue'
 import IconZoomIn from '../../design-system/icons/IconZoomIn.vue'
 import IconZoomOut from '../../design-system/icons/IconZoomOut.vue'
 import IconZoomReset from '../../design-system/icons/IconZoomReset.vue'
 import { downloadTexture } from '../../api/textureUploadApi'
+import { MODIFIER_KEY, isEditableTarget } from '../keyboardShortcuts'
 import { useDraftModelStore } from '../draftModelStore'
 import { saveRevision } from '../draftPersistenceApi'
 import { uploadThumbnail } from '../thumbnailApi'
@@ -312,15 +315,24 @@ function handleZoomSelect(value: string): void {
   setZoom(Number(value))
 }
 
-function isEditableTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
-}
+/** Ticket 069 (hallazgo real): el tooltip de Deshacer/Rehacer muestra el atajo REAL ya cableado acá abajo, mismo criterio que `EditorToolbar.vue` (Modelo). */
+const UNDO_SHORTCUT = `${MODIFIER_KEY}+Z`
+const REDO_SHORTCUT = `${MODIFIER_KEY}+Shift+Z`
 
 function handleWindowKeydown(event: KeyboardEvent): void {
   if (isEditableTarget(event.target)) {
     return
   }
   if (event.key === 'Escape') {
+    return
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+    event.preventDefault()
+    if (event.shiftKey) {
+      textureEditorStore.redo()
+    } else {
+      textureEditorStore.undo()
+    }
     return
   }
   if (event.code === 'Space') {
@@ -809,6 +821,11 @@ function showEyedropperToast(hex: string): void {
         <IconButton label="Cubeta" :active="activeTool === 'fill'" @click="activeTool = 'fill'"><IconBucket /></IconButton>
         <IconButton label="Selector de color (eyedropper)" :active="activeTool === 'eyedropper'" @click="activeTool = 'eyedropper'"><IconEyedropper /></IconButton>
       </fieldset>
+
+      <div class="texture-canvas__tb-group">
+        <IconButton label="Deshacer" :shortcut="UNDO_SHORTCUT" :disabled="!textureEditorStore.canUndo" @click="textureEditorStore.undo()"><IconUndo /></IconButton>
+        <IconButton label="Rehacer" :shortcut="REDO_SHORTCUT" :disabled="!textureEditorStore.canRedo" @click="textureEditorStore.redo()"><IconRedo /></IconButton>
+      </div>
 
       <div class="texture-canvas__tb-group">
         <IconButton label="Cuadrícula" :active="showGrid" @click="showGrid = !showGrid"><IconGrid /></IconButton>
