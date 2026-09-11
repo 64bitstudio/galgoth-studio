@@ -315,9 +315,34 @@ function handleZoomSelect(value: string): void {
   setZoom(Number(value))
 }
 
-/** Ticket 069 (hallazgo real): el tooltip de Deshacer/Rehacer muestra el atajo REAL ya cableado acá abajo, mismo criterio que `EditorToolbar.vue` (Modelo). */
+/** Ticket 070 (hallazgo real): el tooltip de Deshacer/Rehacer muestra el atajo REAL ya cableado acá abajo, mismo criterio que `EditorToolbar.vue` (Modelo). */
 const UNDO_SHORTCUT = `${MODIFIER_KEY}+Z`
 const REDO_SHORTCUT = `${MODIFIER_KEY}+Shift+Z`
+
+/**
+ * Ticket 070 -- `textureEditorStore.undo()/redo()` mutan `atlas.pixels`
+ * directamente (misma referencia, `writeRectInto` + `triggerRef`), pero
+ * NINGÚN watcher de este componente escucha ese cambio: cada mutación de
+ * pintado (trazo/fill) ya llama a `syncDataTexture()`/`redraw()` ella
+ * misma justo después de `recordPatch(...)` -- deshacer/rehacer necesitan
+ * exactamente lo mismo, o el `<canvas>` visible y el preview 3D quedan
+ * mostrando el estado viejo aunque el store ya cambió (confirmado en vivo
+ * contra `studio-dev`: el botón cambiaba de habilitado/deshabilitado
+ * correctamente, pero el píxel seguía pintado en pantalla).
+ */
+function handleUndo(): void {
+  textureEditorStore.undo()
+  syncDataTexture()
+  redraw()
+  markDirty()
+}
+
+function handleRedo(): void {
+  textureEditorStore.redo()
+  syncDataTexture()
+  redraw()
+  markDirty()
+}
 
 function handleWindowKeydown(event: KeyboardEvent): void {
   if (isEditableTarget(event.target)) {
@@ -329,9 +354,9 @@ function handleWindowKeydown(event: KeyboardEvent): void {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
     event.preventDefault()
     if (event.shiftKey) {
-      textureEditorStore.redo()
+      handleRedo()
     } else {
-      textureEditorStore.undo()
+      handleUndo()
     }
     return
   }
@@ -823,8 +848,8 @@ function showEyedropperToast(hex: string): void {
       </fieldset>
 
       <div class="texture-canvas__tb-group">
-        <IconButton label="Deshacer" :shortcut="UNDO_SHORTCUT" :disabled="!textureEditorStore.canUndo" @click="textureEditorStore.undo()"><IconUndo /></IconButton>
-        <IconButton label="Rehacer" :shortcut="REDO_SHORTCUT" :disabled="!textureEditorStore.canRedo" @click="textureEditorStore.redo()"><IconRedo /></IconButton>
+        <IconButton label="Deshacer" :shortcut="UNDO_SHORTCUT" :disabled="!textureEditorStore.canUndo" @click="handleUndo"><IconUndo /></IconButton>
+        <IconButton label="Rehacer" :shortcut="REDO_SHORTCUT" :disabled="!textureEditorStore.canRedo" @click="handleRedo"><IconRedo /></IconButton>
       </div>
 
       <div class="texture-canvas__tb-group">
