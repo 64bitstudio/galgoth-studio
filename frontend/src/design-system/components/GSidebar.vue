@@ -15,13 +15,25 @@
  * eso depende de datos reales de proyecto/usuario que no existen
  * todavía. Documentado como gap conocido, no una reinterpretación
  * silenciosa.
+ *
+ * Ticket 068 (feedback del PO sobre el editor de mob -- homologación
+ * Modelo/Textura): botón para colapsar el sidebar a solo íconos, libera
+ * espacio horizontal para pantallas de trabajo angostas (el editor). El
+ * estado persiste en localStorage (clave `gsidebar-collapsed`) -- GSidebar
+ * se remonta en cada navegación de ruta (no es un singleton), así que sin
+ * persistencia el usuario tendría que volver a colapsarlo en cada pantalla,
+ * derrotando el propósito del botón. Es un detalle puramente de
+ * presentación (ancho/visibilidad de labels) -- ninguna lógica de
+ * navegación cambia, `active`/`select` siguen funcionando igual colapsado.
  */
+import { onMounted, ref } from 'vue'
 import IconHome from '../icons/IconHome.vue'
 import IconProjects from '../icons/IconProjects.vue'
 import IconExplore from '../icons/IconExplore.vue'
 import IconTemplates from '../icons/IconTemplates.vue'
 import IconSettings from '../icons/IconSettings.vue'
 import IconUser from '../icons/IconUser.vue'
+import IconSidebarToggle from '../icons/IconSidebarToggle.vue'
 
 export type GSidebarKey =
   | 'home'
@@ -43,44 +55,46 @@ const bottomItems: Array<{ key: GSidebarKey; label: string; icon: unknown }> = [
   { key: 'user', label: 'Usuario', icon: IconUser },
 ]
 
+const COLLAPSED_STORAGE_KEY = 'gsidebar-collapsed'
+
 defineProps<{ active: GSidebarKey }>()
 const emit = defineEmits<{ select: [GSidebarKey] }>()
+
+const collapsed = ref(false)
+
+onMounted(() => {
+  try {
+    collapsed.value = localStorage.getItem(COLLAPSED_STORAGE_KEY) === 'true'
+  } catch {
+    // localStorage inaccesible (modo privado estricto, etc.) -- arranca expandido, no es un error visible.
+  }
+})
+
+function toggleCollapsed(): void {
+  collapsed.value = !collapsed.value
+  try {
+    localStorage.setItem(COLLAPSED_STORAGE_KEY, String(collapsed.value))
+  } catch {
+    // best-effort -- si no persiste, el toggle sigue funcionando en esta sesión.
+  }
+}
 </script>
 
 <template>
-  <nav class="g-sidebar" aria-label="Navegación principal">
-    <div class="g-sidebar__brand">Galgoth Studio</div>
+  <nav class="g-sidebar" :class="{ 'g-sidebar--collapsed': collapsed }" aria-label="Navegación principal">
+    <div class="g-sidebar__head">
+      <span v-if="!collapsed" class="g-sidebar__brand">Galgoth Studio</span>
+      <button type="button" class="g-sidebar__toggle" :aria-expanded="!collapsed" :aria-label="collapsed ? 'Expandir menú de navegación' : 'Colapsar menú de navegación'" @click="toggleCollapsed"><IconSidebarToggle :size="16" /></button>
+    </div>
 
     <ul class="g-sidebar__list">
-      <li v-for="item in items" :key="item.key">
-        <button
-          type="button"
-          class="g-sidebar__item"
-          :class="{ 'g-sidebar__item--active': active === item.key }"
-          :aria-current="active === item.key ? 'page' : undefined"
-          @click="emit('select', item.key)"
-        >
-          <component :is="item.icon" :size="18" />
-          <span>{{ item.label }}</span>
-        </button>
-      </li>
+      <li v-for="item in items" :key="item.key"><button type="button" class="g-sidebar__item" :class="{ 'g-sidebar__item--active': active === item.key }" :aria-current="active === item.key ? 'page' : undefined" :aria-label="item.label" :title="collapsed ? item.label : undefined" @click="emit('select', item.key)"><component :is="item.icon" :size="18" aria-hidden="true" /><span v-if="!collapsed">{{ item.label }}</span></button></li>
     </ul>
 
     <div class="g-sidebar__spacer" />
 
     <ul class="g-sidebar__list">
-      <li v-for="item in bottomItems" :key="item.key">
-        <button
-          type="button"
-          class="g-sidebar__item"
-          :class="{ 'g-sidebar__item--active': active === item.key }"
-          :aria-current="active === item.key ? 'page' : undefined"
-          @click="emit('select', item.key)"
-        >
-          <component :is="item.icon" :size="18" />
-          <span>{{ item.label }}</span>
-        </button>
-      </li>
+      <li v-for="item in bottomItems" :key="item.key"><button type="button" class="g-sidebar__item" :class="{ 'g-sidebar__item--active': active === item.key }" :aria-current="active === item.key ? 'page' : undefined" :aria-label="item.label" :title="collapsed ? item.label : undefined" @click="emit('select', item.key)"><component :is="item.icon" :size="18" aria-hidden="true" /><span v-if="!collapsed">{{ item.label }}</span></button></li>
     </ul>
   </nav>
 </template>
@@ -94,14 +108,56 @@ const emit = defineEmits<{ select: [GSidebarKey] }>()
   background: var(--panel);
   border-right: var(--border-width) solid var(--border);
   padding: var(--space-4) var(--space-2);
+  transition: width var(--transition-fast);
+}
+
+.g-sidebar--collapsed {
+  width: 68px;
+}
+
+.g-sidebar__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  margin-bottom: var(--space-5);
+}
+
+.g-sidebar--collapsed .g-sidebar__head {
+  justify-content: center;
 }
 
 .g-sidebar__brand {
-  padding: 0 var(--space-2);
-  margin-bottom: var(--space-5);
   font-weight: 700;
   font-size: var(--text-md);
   letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.g-sidebar__toggle {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.g-sidebar__toggle:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.g-sidebar--collapsed .g-sidebar__toggle svg {
+  transform: scaleX(-1);
 }
 
 .g-sidebar__list {
@@ -136,6 +192,11 @@ const emit = defineEmits<{ select: [GSidebarKey] }>()
   transition:
     background-color var(--transition-fast),
     color var(--transition-fast);
+}
+
+.g-sidebar--collapsed .g-sidebar__item {
+  justify-content: center;
+  padding: 0;
 }
 
 .g-sidebar__item:hover {

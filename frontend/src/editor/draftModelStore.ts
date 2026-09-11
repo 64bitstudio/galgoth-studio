@@ -48,6 +48,18 @@ export const useDraftModelStore = defineStore('draftModel', () => {
   const lastError = ref<string | null>(null)
   const undoStack = ref<MobProjectModel[]>([])
   const redoStack = ref<MobProjectModel[]>([])
+  /**
+   * Ticket 068 -- estado de guardado persistente (homologado con
+   * `textureEditorStore`/`TextureSaveStatus.vue`, en vez del mensaje
+   * efímero que `EditorToolbar.vue` mostraba solo un instante después de
+   * Guardar). `true` desde el primer cambio real del draft (cualquier
+   * Command exitoso, incluyendo los confirmados por el backend vía
+   * `commitExternalModel`) hasta el próximo `markSaved()` -- SIEMPRE
+   * refleja si hay cambios sin commitear como Revision, sin importar si
+   * ese cambio ya está persistido en `mob_drafts` (Resize/Add/Remove son
+   * server-side desde el 043, pero igual falta el commit de Revision).
+   */
+  const dirty = ref(false)
 
   const canUndo = computed(() => undoStack.value.length > 0)
   const canRedo = computed(() => redoStack.value.length > 0)
@@ -55,16 +67,23 @@ export const useDraftModelStore = defineStore('draftModel', () => {
   function load(loadedModel: MobProjectModel): void {
     model.value = loadedModel
     lastError.value = null
+    dirty.value = false
     // Cargar un mob es el INICIO de una historia de edición, no un paso
     // dentro de una ya existente -- ninguna pila sobrevive a un load().
     undoStack.value = []
     redoStack.value = []
   }
 
+  /** Se llama después de un `saveRevision` exitoso -- limpia el estado "sin guardar". */
+  function markSaved(): void {
+    dirty.value = false
+  }
+
   /** Registra un Command exitoso: `previous` es el estado justo antes del cambio que ya se aplicó a `model`. Descarta la rama de redo pendiente (historial lineal estándar, AC #3). */
   function recordCommand(previous: MobProjectModel): void {
     undoStack.value = [...undoStack.value, previous]
     redoStack.value = []
+    dirty.value = true
   }
 
   function undo(): void {
@@ -222,9 +241,11 @@ export const useDraftModelStore = defineStore('draftModel', () => {
   return {
     model,
     lastError,
+    dirty,
     canUndo,
     canRedo,
     load,
+    markSaved,
     undo,
     redo,
     commitExternalModel,

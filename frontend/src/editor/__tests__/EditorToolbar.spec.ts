@@ -83,10 +83,10 @@ function modelWith(bones: Bone[], cuboids: Cuboid[]): MobProjectModel {
 }
 
 // Ticket 036 (pasada de fidelidad visual): Move/Scale/Rotate/Add cuboid/
-// Add bone/Duplicate/Delete/Undo/Redo son ahora IconButton -- sin texto
-// visible, el nombre accesible vive en `aria-label` (mismo texto que
-// antes, ver EditorToolbar.vue). "Guardar" sigue siendo un GButton con
-// texto real -- se busca por texto igual que antes.
+// Add bone/Duplicate/Delete/Undo/Redo son IconButton -- sin texto
+// visible, el nombre accesible vive en `aria-label`. "Guardar" (ticket
+// 068) ya no es un botón de este componente -- se invoca vía el método
+// expuesto `handleSave()` (ver describe "Guardar" más abajo).
 function findButton(wrapper: ReturnType<typeof mount>, label: string) {
   const button = wrapper.findAll('button').find((b) => b.attributes('aria-label') === label || b.text() === label)
   if (!button) {
@@ -318,36 +318,45 @@ describe('EditorToolbar.vue', () => {
     })
   })
 
-  describe('Guardar (ticket 023)', () => {
-    it('Guardar exitoso comitea la revisión y luego captura+sube el thumbnail', async () => {
+  describe('Guardar (ticket 023, botón compartido desde el 068)', () => {
+    // Ticket 068: el botón "Guardar" ya no vive en este componente (sube a
+    // la fila superior compartida de MobEditor.vue) -- se invoca vía el
+    // método expuesto (`defineExpose`), igual que MobEditor lo hará.
+
+    it('Guardar exitoso comitea la revisión, marca dirty=false y luego captura+sube el thumbnail', async () => {
       const draft = useDraftModelStore()
       draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
+      draft.addBone(null, 'nuevo', [0, 0, 0], [0, 0, 0]) // deja el draft "dirty" antes de guardar
       vi.mocked(saveRevision).mockResolvedValue({ created: true, revisionNumber: 4, reason: null })
       const png = new Blob(['fake-png'], { type: 'image/png' })
       const captureSpy = vi.spyOn(threeViewportService, 'captureThumbnail').mockResolvedValue(png)
       vi.mocked(uploadThumbnail).mockResolvedValue(undefined)
       const wrapper = mount(EditorToolbar)
+      expect(wrapper.text()).toContain('Cambios sin guardar')
 
-      await findButton(wrapper, 'Guardar').trigger('click')
+      await wrapper.vm.handleSave()
       await flushPromises()
 
       expect(saveRevision).toHaveBeenCalledWith('test-mob', draft.model)
       expect(captureSpy).toHaveBeenCalled()
       expect(uploadThumbnail).toHaveBeenCalledWith('test-mob', png)
-      expect(wrapper.text()).toContain('Guardado (revisión 4).')
+      expect(draft.dirty).toBe(false)
+      expect(wrapper.text()).toContain('Guardado')
+      expect(wrapper.text()).not.toContain('Cambios sin guardar')
     })
 
-    it('un Guardar sin cambios muestra el motivo del backend y NO intenta subir thumbnail', async () => {
+    it('un Guardar sin cambios reales (created: false) igual marca dirty=false y sube el thumbnail', async () => {
       const draft = useDraftModelStore()
       draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
       vi.mocked(saveRevision).mockResolvedValue({ created: false, revisionNumber: 2, reason: 'Sin cambios.' })
       const captureSpy = vi.spyOn(threeViewportService, 'captureThumbnail').mockResolvedValue(new Blob(['png'], { type: 'image/png' }))
       const wrapper = mount(EditorToolbar)
 
-      await findButton(wrapper, 'Guardar').trigger('click')
+      await wrapper.vm.handleSave()
       await flushPromises()
 
-      expect(wrapper.text()).toContain('Sin cambios.')
+      expect(draft.dirty).toBe(false)
+      expect(wrapper.text()).toContain('Guardado')
       // Ambigüedad deliberada: aunque no hubo revisión nueva, el AC del
       // ticket no exige omitir el thumbnail en este caso -- se documenta
       // el comportamiento real (sí se intenta, igual que en un save con
@@ -355,21 +364,22 @@ describe('EditorToolbar.vue', () => {
       expect(captureSpy).toHaveBeenCalled()
     })
 
-    it('si saveRevision falla, se muestra el error y NUNCA se intenta el thumbnail', async () => {
+    it('si saveRevision falla, el estado pasa a error y NUNCA se intenta el thumbnail', async () => {
       const draft = useDraftModelStore()
       draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
       vi.mocked(saveRevision).mockRejectedValue(new Error('El draft no pasa la validación.'))
       const captureSpy = vi.spyOn(threeViewportService, 'captureThumbnail')
       const wrapper = mount(EditorToolbar)
 
-      await findButton(wrapper, 'Guardar').trigger('click')
+      await wrapper.vm.handleSave()
       await flushPromises()
 
       expect(wrapper.text()).toContain('El draft no pasa la validación.')
+      expect(wrapper.text()).toContain('Error al guardar')
       expect(captureSpy).not.toHaveBeenCalled()
     })
 
-    it('si el thumbnail falla, el Guardar ya completado sigue mostrando su mensaje de éxito (fallo silencioso, solo console.warn)', async () => {
+    it('si el thumbnail falla, el Guardar ya completado sigue mostrando "Guardado" (fallo silencioso, solo console.warn)', async () => {
       const draft = useDraftModelStore()
       draft.load(modelWith([bone('b', null)], [cuboid('c1', 'b')]))
       vi.mocked(saveRevision).mockResolvedValue({ created: true, revisionNumber: 1, reason: null })
@@ -377,16 +387,36 @@ describe('EditorToolbar.vue', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       const wrapper = mount(EditorToolbar)
 
-      await findButton(wrapper, 'Guardar').trigger('click')
+      await wrapper.vm.handleSave()
       await flushPromises()
 
-      expect(wrapper.text()).toContain('Guardado (revisión 1).')
+      expect(wrapper.text()).toContain('Guardado')
       expect(warnSpy).toHaveBeenCalled()
     })
 
-    it('el botón Guardar está deshabilitado mientras no hay modelo cargado', () => {
+    it('canSave es false mientras no hay modelo cargado, y true una vez cargado', () => {
       const wrapper = mount(EditorToolbar)
-      expect(findButton(wrapper, 'Guardar').attributes('disabled')).toBeDefined()
+      expect(wrapper.vm.canSave).toBe(false)
+
+      useDraftModelStore().load(modelWith([bone('b', null)], []))
+      expect(wrapper.vm.canSave).toBe(true)
+    })
+
+    it('canSave es false mientras hay un guardado en curso (saveState "saving")', async () => {
+      const draft = useDraftModelStore()
+      draft.load(modelWith([bone('b', null)], []))
+      let resolveSave!: (v: { created: boolean; revisionNumber: number; reason: string | null }) => void
+      vi.mocked(saveRevision).mockReturnValue(new Promise((resolve) => (resolveSave = resolve)))
+      const wrapper = mount(EditorToolbar)
+
+      const pending = wrapper.vm.handleSave()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.vm.canSave).toBe(false)
+      expect(wrapper.vm.saveState).toBe('saving')
+
+      resolveSave({ created: true, revisionNumber: 1, reason: null })
+      vi.spyOn(threeViewportService, 'captureThumbnail').mockResolvedValue(new Blob(['png'], { type: 'image/png' }))
+      await pending
     })
   })
 
@@ -401,13 +431,13 @@ describe('EditorToolbar.vue', () => {
       vi.spyOn(threeViewportService, 'captureThumbnail').mockResolvedValue(new Blob(['png'], { type: 'image/png' }))
       const wrapper = mount(EditorToolbar)
 
-      await findButton(wrapper, 'Guardar').trigger('click')
+      await wrapper.vm.handleSave()
       await flushPromises()
 
       expect(flushPaintedTexture).toHaveBeenCalledWith(originalModel)
       expect(saveRevision).toHaveBeenCalledWith('test-mob', flushedModel)
       expect(draft.model!.texture.storageKey).toBe('textures/oficial.png') // commiteado al draft, no descartado
-      expect(wrapper.text()).toContain('Guardado (revisión 5).')
+      expect(draft.dirty).toBe(false)
     })
 
     it('sin ningún atlas cargado (flush no-op, mismo model), NUNCA llama a draft.commitExternalModel de más', async () => {
@@ -418,7 +448,7 @@ describe('EditorToolbar.vue', () => {
       vi.spyOn(threeViewportService, 'captureThumbnail').mockResolvedValue(new Blob(['png'], { type: 'image/png' }))
       const wrapper = mount(EditorToolbar)
 
-      await findButton(wrapper, 'Guardar').trigger('click')
+      await wrapper.vm.handleSave()
       await flushPromises()
 
       expect(commitSpy).not.toHaveBeenCalled()
@@ -432,7 +462,7 @@ describe('EditorToolbar.vue', () => {
       const captureSpy = vi.spyOn(threeViewportService, 'captureThumbnail')
       const wrapper = mount(EditorToolbar)
 
-      await findButton(wrapper, 'Guardar').trigger('click')
+      await wrapper.vm.handleSave()
       await flushPromises()
 
       expect(wrapper.text()).toContain('El archivo no se pudo decodificar como un PNG válido.')

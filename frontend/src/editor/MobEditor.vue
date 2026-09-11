@@ -24,10 +24,23 @@
  * herramientas de geometría, sin sentido acá) ni `HierarchyPanel`/
  * `InspectorPanel`/`AiEditPanel` (mockup 07 no los muestra -- solo UV
  * Editor a la izquierda + Vista previa 3D a la derecha, ya resueltos
- * DENTRO de `TextureCanvas`). Por el mismo motivo, la fila de acciones
- * superior (Reset cámara/Asistente IA/Exportar) es específica de la tab
- * Modelo y se oculta en Textura -- fidelidad estricta al mockup, sin
- * inventar controles que no están ahí.
+ * DENTRO de `TextureCanvas`).
+ *
+ * Ticket 068 (feedback del PO -- homologación visual Modelo/Textura):
+ * `.mob-editor__top-actions` (Reset cámara/Asistente IA/Exportar/Guardar)
+ * DEJÓ de ser específica de la tab Modelo -- corrección del párrafo
+ * anterior, que sí lo era hasta este ticket. Ahora se muestra siempre, en
+ * las dos tabs: "Reset cámara" ya operaba sobre el mismo singleton de
+ * `ThreeViewportService` que usa el preview 3D de Textura, así que
+ * funciona igual sin cambios; "Guardar" sube acá desde
+ * `EditorToolbar.vue`/`TextureCanvas.vue` (cada uno sigue dueño de su
+ * propia orquestación de guardado, expuesta vía `defineExpose` --
+ * `editorToolbarRef`/`textureCanvasRef` más abajo -- este componente
+ * solo decide A CUÁL delegar según `activeTab`, sin duplicar ninguna
+ * lógica de negocio); el botón de IA mantiene su comportamiento actual
+ * sin cambios (Modelo: toggle inline; Textura: navega al generador, 055)
+ * -- unificarlo en un mismo drawer para las dos tabs es una pieza más
+ * grande, señalada aparte (ticket 069).
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -51,6 +64,9 @@ import GButton from '../design-system/components/GButton.vue'
 import ConfirmDialog from '../design-system/components/ConfirmDialog.vue'
 import IconCamera from '../design-system/icons/IconCamera.vue'
 import IconSparkle from '../design-system/icons/IconSparkle.vue'
+import IconSave from '../design-system/icons/IconSave.vue'
+import IconExport from '../design-system/icons/IconExport.vue'
+import type { TextureSaveState } from './texture/TextureSaveStatus.vue'
 import type { MobProjectModel } from '../domain/MobProjectModel'
 
 const route = useRoute()
@@ -115,6 +131,57 @@ function handleAiEditApplied(model: MobProjectModel): void {
   draft.load(model)
 }
 
+/**
+ * Ticket 068 (feedback del PO -- homologación Modelo/Textura): la fila
+ * superior (Reset cámara/Asistente IA/Exportar/Guardar) pasa a mostrarse
+ * SIEMPRE, en las dos tabs -- antes `v-if="activeTab === 'modelo'"` la
+ * ocultaba por completo en Textura. "Guardar" además sube a esta fila
+ * (antes vivía dentro de `EditorToolbar.vue`/`TextureCanvas.vue`) -- ES
+ * el mismo botón compartido en las dos tabs, delegando al hijo activo vía
+ * `defineExpose` (cada uno sigue dueño de su propia orquestación de
+ * guardado: geometría+flush de textura en Modelo, atlas+flush en
+ * Textura -- NINGUNA lógica de negocio se duplicó ni se movió).
+ *
+ * El botón de IA SÍ mantiene su comportamiento actual sin cambios en
+ * este ticket (Modelo: toggle del panel inline; Textura: navega a la
+ * ruta ya existente del generador, 055) -- unificar eso en un mismo
+ * drawer para las dos tabs es una pieza más grande, señalada aparte
+ * (ticket 069) para no mezclar un cambio de layout con un cambio de
+ * arquitectura de otro tamaño en el mismo PR.
+ */
+const editorToolbarRef = ref<InstanceType<typeof EditorToolbar>>()
+const textureCanvasRef = ref<InstanceType<typeof TextureCanvas>>()
+
+const activeSaveState = computed<TextureSaveState>(() => {
+  if (activeTab.value === 'modelo') {
+    return editorToolbarRef.value?.saveState ?? 'saved'
+  }
+  return textureCanvasRef.value?.saveState ?? 'saved'
+})
+
+const activeCanSave = computed<boolean>(() => {
+  if (activeTab.value === 'modelo') {
+    return editorToolbarRef.value?.canSave ?? false
+  }
+  return textureCanvasRef.value?.canSave ?? false
+})
+
+function handleTopSave(): void {
+  if (activeTab.value === 'modelo') {
+    void editorToolbarRef.value?.handleSave()
+  } else {
+    void textureCanvasRef.value?.handleSave()
+  }
+}
+
+function handleIaButtonClick(): void {
+  if (activeTab.value === 'modelo') {
+    showAiPanel.value = !showAiPanel.value
+    return
+  }
+  router.push(`/projects/${projectId}/mobs/${mobId}/texture/generate-ai`)
+}
+
 onMounted(async () => {
   try {
     const mob = await getMob(mobId)
@@ -161,16 +228,20 @@ function backToProject(): void {
       <template v-else-if="draft.model">
         <div class="mob-editor__top">
           <EditorHeader :mob-name="mobName" :active-tab="activeTab" @update:active-tab="activeTab = $event" />
-          <div v-if="activeTab === 'modelo'" class="mob-editor__top-actions">
+          <!-- Ticket 068: esta fila ya no depende de la tab activa -- se muestra siempre, homologada entre Modelo y Textura. -->
+          <div class="mob-editor__top-actions">
             <GButton variant="ghost" @click="threeViewportService.resetCamera()"><template #icon><IconCamera :size="16" /></template>Reset cámara</GButton>
-            <GButton :variant="showAiPanel ? 'primary' : 'secondary'" @click="showAiPanel = !showAiPanel">
-              <template #icon><IconSparkle :size="16" /></template>{{ showAiPanel ? 'Editor manual' : 'Asistente IA' }}
+            <GButton :variant="activeTab === 'modelo' && showAiPanel ? 'primary' : 'accent'" @click="handleIaButtonClick">
+              <template #icon><IconSparkle :size="16" /></template>{{ activeTab === 'modelo' ? (showAiPanel ? 'Editor manual' : 'Asistente IA') : 'Generar con IA' }}
             </GButton>
-            <GButton variant="secondary" @click="router.push(`/projects/${projectId}/mobs/${mobId}/export`)">Exportar</GButton>
+            <GButton variant="secondary" @click="router.push(`/projects/${projectId}/mobs/${mobId}/export`)"><template #icon><IconExport :size="16" /></template>Exportar</GButton>
+            <GButton variant="primary" :disabled="!activeCanSave" @click="handleTopSave">
+              <template #icon><IconSave :size="16" /></template>{{ activeSaveState === 'saving' ? 'Guardando…' : 'Guardar' }}
+            </GButton>
           </div>
         </div>
         <template v-if="activeTab === 'modelo'">
-          <EditorToolbar />
+          <EditorToolbar ref="editorToolbarRef" />
           <div class="mob-editor__body">
             <div class="mob-editor__panel mob-editor__panel--left">
               <AiEditPanel
@@ -188,7 +259,7 @@ function backToProject(): void {
             </div>
           </div>
         </template>
-        <TextureCanvas v-else-if="activeTab === 'textura'" :model="draft.model" class="mob-editor__texture" />
+        <TextureCanvas v-else-if="activeTab === 'textura'" ref="textureCanvasRef" :model="draft.model" class="mob-editor__texture" />
       </template>
       <p v-else class="mob-editor__loading">Cargando…</p>
     </main>

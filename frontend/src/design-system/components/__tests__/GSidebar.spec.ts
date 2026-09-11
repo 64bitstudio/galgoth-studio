@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import GSidebar from '../GSidebar.vue'
 
 describe('GSidebar', () => {
@@ -32,5 +32,49 @@ describe('GSidebar', () => {
     const wrapper = mount(GSidebar, { props: { active: 'projects' } })
     await wrapper.findAll('.g-sidebar__item')[0]!.trigger('click')
     expect(wrapper.emitted('select')?.[0]).toEqual(['home'])
+  })
+
+  describe('ticket 068: colapsar el sidebar', () => {
+    beforeEach(() => {
+      localStorage.clear()
+    })
+
+    it('arranca expandido por defecto (sin nada en localStorage) y oculta las etiquetas al colapsar', async () => {
+      const wrapper = mount(GSidebar, { props: { active: 'projects' } })
+      await flushPromises()
+      expect(wrapper.find('.g-sidebar__brand').exists()).toBe(true)
+      expect(wrapper.find('.g-sidebar__item span').exists()).toBe(true)
+
+      await wrapper.get('.g-sidebar__toggle').trigger('click')
+
+      expect(wrapper.find('.g-sidebar--collapsed').exists()).toBe(true)
+      expect(wrapper.find('.g-sidebar__brand').exists()).toBe(false)
+      expect(wrapper.find('.g-sidebar__item span').exists()).toBe(false)
+    })
+
+    it('los items siguen teniendo un nombre accesible (aria-label) aunque el texto visible desaparezca al colapsar', async () => {
+      const wrapper = mount(GSidebar, { props: { active: 'projects' } })
+      await wrapper.get('.g-sidebar__toggle').trigger('click')
+      const firstItem = wrapper.findAll('.g-sidebar__item')[0]!
+      expect(firstItem.attributes('aria-label')).toBe('Inicio')
+    })
+
+    it('el estado colapsado persiste en localStorage entre montajes (GSidebar se remonta en cada navegación)', async () => {
+      const first = mount(GSidebar, { props: { active: 'projects' } })
+      await first.get('.g-sidebar__toggle').trigger('click')
+      expect(localStorage.getItem('gsidebar-collapsed')).toBe('true')
+      first.unmount()
+
+      const second = mount(GSidebar, { props: { active: 'projects' } })
+      await flushPromises()
+      expect(second.find('.g-sidebar--collapsed').exists()).toBe(true)
+    })
+
+    it('select sigue emitiendo la key correcta con el sidebar colapsado', async () => {
+      const wrapper = mount(GSidebar, { props: { active: 'projects' } })
+      await wrapper.get('.g-sidebar__toggle').trigger('click')
+      await wrapper.findAll('.g-sidebar__item')[1]!.trigger('click')
+      expect(wrapper.emitted('select')?.[0]).toEqual(['projects'])
+    })
   })
 })

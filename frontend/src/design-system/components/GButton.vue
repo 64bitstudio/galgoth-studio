@@ -46,6 +46,11 @@ defineEmits<{ click: [MouseEvent] }>()
     border-color var(--transition-fast),
     color var(--transition-fast);
   white-space: nowrap;
+  /* Ticket 068 -- un botón nunca debe "aplastarse" bajo presión de un
+     toolbar apretado (hallazgo real en TextureCanvas.vue: sin esto,
+     "Guardar" competía por espacio contra el resto de la fila). Mismo
+     criterio que IconButton.vue ya aplicaba desde antes. */
+  flex-shrink: 0;
 }
 
 .g-button:disabled {
