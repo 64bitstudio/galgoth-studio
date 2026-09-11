@@ -126,12 +126,29 @@ public class OpenAiImageProvider implements ImageGenerationProvider {
 	 * lado más chico hasta que el ratio quede dentro de 3:1 -- otra vez
 	 * margen inerte que {@code TextureSheetSlicer} ignora, nunca un
 	 * recorte de placements reales.
+	 *
+	 * <p><b>Ticket 061 (tercer hallazgo real, misma verificación en
+	 * vivo)</b>: con el ratio ya corregido (64x32, dentro de 3:1), la API
+	 * real rechazó esa MISMA llamada con {@code "Invalid size '64x32'.
+	 * Requested resolution is below the current minimum pixel budget."} --
+	 * ni la documentación pública de OpenAI ni la búsqueda en vivo dieron
+	 * un número exacto para ese mínimo (a diferencia de los dos hallazgos
+	 * anteriores, donde la propia API sí dio el valor exacto en el
+	 * mensaje de error). Se adopta {@link #MIN_SIDE_PX} = 256px por lado
+	 * como piso conservador -- valor típico y ampliamente documentado
+	 * como mínimo seguro para modelos de generación de imagen
+	 * comparables, NO confirmado en vivo contra el mínimo real de esta
+	 * API -- si un futuro intento real todavía lo rechaza, este piso debe
+	 * subirse. El piso se aplica ANTES del clamp de aspect ratio (una
+	 * cara muy angosta podría necesitar agrandarse de nuevo tras subir a
+	 * 256 el lado corto).
 	 */
 	private static final int MAX_ASPECT_RATIO = 3;
+	private static final int MIN_SIDE_PX = 256;
 
 	private static String sizeParam(int width, int height) {
-		int w = roundUpToMultipleOf16(width);
-		int h = roundUpToMultipleOf16(height);
+		int w = Math.max(roundUpToMultipleOf16(width), MIN_SIDE_PX);
+		int h = Math.max(roundUpToMultipleOf16(height), MIN_SIDE_PX);
 		if (w > h * MAX_ASPECT_RATIO) {
 			h = roundUpToMultipleOf16(ceilDiv(w, MAX_ASPECT_RATIO));
 		} else if (h > w * MAX_ASPECT_RATIO) {

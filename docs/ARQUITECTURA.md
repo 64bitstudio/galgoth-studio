@@ -223,6 +223,13 @@ Frontend (Vue3+Three.js) --REST/SSE--> Backend (Spring Boot, monolito modular)
 - **Verificación real**: `./gradlew clean test` completo, backend: 417/417 tests, 0 failures.
 - **Patrón repetido, señalado explícitamente**: tercer bug real seguido (059/060/061) del mismo tipo -- solo la verificación EN VIVO contra la API real (no mocks con valores convenientes) los destapó, uno por uno, iterando error por error.
 
+**Addendum post-milestone -- fix crítico: OpenAI rechaza sheets por debajo del "pixel budget" mínimo** (`done/062-...`, NO es un ticket del desglose original, cuarto hallazgo consecutivo de la misma verificación en vivo -- 059→060→061→este):
+- **Hallazgo real**: con el ratio ya corregido (`64x32`, dentro de 3:1), la API real rechazó la MISMA llamada con `400 Bad Request: "Invalid size '64x32'. Requested resolution is below the current minimum pixel budget."` -- a diferencia de 059/060/061, ni la documentación pública de OpenAI ni una búsqueda en vivo dieron un número exacto para ese mínimo.
+- **Corrección**: `OpenAiImageProvider` aplica un piso conservador de 256px por lado (`MIN_SIDE_PX`), ANTES del clamp de aspect ratio (una cara que sube al piso puede volver a exceder 3:1 si el otro lado ya es grande -- caso límite verificado con `1536x8` -> `1536x512`). Documentado explícitamente como estimación NO confirmada en vivo -- a ajustar si un futuro intento real todavía lo rechaza.
+- **TDD real**: 6 casos fallan contra el código sin este fix, confirmado antes de aplicar la corrección.
+- **Verificación real**: `./gradlew clean test` completo, backend: 420/420 tests, 0 failures.
+- **Cuarto hallazgo consecutivo del mismo tipo**: la cadena completa 059→060→061→062 confirma lo que el propio ticket 051 ya advertía ("a verificar contra la documentación real cuando 054 conecte este proveedor de punta a punta") -- ninguno de los 4 hallazgos era detectable con mocks, solo con verificación en vivo real.
+
 Este archivo se completa a medida que cada ticket del milestone M0 en adelante aterriza código real (ver `pending/`/`in-process/`/`done/` para el estado de cada pieza).
 
 ## Referencias
