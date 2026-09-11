@@ -245,6 +245,13 @@ Frontend (Vue3+Three.js) --REST/SSE--> Backend (Spring Boot, monolito modular)
 - **Verificación real**: `./gradlew clean test` completo, backend: 423/423 tests, 0 failures.
 - **Lección reforzada**: 065 es consecuencia directa de un supuesto de 060 ("cualquier margen extra queda simplemente descartado") válido para un crecimiento pequeño (redondeo a 16) pero roto silenciosamente para el crecimiento grande que 063 introdujo después (10-25x) -- una garantía razonada para un caso pequeño no se extiende automáticamente a una magnitud distinta introducida por un cambio posterior.
 
+**Addendum post-milestone -- fix crítico: la textura ya persistida no cargaba al recargar el editor** (`done/066-...`, reportado por el PO tras confirmar que 065 ya generaba contenido real):
+- **Hallazgo real**: reproducido en vivo en una pestaña nueva -- tanto el canvas 2D como el preview 3D mostraban el atlas COMPLETAMENTE VACÍO, a pesar de que la revisión aplicada (hash-verificada contra el PNG real generado) ya existía en la base de datos y en MinIO. Root cause: `TextureCanvas.vue` nunca leía los bytes de la textura persistida al montar (solo dimensionaba un atlas vacío) -- y auditado el backend, `TextureService`/`MobTextureController` NUNCA tuvieron un endpoint de lectura, solo `upload`. Nadie lo detectó antes porque hasta 065 nunca hubo una textura real sustancial que valiera la pena recargar.
+- **Corrección**: nuevo `GET /api/mobs/{mobId}/texture` (mismo patrón que `MobThumbnailController`, resolviendo el `storageKey` vigente desde el draft) + `TextureCanvas.vue` lo descarga y decodifica al montar. Si la carga falla, se muestra un error VISIBLE y se bloquea "Guardar" -- nunca un atlas vacío en silencio (riesgo real de sobrescribir la textura persistida con un lienzo casi en blanco).
+- **TDD real**: tests nuevos fallan contra el código sin este fix, tanto en backend (Testcontainers reales) como en frontend, confirmado antes de aplicar la corrección.
+- **Verificación real**: backend 427/427, frontend 577/577, `vue-tsc -b`/`eslint` sin hallazgos.
+- **Mejora continua**: la asimetría upload-sin-download es exactamente análoga a la que `MobThumbnailController` ya resolvió desde el ticket 023 -- hubiera sido detectable con una revisión explícita de "¿todo lo que se sube tiene también una forma de bajarse?" al cerrar el ticket 045.
+
 Este archivo se completa a medida que cada ticket del milestone M0 en adelante aterriza código real (ver `pending/`/`in-process/`/`done/` para el estado de cada pieza).
 
 ## Referencias

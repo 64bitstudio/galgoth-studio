@@ -6,11 +6,11 @@ import type { TextureRect } from '../TexturePatchCommand'
 import { useTextureEditorStore } from '../textureEditorStore'
 
 vi.mock('../pngImportDecode', () => ({
-  decodePngFileToAtlasBuffer: vi.fn(),
+  decodePngBytesToAtlasBuffer: vi.fn(),
   PngDecodeError: class PngDecodeError extends Error {},
 }))
-const { decodePngFileToAtlasBuffer } = await import('../pngImportDecode')
-const mockDecode = vi.mocked(decodePngFileToAtlasBuffer)
+const { decodePngBytesToAtlasBuffer } = await import('../pngImportDecode')
+const mockDecode = vi.mocked(decodePngBytesToAtlasBuffer)
 
 function solidPixels(width: number, height: number, color: [number, number, number, number]): Uint8ClampedArray {
   const pixels = new Uint8ClampedArray(width * height * 4)

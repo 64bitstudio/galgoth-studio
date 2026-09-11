@@ -35,14 +35,22 @@ vi.mock('three', async (importOriginal) => {
 // `pngImportDecode.ts`); se mockea acá para poder ejercitar el flujo de
 // import end-to-end (selector de región -> TextureImportPanel -> store).
 vi.mock('../pngImportDecode', () => ({
-  decodePngFileToAtlasBuffer: vi.fn(),
+  decodePngBytesToAtlasBuffer: vi.fn(),
   PngDecodeError: class PngDecodeError extends Error {},
 }))
 
+// Ticket 066 -- ver docstring de `loadModelAtlas` en TextureCanvas.vue: la
+// carga real de la textura persistida depende de `fetch`, mockeada acá al
+// nivel del cliente HTTP (mismo criterio que el resto de los mocks de esta
+// suite, nunca stubeando `fetch` directo).
+vi.mock('../../../api/textureUploadApi', () => ({ downloadTexture: vi.fn() }))
+
 const { threeViewportService } = await import('../../../viewport/ThreeViewportService')
 const { default: TextureCanvas } = await import('../TextureCanvas.vue')
-const { decodePngFileToAtlasBuffer } = await import('../pngImportDecode')
-const mockDecode = vi.mocked(decodePngFileToAtlasBuffer)
+const { decodePngBytesToAtlasBuffer } = await import('../pngImportDecode')
+const mockDecode = vi.mocked(decodePngBytesToAtlasBuffer)
+const { downloadTexture } = await import('../../../api/textureUploadApi')
+const mockDownloadTexture = vi.mocked(downloadTexture)
 
 function solidPixels(width: number, height: number, color: [number, number, number, number]): Uint8ClampedArray {
   const pixels = new Uint8ClampedArray(width * height * 4)
@@ -75,7 +83,9 @@ function cuboid(id: string, name: string): Cuboid {
   return { id, name, boneId: 'bone-1', from: [-1, -1, -1], to: [1, 1, 1], origin: [0, 0, 0], rotation: [0, 0, 0], faces: EMPTY_FACES }
 }
 
-function modelWith(opts: { width?: number; height?: number; cuboids?: Cuboid[]; regions?: UvRegion[] } = {}): MobProjectModel {
+function modelWith(
+  opts: { width?: number; height?: number; cuboids?: Cuboid[]; regions?: UvRegion[]; storageKey?: string | null } = {},
+): MobProjectModel {
   const width = opts.width ?? 8
   const height = opts.height ?? 8
   return {
@@ -86,7 +96,7 @@ function modelWith(opts: { width?: number; height?: number; cuboids?: Cuboid[]; 
     units: 'minecraft_pixels',
     bones: [],
     cuboids: opts.cuboids ?? [],
-    texture: { width, height, storageKey: null },
+    texture: { width, height, storageKey: opts.storageKey ?? null },
     uv: { textureWidth: width, textureHeight: height, regions: opts.regions ?? [], reservations: [] },
     animations: [],
     exportSettings: { preferredFormatVersion: 'v5' },
@@ -174,6 +184,53 @@ describe('TextureCanvas.vue', () => {
 
     expect(store.atlas?.width).toBe(16)
     expect(store.atlas?.height).toBe(12)
+  })
+
+  /**
+   * Ticket 066 (hallazgo real, reportado por el PO): antes de este fix,
+   * un mob con `texture.storageKey` ya asignado (textura real generada
+   * por IA y aplicada, o pintada a mano y guardada) igual abría un atlas
+   * VACÍO al montar -- nunca se leían los bytes ya persistidos.
+   */
+  describe('ticket 066: carga de la textura ya persistida al montar', () => {
+    beforeEach(() => {
+      mockDownloadTexture.mockReset()
+      mockDecode.mockReset()
+    })
+
+    it('con storageKey, descarga y decodifica la textura real, y el atlas queda con ESOS píxeles (no vacío)', async () => {
+      const pixels = solidPixels(4, 4, [10, 20, 30, 255])
+      const pngBlob = new Blob(['fake-png'], { type: 'image/png' })
+      mockDownloadTexture.mockResolvedValue(pngBlob)
+      mockDecode.mockResolvedValue({ pixels, width: 4, height: 4 })
+
+      await mountCanvas(modelWith({ width: 4, height: 4, storageKey: 'textures/abc.png' }))
+      await flushPromises()
+      const store = useTextureEditorStore()
+
+      expect(mockDownloadTexture).toHaveBeenCalledWith('mob-1')
+      expect(mockDecode).toHaveBeenCalledWith(pngBlob)
+      expect(store.atlas?.pixels).toEqual(pixels)
+    })
+
+    it('sin storageKey (mob sin textura real todavía), NUNCA llama a downloadTexture -- mismo comportamiento de siempre', async () => {
+      await mountCanvas(modelWith({ storageKey: null }))
+      await flushPromises()
+
+      expect(mockDownloadTexture).not.toHaveBeenCalled()
+    })
+
+    it('si la descarga/decodificación falla, muestra un error visible y BLOQUEA "Guardar" -- nunca abre un atlas vacío en silencio (riesgo real de sobrescribir la textura persistida)', async () => {
+      mockDownloadTexture.mockRejectedValue(new Error('502 Bad Gateway'))
+
+      const wrapper = await mountCanvas(modelWith({ storageKey: 'textures/abc.png' }))
+      await flushPromises()
+
+      const alert = wrapper.get('[role="alert"]')
+      expect(alert.text()).toContain('No se pudo cargar la textura guardada')
+      const guardarButton = wrapper.findAll('button').find((b) => b.text().includes('Guardar'))!
+      expect(guardarButton.attributes('disabled')).toBeDefined()
+    })
   })
 
   it('AC HU-24: el selector de región lista "Todas las caras" + una opción por región, etiquetada "${cuboid.name} (${face})"', async () => {

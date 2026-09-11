@@ -102,12 +102,15 @@ import IconEyedropper from '../../design-system/icons/IconEyedropper.vue'
 import IconGrid from '../../design-system/icons/IconGrid.vue'
 import IconSave from '../../design-system/icons/IconSave.vue'
 import IconSparkle from '../../design-system/icons/IconSparkle.vue'
+import IconWarning from '../../design-system/icons/IconWarning.vue'
 import IconZoomIn from '../../design-system/icons/IconZoomIn.vue'
 import IconZoomOut from '../../design-system/icons/IconZoomOut.vue'
 import IconZoomReset from '../../design-system/icons/IconZoomReset.vue'
+import { downloadTexture } from '../../api/textureUploadApi'
 import { useDraftModelStore } from '../draftModelStore'
 import { saveRevision } from '../draftPersistenceApi'
 import { uploadThumbnail } from '../thumbnailApi'
+import { decodePngBytesToAtlasBuffer } from './pngImportDecode'
 import { hexToRgba, rgbaToHex } from './colorHex'
 import {
   boundsToRect,
@@ -171,6 +174,8 @@ const spaceDown = ref(false)
 const isPanning = ref(false)
 const pickedColorToast = ref<string | null>(null)
 const saveState = ref<TextureSaveState>('saved')
+/** Ticket 066: `null` mientras la carga inicial del atlas persistido salió bien; un mensaje si falló -- ver `loadModelAtlas`. */
+const atlasLoadError = ref<string | null>(null)
 
 /**
  * Puente entre el selector de región (formato `regionKey`, ticket 047) y
@@ -418,8 +423,43 @@ function redraw(sourcePixels?: Uint8ClampedArray): void {
   ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels), atlas.width, atlas.height), 0, 0)
 }
 
-function loadModelAtlas(model: MobProjectModel): void {
-  textureEditorStore.loadAtlas(model.uv.textureWidth, model.uv.textureHeight)
+/**
+ * Ticket 066 (hallazgo real, reportado por el PO): antes de este fix,
+ * esta función SOLO dimensionaba un atlas vacío (`loadAtlas(width,
+ * height)`, sin `pixels`) -- nunca leía los bytes ya persistidos
+ * (`model.texture.storageKey`) del backend, así que la textura de un mob
+ * real "desaparecía" del canvas y del preview 3D cada vez que se
+ * recargaba la página, aunque siguiera guardada. Ver Javadoc de
+ * `TextureService.download` (backend) para el detalle completo.
+ *
+ * <p>Si `storageKey` existe pero la descarga/decodificación falla
+ * (backend caído, PNG corrupto, etc.), se aborta la carga y se muestra
+ * un error VISIBLE (`atlasLoadError`, bloquea "Guardar") en vez de abrir
+ * un atlas vacío en silencio -- pintar sobre "la nada" y guardar
+ * sobrescribiría la textura real con un lienzo prácticamente en blanco
+ * (regla "sin parches silenciosos").
+ */
+async function loadModelAtlas(model: MobProjectModel): Promise<void> {
+  const width = model.uv.textureWidth
+  const height = model.uv.textureHeight
+  atlasLoadError.value = null
+
+  let pixels: Uint8ClampedArray | undefined
+  if (model.texture.storageKey) {
+    try {
+      const png = await downloadTexture(model.mobId)
+      if (png) {
+        pixels = (await decodePngBytesToAtlasBuffer(png)).pixels
+      }
+    } catch (error) {
+      console.error('[TextureCanvas] no se pudo cargar la textura persistida:', error)
+      atlasLoadError.value =
+        'No se pudo cargar la textura guardada de este mob. Recarga la página antes de continuar -- si guardas ahora, se sobrescribirá con un lienzo en blanco.'
+      return
+    }
+  }
+
+  textureEditorStore.loadAtlas(width, height, pixels)
   syncDataTexture()
   redraw()
   saveState.value = 'saved'
@@ -444,7 +484,7 @@ function handlePreviewClick(event: MouseEvent): void {
 }
 
 onMounted(() => {
-  loadModelAtlas(props.model)
+  void loadModelAtlas(props.model)
   if (previewContainerRef.value) {
     threeViewportService.attachTo(previewContainerRef.value)
     threeViewportService.startRenderLoop()
@@ -457,7 +497,7 @@ onMounted(() => {
 
 watch(
   () => props.model.mobId,
-  () => loadModelAtlas(props.model),
+  () => void loadModelAtlas(props.model),
 )
 
 watch(
@@ -515,7 +555,7 @@ function markDirty(): void {
 }
 
 async function handleSave(): Promise<void> {
-  if (saveState.value === 'saving') {
+  if (saveState.value === 'saving' || atlasLoadError.value !== null) {
     return
   }
   saveState.value = 'saving'
@@ -666,6 +706,10 @@ function showEyedropperToast(hex: string): void {
 
 <template>
   <div class="texture-canvas">
+    <p v-if="atlasLoadError" class="texture-canvas__load-error" role="alert">
+      <IconWarning :size="16" aria-hidden="true" />
+      {{ atlasLoadError }}
+    </p>
     <div class="texture-canvas__toolbar">
       <div class="texture-canvas__tb-group texture-canvas__tb-group--region">
         <GSelect v-model="selectedRegionKey" :options="regionOptions" label="Región UV a enfocar" />
@@ -711,7 +755,7 @@ function showEyedropperToast(hex: string): void {
       <div class="texture-canvas__tb-grow"></div>
 
       <TextureSaveStatus :state="saveState" />
-      <GButton variant="primary" :disabled="saveState === 'saving'" @click="handleSave"><template #icon><IconSave :size="16" /></template>{{ saveState === 'saving' ? 'Guardando…' : 'Guardar' }}</GButton>
+      <GButton variant="primary" :disabled="saveState === 'saving' || atlasLoadError !== null" @click="handleSave"><template #icon><IconSave :size="16" /></template>{{ saveState === 'saving' ? 'Guardando…' : 'Guardar' }}</GButton>
     </div>
 
     <div class="texture-canvas__main">
@@ -773,6 +817,21 @@ function showEyedropperToast(hex: string): void {
   height: 100%;
   min-height: 0;
   background: var(--bg);
+}
+
+/* ---- Banner de error de carga (ticket 066) ------------------------ */
+.texture-canvas__load-error {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  border-bottom: var(--border-width) solid var(--danger);
 }
 
 /* ---- Toolbar horizontal (zona 1) --------------------------------- */
