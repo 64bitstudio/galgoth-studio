@@ -421,6 +421,29 @@ function handleSplitterPointerUp(event: PointerEvent): void {
   }
 }
 
+const SPLITTER_KEYBOARD_STEP_PX = 20
+
+/**
+ * Patrón WAI-ARIA "Separator (Focusable)"/"Window Splitter" (APG): al
+ * llevar `aria-valuenow` el separador pasa a ser un widget interactivo
+ * real, no solo decorativo -- por eso también necesita soportar el
+ * teclado (hallazgo real de Sonar: `tabindex` sin esto es un widget que
+ * se puede enfocar pero no operar). Flecha izquierda = agranda el
+ * preview (mismo sentido que arrastrar el separador hacia la izquierda,
+ * ver `handleSplitterPointerMove`); derecha = lo achica.
+ */
+function handleSplitterKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+    return
+  }
+  event.preventDefault()
+  const delta = event.key === 'ArrowLeft' ? SPLITTER_KEYBOARD_STEP_PX : -SPLITTER_KEYBOARD_STEP_PX
+  previewPanelWidthPx.value = Math.max(MIN_PREVIEW_PANEL_PX, Math.min(MAX_PREVIEW_PANEL_PX, previewPanelWidthPx.value + delta))
+  if (previewContainerRef.value) {
+    threeViewportService.resizeToContainer(previewContainerRef.value)
+  }
+}
+
 // -- Textura 3D en vivo (HU-26) -----------------------------------------
 let dataTexture: DataTexture | null = null
 let dataTexturePixelsRef: Uint8ClampedArray | null = null
@@ -844,11 +867,15 @@ function showEyedropperToast(hex: string): void {
         role="separator"
         aria-orientation="vertical"
         aria-label="Redimensionar el preview 3D"
+        :aria-valuenow="previewPanelWidthPx"
+        :aria-valuemin="MIN_PREVIEW_PANEL_PX"
+        :aria-valuemax="MAX_PREVIEW_PANEL_PX"
         tabindex="0"
         @pointerdown="handleSplitterPointerDown"
         @pointermove="handleSplitterPointerMove"
         @pointerup="handleSplitterPointerUp"
         @pointercancel="handleSplitterPointerUp"
+        @keydown="handleSplitterKeydown"
       >
         <div class="texture-canvas__splitter-grip" aria-hidden="true"></div>
       </div>

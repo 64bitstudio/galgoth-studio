@@ -703,6 +703,23 @@ describe('TextureCanvas.vue', () => {
       await nextTick()
       expect(w.get('.texture-canvas__preview-panel').attributes('style')).toContain('width: 560px')
     })
+
+    it('el separador es operable por teclado (patrón WAI-ARIA "Separator (Focusable)") -- flecha izquierda agranda el preview, derecha lo achica, con los mismos límites', async () => {
+      const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
+      const splitter = w.get('.texture-canvas__splitter')
+      expect(splitter.attributes('role')).toBe('separator')
+      expect(splitter.attributes('aria-valuenow')).toBe('320')
+      expect(splitter.attributes('aria-valuemin')).toBe('200')
+      expect(splitter.attributes('aria-valuemax')).toBe('560')
+
+      await splitter.trigger('keydown', { key: 'ArrowLeft' })
+      expect(w.get('.texture-canvas__preview-panel').attributes('style')).toContain('width: 340px')
+      expect(splitter.attributes('aria-valuenow')).toBe('340')
+
+      await splitter.trigger('keydown', { key: 'ArrowRight' })
+      await splitter.trigger('keydown', { key: 'ArrowRight' })
+      expect(w.get('.texture-canvas__preview-panel').attributes('style')).toContain('width: 300px')
+    })
   })
 
   describe('ticket 058: guardado con indicador de 4 estados (reutiliza el flush de 056)', () => {
