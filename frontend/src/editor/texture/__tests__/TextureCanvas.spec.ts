@@ -680,6 +680,72 @@ describe('TextureCanvas.vue', () => {
     })
   })
 
+  describe('deshacer/rehacer (hallazgo real: el ticket 068 documentó este botón como hecho, pero nunca se cableó -- textureEditorStore.undo()/redo()/canUndo/canRedo ya existían desde el 046, sin ningún botón/atajo)', () => {
+    it('arrancan deshabilitados (sin ningún patch todavía)', async () => {
+      const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
+
+      expect(w.get('button[aria-label="Deshacer"]').attributes('disabled')).toBeDefined()
+      expect(w.get('button[aria-label="Rehacer"]').attributes('disabled')).toBeDefined()
+    })
+
+    it('tras un patch, "Deshacer" se habilita y clickearlo revierte el atlas al estado anterior', async () => {
+      const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
+      const store = useTextureEditorStore()
+      const before = store.readRegion({ x: 2, y: 2, width: 1, height: 1 })!
+      store.recordPatch({ x: 2, y: 2, width: 1, height: 1 }, before, new Uint8ClampedArray([255, 0, 0, 255]))
+      await nextTick()
+
+      expect(w.get('button[aria-label="Deshacer"]').attributes('disabled')).toBeUndefined()
+      expect(pixelAt(store.atlas!.pixels, 8, 2, 2)).toEqual([255, 0, 0, 255])
+
+      await w.get('button[aria-label="Deshacer"]').trigger('click')
+
+      expect(pixelAt(store.atlas!.pixels, 8, 2, 2)).toEqual(Array.from(before))
+    })
+
+    it('tras deshacer, "Rehacer" se habilita y clickearlo vuelve a aplicar el patch', async () => {
+      const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
+      const store = useTextureEditorStore()
+      const before = store.readRegion({ x: 2, y: 2, width: 1, height: 1 })!
+      store.recordPatch({ x: 2, y: 2, width: 1, height: 1 }, before, new Uint8ClampedArray([255, 0, 0, 255]))
+      await nextTick()
+      await w.get('button[aria-label="Deshacer"]').trigger('click')
+
+      expect(w.get('button[aria-label="Rehacer"]').attributes('disabled')).toBeUndefined()
+      await w.get('button[aria-label="Rehacer"]').trigger('click')
+
+      expect(pixelAt(store.atlas!.pixels, 8, 2, 2)).toEqual([255, 0, 0, 255])
+    })
+
+    it('Ctrl/Cmd+Z deshace y Ctrl/Cmd+Shift+Z rehace, mismo atajo que EditorToolbar.vue (Modelo)', async () => {
+      await mountCanvas(modelWith({ width: 8, height: 8 }))
+      const store = useTextureEditorStore()
+      const before = store.readRegion({ x: 2, y: 2, width: 1, height: 1 })!
+      store.recordPatch({ x: 2, y: 2, width: 1, height: 1 }, before, new Uint8ClampedArray([255, 0, 0, 255]))
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true }))
+      expect(pixelAt(store.atlas!.pixels, 8, 2, 2)).toEqual(Array.from(before))
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, shiftKey: true }))
+      expect(pixelAt(store.atlas!.pixels, 8, 2, 2)).toEqual([255, 0, 0, 255])
+    })
+
+    it('Ctrl/Cmd+Z con el foco en un campo de texto real (ej. el textarea del Asistente IA) no deshace nada', async () => {
+      await mountCanvas(modelWith({ width: 8, height: 8 }))
+      const store = useTextureEditorStore()
+      const before = store.readRegion({ x: 2, y: 2, width: 1, height: 1 })!
+      store.recordPatch({ x: 2, y: 2, width: 1, height: 1 }, before, new Uint8ClampedArray([255, 0, 0, 255]))
+      const input = document.createElement('input')
+      document.body.appendChild(input)
+      input.focus()
+
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }))
+
+      expect(pixelAt(store.atlas!.pixels, 8, 2, 2)).toEqual([255, 0, 0, 255])
+      document.body.removeChild(input)
+    })
+  })
+
   describe('ticket 068: separador arrastrable entre el lienzo y el preview 3D', () => {
     it('arranca en el ancho por defecto (320px) y el separador está presente', async () => {
       const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
