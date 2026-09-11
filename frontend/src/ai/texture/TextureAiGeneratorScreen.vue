@@ -751,8 +751,11 @@ function handleSidebarSelect(key: GSidebarKey): void {
    hover) -- mismo criterio de accesibilidad que el resto de la pantalla
    (nada exclusivo de hover/mouse). */
 .texture-ai-generator__reference-replace {
+  position: absolute;
+  inset: auto 0 0 0;
   display: flex;
   justify-content: center;
+  padding: var(--space-2);
 }
 
 .texture-ai-generator__sr-only {
