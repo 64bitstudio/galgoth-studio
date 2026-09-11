@@ -230,6 +230,14 @@ Frontend (Vue3+Three.js) --REST/SSE--> Backend (Spring Boot, monolito modular)
 - **Verificación real**: `./gradlew clean test` completo, backend: 420/420 tests, 0 failures.
 - **Cuarto hallazgo consecutivo del mismo tipo**: la cadena completa 059→060→061→062 confirma lo que el propio ticket 051 ya advertía ("a verificar contra la documentación real cuando 054 conecte este proveedor de punta a punta") -- ninguno de los 4 hallazgos era detectable con mocks, solo con verificación en vivo real.
 
+**Addendum post-milestone -- corrige el pixel budget de OpenAI: es de ÁREA, no de lado (corrige el error de 061)** (`done/063-...`, quinto hallazgo consecutivo de la misma cadena -- 059→060→061→062→este):
+- **El piso de 061 estaba mal**: la siguiente verificación en vivo volvió a fallar con el MISMO mensaje, ahora sobre el propio piso adoptado (`256x256` = 65 536px de área, rechazada). Una búsqueda más específica sí encontró el número exacto: el "pixel budget" real es una restricción de ÁREA TOTAL entre 655 360 y 8 294 400 píxeles -- nunca fue de lado individual, por lo que ningún piso por lado podía funcionar.
+- **Corrección**: `OpenAiImageProvider` reemplaza el piso por lado por `MIN_PIXEL_BUDGET = 655_360` (área) -- si `width*height` sigue bajo el mínimo tras redondeo+ratio, ambos lados se agrandan proporcionalmente (preservando el ratio) hasta cumplirlo, con clamp de ratio re-aplicado después del escalado.
+- **Tests más robustos**: en vez de literales `size` exactos (frágiles para un cálculo con escalado proporcional y redondeos encadenados -- así se coló el error de 061), los tests verifican las 3 invariantes documentadas por la API real (múltiplo de 16, ratio ≤3:1, área ≥ pixel budget) directamente sobre el body de la request.
+- **TDD real**: 7 casos fallan contra el código de 061, confirmado antes de aplicar la corrección.
+- **Verificación real**: `./gradlew clean test` completo, backend: 420/420 tests, 0 failures.
+- **Lección reforzada**: cuando la documentación no da un número exacto, una estimación sin verificar en vivo de inmediato es arriesgada -- 061 documentó honestamente esa incertidumbre, lo que permitió detectar y corregir el error rápido en vez de que quedara oculto como un "fix cerrado".
+
 Este archivo se completa a medida que cada ticket del milestone M0 en adelante aterriza código real (ver `pending/`/`in-process/`/`done/` para el estado de cada pieza).
 
 ## Referencias

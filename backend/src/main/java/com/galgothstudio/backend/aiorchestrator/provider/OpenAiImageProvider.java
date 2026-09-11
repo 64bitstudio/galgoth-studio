@@ -131,30 +131,69 @@ public class OpenAiImageProvider implements ImageGenerationProvider {
 	 * vivo)</b>: con el ratio ya corregido (64x32, dentro de 3:1), la API
 	 * real rechazó esa MISMA llamada con {@code "Invalid size '64x32'.
 	 * Requested resolution is below the current minimum pixel budget."} --
-	 * ni la documentación pública de OpenAI ni la búsqueda en vivo dieron
-	 * un número exacto para ese mínimo (a diferencia de los dos hallazgos
-	 * anteriores, donde la propia API sí dio el valor exacto en el
-	 * mensaje de error). Se adopta {@link #MIN_SIDE_PX} = 256px por lado
-	 * como piso conservador -- valor típico y ampliamente documentado
-	 * como mínimo seguro para modelos de generación de imagen
-	 * comparables, NO confirmado en vivo contra el mínimo real de esta
-	 * API -- si un futuro intento real todavía lo rechaza, este piso debe
-	 * subirse. El piso se aplica ANTES del clamp de aspect ratio (una
-	 * cara muy angosta podría necesitar agrandarse de nuevo tras subir a
-	 * 256 el lado corto).
+	 * ni la documentación pública de OpenAI ni una primera búsqueda en
+	 * vivo dieron un número exacto para ese mínimo. El ticket 061 adoptó
+	 * un piso de 256px POR LADO como estimación conservadora -- resultó
+	 * INCORRECTA: `256x256` (65 536px de área) fue rechazada por la API
+	 * real en la siguiente verificación en vivo con el MISMO mensaje.
+	 *
+	 * <p><b>Ticket 063 (cuarto hallazgo real, corrección del error de 061)</b>:
+	 * una búsqueda más específica ({@code "gpt-image-2.5" "pixel budget"
+	 * minimum resolution}) sí encontró el número exacto documentado para
+	 * esta familia de modelos: el "pixel budget" es una restricción de
+	 * ÁREA TOTAL ({@code width * height}), no de lado individual --
+	 * {@link #MIN_PIXEL_BUDGET} = 655 360px (tamaños de referencia
+	 * documentados: 1024x1024 = 1 048 576px ya cumple; 640x1024 =
+	 * 655 360px es el piso exacto). El piso por lado de 061 nunca podía
+	 * funcionar para este tipo de restricción: `256x256` = 65 536px, muy
+	 * por debajo del mínimo real de área. Corregido: si el área tras
+	 * redondeo+ratio sigue bajo el mínimo, AMBOS lados se agrandan
+	 * proporcionalmente (preservando el ratio ya validado) hasta que el
+	 * área alcance el mínimo -- nunca se encoge nada, mismo criterio de
+	 * "margen inerte descartado por {@code TextureSheetSlicer}" de los 3
+	 * hallazgos anteriores. Se re-aplica el clamp de aspect ratio una
+	 * última vez después de escalar (el redondeo a 16 de cada lado por
+	 * separado, tras escalar, puede introducir una discrepancia mínima).
 	 */
 	private static final int MAX_ASPECT_RATIO = 3;
-	private static final int MIN_SIDE_PX = 256;
+	private static final int MIN_PIXEL_BUDGET = 655_360;
 
 	private static String sizeParam(int width, int height) {
-		int w = Math.max(roundUpToMultipleOf16(width), MIN_SIDE_PX);
-		int h = Math.max(roundUpToMultipleOf16(height), MIN_SIDE_PX);
+		int[] size = clampAspectRatio(roundUpToMultipleOf16(width), roundUpToMultipleOf16(height));
+		if ((long) size[0] * size[1] < MIN_PIXEL_BUDGET) {
+			size = clampAspectRatio(growToMeetPixelBudget(size[0], size[1]));
+		}
+		return size[0] + "x" + size[1];
+	}
+
+	/** Agranda AMBOS lados proporcionalmente (nunca encoge) hasta que `width * height` alcance {@link #MIN_PIXEL_BUDGET} -- el redondeo a 16 de cada lado por separado puede dejar el área apenas por debajo del objetivo, de ahí el ajuste fino final (siempre agrandando el lado más chico, nunca el más grande). */
+	private static int[] growToMeetPixelBudget(int width, int height) {
+		double scale = Math.sqrt(MIN_PIXEL_BUDGET / (double) ((long) width * height));
+		int w = roundUpToMultipleOf16((int) Math.ceil(width * scale));
+		int h = roundUpToMultipleOf16((int) Math.ceil(height * scale));
+		while ((long) w * h < MIN_PIXEL_BUDGET) {
+			if (w <= h) {
+				w += 16;
+			} else {
+				h += 16;
+			}
+		}
+		return new int[] {w, h};
+	}
+
+	private static int[] clampAspectRatio(int width, int height) {
+		return clampAspectRatio(new int[] {width, height});
+	}
+
+	private static int[] clampAspectRatio(int[] size) {
+		int w = size[0];
+		int h = size[1];
 		if (w > h * MAX_ASPECT_RATIO) {
 			h = roundUpToMultipleOf16(ceilDiv(w, MAX_ASPECT_RATIO));
 		} else if (h > w * MAX_ASPECT_RATIO) {
 			w = roundUpToMultipleOf16(ceilDiv(h, MAX_ASPECT_RATIO));
 		}
-		return w + "x" + h;
+		return new int[] {w, h};
 	}
 
 	private static int roundUpToMultipleOf16(int value) {
