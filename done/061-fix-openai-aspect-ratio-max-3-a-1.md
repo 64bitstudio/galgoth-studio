@@ -25,6 +25,8 @@ Implementado:
 
 **Tests**: backend 417/417 (+3 desde 060), sin regresiones. `./gradlew clean test` corrido localmente antes de push.
 
+**Hallazgo real del gate de Sonar (S5976, PR #81, corregido antes de mergear)**: "Replace these 5 tests with a single Parameterized one" -- los 5 tests de ajuste de `size` (los 3 nuevos de este ticket + los 2 de 060) compartían exactamente la misma forma (llamar `generateTextureSheet` con `(width, height)` y verificar `size` esperado). Consolidados en un único `@ParameterizedTest`/`@MethodSource` (`generateTextureSheet_ajusta_el_size_a_las_restricciones_reales_de_la_API_de_OpenAI`), mismo patrón ya establecido en `ModelIntentValidatorTest`. El contexto histórico de cada caso real (059/060) se preservó como comentario en cada `Arguments.of(...)`, no se perdió información.
+
 **Verificación en vivo pendiente**: repetir "Generar con IA" (parte `head`) contra `studio-dev` una vez mergeado y desplegado.
 
 **Mejora continua** (tercer hallazgo consecutivo del mismo tipo -- 059/060/061): la única forma en que estos 3 bugs reales de la integración con OpenAI salieron a la luz fue probando de verdad contra la API real, iterando error por error. Ningún test unitario con valores convenientes los hubiera encontrado. Reforzado el hallazgo ya señalado en 060: para integraciones con una API externa real, al menos un ciclo de verificación en vivo (no solo mocks) antes de dar por cerrado un ticket que la toca por primera vez.
