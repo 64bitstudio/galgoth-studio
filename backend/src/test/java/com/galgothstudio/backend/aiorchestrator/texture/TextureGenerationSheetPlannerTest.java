@@ -168,6 +168,54 @@ class TextureGenerationSheetPlannerTest {
 	}
 
 	/**
+	 * Ticket 064 (hallazgo real, verificación en vivo contra `studio-dev`,
+	 * "Generar con IA" sobre el modelo completo del mob real
+	 * `Carcomido_v1`): un cuboid decorativo delgado (efecto de "rayo") con
+	 * {@code rect: [34,18,34,20]} en su cara NORTH real (x0==x1, ancho 0)
+	 * -- geometría legítima, no un dato corrupto. Antes de este fix esa
+	 * cara se incluía igual en el plan y `TextureSheetSlicer` explotaba al
+	 * recortarla ({@code RasterFormatException}, ancho/alto 0 inválido
+	 * para un raster de Java). Reproduce las dimensiones EXACTAS del caso
+	 * real que falló.
+	 */
+	@Test
+	void unaCaraConAreaCeroEnElAtlas_seOmiteDelPlan_hallazgoRealTicket064() {
+		List<Cuboid> cuboids = List.of(cuboidOf("cube-a", BONE_ID));
+		List<UvRegion> regions = new ArrayList<>(regionsFor("cube-a", 8).stream().filter(r -> r.face() != FaceName.NORTH).toList());
+		regions.add(new UvRegion("cube-a", FaceName.NORTH, new Vec4(34, 18, 34, 20))); // ancho 0, caso real
+		MobProjectModel model = modelWith(cuboids, regions);
+
+		List<TextureGenerationSheet> sheets = planner.plan(model, texturePlan(), BONE_ID, REFERENCE_IMAGE_ID);
+
+		assertThat(sheets).hasSize(1);
+		List<CuboidFacePlacement> placements = sheets.getFirst().placements();
+		assertThat(placements).hasSize(5); // 6 caras - 1 degenerada (NORTH)
+		assertThat(placements).noneMatch(p -> p.face() == FaceName.NORTH);
+	}
+
+	/**
+	 * Caso límite del mismo hallazgo: si TODAS las caras de un bone son
+	 * degeneradas (área cero), `plan()` debe devolver una lista VACÍA de
+	 * sheets -- nunca un sheet fantasma 0x0 (ver Javadoc de
+	 * `ShelfBinPacker.pack`, que SIEMPRE agrega un bin final aunque no se
+	 * haya colocado ningún item). Un sheet 0x0 real hubiera disparado una
+	 * llamada real a la API de imagen para generar literalmente nada.
+	 */
+	@Test
+	void unBoneConTodasSusCarasDeAreaCero_devuelveListaVaciaDeSheets_nuncaUnSheetFantasma() {
+		List<Cuboid> cuboids = List.of(cuboidOf("cube-a", BONE_ID));
+		List<UvRegion> regions = new ArrayList<>();
+		for (FaceName face : FaceName.values()) {
+			regions.add(new UvRegion("cube-a", face, new Vec4(10, 10, 10, 10))); // ancho Y alto 0 en TODAS las caras
+		}
+		MobProjectModel model = modelWith(cuboids, regions);
+
+		List<TextureGenerationSheet> sheets = planner.plan(model, texturePlan(), BONE_ID, REFERENCE_IMAGE_ID);
+
+		assertThat(sheets).isEmpty();
+	}
+
+	/**
 	 * Ticket 059 (hallazgo real, ver Javadoc de la clase de producción):
 	 * este test reemplaza al viejo "un modelo sin imagen de referencia
 	 * lanza excepción" -- ESE test simulaba el bug real (`referenceImages()`

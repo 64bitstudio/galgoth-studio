@@ -41,6 +41,14 @@ final class ShelfBinPacker {
 	 * exceda {@code maxDimensionPx} no se puede sub-dividir más --
 	 * {@link IllegalStateException} explícita en vez de un resultado
 	 * silenciosamente incorrecto.
+	 *
+	 * <p><b>{@code items} vacío devuelve una lista con UN {@code Bin} vacío
+	 * (0x0, sin items), nunca una lista vacía de bins</b> -- invariante del
+	 * bucle de abajo (`bins.add(current.build())` corre siempre al final,
+	 * incluso si el `for` nunca iteró). {@link TextureGenerationSheetPlanner#plan}
+	 * corta ANTES de llegar acá si {@code rawPlacements} está vacío (ticket
+	 * 064) precisamente para no propagar ese bin fantasma hacia un sheet
+	 * 0x0 real.
 	 */
 	static List<Bin> pack(List<Item> items, int maxDimensionPx, int gutterPx) {
 		List<Bin> bins = new ArrayList<>();

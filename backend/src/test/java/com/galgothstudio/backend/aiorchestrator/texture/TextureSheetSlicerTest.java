@@ -107,6 +107,44 @@ class TextureSheetSlicerTest {
 		assertOnlyColor(sliceB, BLUE);
 	}
 
+	/**
+	 * Ticket 065 (hallazgo real, verificación en vivo contra `studio-dev`):
+	 * el atlas compuesto resultante venía casi 100% negro/transparente --
+	 * root cause: `OpenAiImageProvider.sizeParam` (tickets 060/061/063)
+	 * infla el tamaño REALMENTE pedido a la API (múltiplo de 16, aspect
+	 * ratio, pixel budget de área) muy por encima de
+	 * `sheet.sheetWidth()/sheetHeight()` (a veces 10-25x) -- la imagen real
+	 * que vuelve es proporcionalmente más grande, con contenido real
+	 * distribuido en TODO ese canvas, no confinado a una esquina. Recortar
+	 * con las coordenadas ORIGINALES (pequeñas) contra la imagen REAL (más
+	 * grande) sin escalar extraía la región equivocada.
+	 */
+	@Test
+	void cuandoLaImagenRealEsMasGrandeQueElSheetPlaneado_escalaElSheetRectProporcionalmente_hallazgoRealTicket065() {
+		// Imagen real 8x8: mitad izquierda (x<4) ROJO, mitad derecha (x>=4)
+		// VERDE -- simula lo que la API real devuelve cuando el sheet se
+		// PLANEÓ en 4x4 pero el tamaño realmente pedido (tras sizeParam) fue
+		// 8x8 (2x más grande en cada eje).
+		BufferedImage real = new BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB);
+		for (int x = 0; x < 8; x++) {
+			for (int y = 0; y < 8; y++) {
+				real.setRGB(x, y, x < 4 ? RED : BLEED_GREEN);
+			}
+		}
+		byte[] imageBytes = pngOf(real);
+		// El placement ocupa la mitad DERECHA del sheet PLANEADO (4x4): [2,0]-[4,4].
+		TextureGenerationSheet sheet = new TextureGenerationSheet(
+				"head-1", "head", List.of(placement("cube-a", FaceName.NORTH, new Vec4(2, 0, 4, 4))), "cabeza", "paleta",
+				"", "ref-1", 4, 4); // sheetWidth/Height = 4x4 -- la imagen real decodificada es 8x8
+
+		BufferedImage slice = slicer.slice(imageBytes, sheet).getFirst().image();
+
+		// Sin el fix: recorta [2,0]-[4,4] de la imagen real de 8x8 tal cual ->
+		// cae dentro de la mitad ROJA (x<4) -- el bug real. Con el fix,
+		// [2,0]-[4,4] se escala x2 -> [4,0]-[8,8] -- la mitad correcta.
+		assertOnlyColor(slice, BLEED_GREEN);
+	}
+
 	@Test
 	void bytesCorruptos_lanzaTextureGenerationFailedException() {
 		byte[] garbage = {1, 2, 3, 4, 5};
@@ -120,8 +158,19 @@ class TextureSheetSlicerTest {
 	@Test
 	void unSheetRectQueExcedeLosLimitesRealesDeLaImagenGenerada_lanzaTextureGenerationFailedException() {
 		byte[] imageBytes = pngOf(syntheticSheetWithBleed()); // imagen real de 20x8
+		// Placement inconsistente a propósito: su rect (0,0,200,200) excede
+		// las dimensiones DECLARADAS del propio sheet (100x100) -- un dato
+		// mal formado que ShelfBinPacker nunca produciría en la práctica,
+		// pero que el slicer debe rechazar igual (defensa en profundidad).
+		// Ticket 065: ya no basta con que el placement exceda la imagen
+		// real SIN escalar -- ahora todo rect se escala proporcionalmente
+		// (imagenReal/sheet declarado) antes de recortar, así que un
+		// placement que respeta las dimensiones de su sheet SIEMPRE cabe
+		// en la imagen real tras escalar (por diseño). Para seguir
+		// probando el caso "no cabe ni así", el placement debe exceder el
+		// propio sheet declarado, no solo la imagen real.
 		TextureGenerationSheet sheet = new TextureGenerationSheet(
-				"head-1", "head", List.of(placement("cube-a", FaceName.NORTH, new Vec4(0, 0, 100, 100))), "cabeza",
+				"head-1", "head", List.of(placement("cube-a", FaceName.NORTH, new Vec4(0, 0, 200, 200))), "cabeza",
 				"paleta", "", "ref-1", 100, 100);
 
 		assertThatThrownBy(() -> slicer.slice(imageBytes, sheet)).isInstanceOf(TextureGenerationFailedException.class);

@@ -129,6 +129,19 @@ public class TextureGenerationSheetPlanner {
 		}
 
 		List<RawPlacement> rawPlacements = buildRawPlacements(model.uv(), boneCuboids);
+		if (rawPlacements.isEmpty()) {
+			// Hallazgo real (ticket 064): TODAS las caras de este bone son
+			// degeneradas (ver Javadoc de `buildRawPlacements`) -- nada que
+			// texturear. `ShelfBinPacker.pack(List.of(), ...)` SIEMPRE agrega un
+			// bin final aunque no se haya colocado ningún item (invariante de su
+			// propio bucle, ver su Javadoc), así que sin este corte temprano
+			// `plan()` devolvería un sheet fantasma 0x0 -- eso hubiera disparado
+			// una llamada real a la API de imagen para generar literalmente nada
+			// (ver hallazgo del `growToMeetPixelBudget` de 063 con área 0, que
+			// igual converge a un tamaño válido en vez de fallar, gastando la
+			// llamada en un sheet sin ningún placement que componer).
+			return List.of();
+		}
 		List<ShelfBinPacker.Bin> bins =
 				ShelfBinPacker.pack(toPackerItems(rawPlacements), MAX_SHEET_DIMENSION_PX, GUTTER_PX);
 
@@ -161,6 +174,34 @@ public class TextureGenerationSheetPlanner {
 				metadata.dominantPalette(), metadata.materialNotes(), metadata.referenceImageId(), bin.width(), bin.height());
 	}
 
+	/**
+	 * Hallazgo real (ticket 064, verificación en vivo contra `studio-dev`,
+	 * "Generar con IA" sobre el modelo completo): el cuboid
+	 * {@code 77fa3970-b105-45e6-a1c2-00ffaf9a5979} del mob real
+	 * `Carcomido_v1` (un cuboid decorativo delgado, parte del efecto visual
+	 * de "rayo/chispa") tiene 4 de sus 6 caras con {@code atlasUvRect} de
+	 * ÁREA CERO en el atlas real -- ej. {@code rect: [34,18,34,20]}
+	 * (x0==x1, ancho 0). Esto es geometría LEGÍTIMA (un cuboid con una
+	 * dimensión colapsada a 0 para simular una superficie plana/delgada),
+	 * no un dato corrupto -- el `UvLayoutSelector`/`StableUvStrategy`
+	 * (041/042) empaquetan esa cara igual, con footprint 0. El planner
+	 * anterior incluía esa cara en {@code rawPlacements} tal cual, y
+	 * {@link TextureSheetSlicer#slice} explotaba al intentar
+	 * {@code BufferedImage.getSubimage(x, y, 0, height)} --
+	 * {@code RasterFormatException} (ancho/alto 0 es inválido para un
+	 * raster de Java, independientemente de si el rect "cabe" dentro de
+	 * los límites de la imagen).
+	 *
+	 * <p>Una cara con área cero no tiene NINGÚN píxel visible que
+	 * texturear -- se omite de {@code rawPlacements} por completo (nunca
+	 * se le asigna un placement, nunca se envía a la IA, nunca se marca
+	 * como {@code PAINTED}/AI en {@code markTouchedFacesAsAiPainted} de
+	 * {@link TextureGenerationService} -- marcarla sería mentir sobre lo
+	 * que realmente se generó). Esto es intencional y correcto, no una
+	 * pérdida de datos: el resto de las caras del mismo cuboid (con área
+	 * real, ej. east/west en el caso reportado) se procesan con total
+	 * normalidad.
+	 */
 	private static List<RawPlacement> buildRawPlacements(UvLayout uv, List<Cuboid> boneCuboids) {
 		List<RawPlacement> result = new ArrayList<>();
 		for (Cuboid cuboid : boneCuboids) {
@@ -169,6 +210,9 @@ public class TextureGenerationSheetPlanner {
 				Vec4 atlasUvRect = atlasUvRectOf(uv, cuboid.id(), face);
 				int width = (int) Math.round(atlasUvRect.c() - atlasUvRect.a());
 				int height = (int) Math.round(atlasUvRect.d() - atlasUvRect.b());
+				if (width <= 0 || height <= 0) {
+					continue;
+				}
 				result.add(
 						new RawPlacement(cuboid.id(), face, atlasUvRect, relativeSize, orientationHintFor(face), width,
 								height));
