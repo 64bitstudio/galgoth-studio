@@ -115,7 +115,7 @@ class TextureSheetSlicerTest {
 	 * ratio, pixel budget de área) muy por encima de
 	 * `sheet.sheetWidth()/sheetHeight()` (a veces 10-25x) -- la imagen real
 	 * que vuelve es proporcionalmente más grande, con contenido real
-	 * distribuido en TODO ese canvas, no confinado a una esquina. Recortar
+	 * distribuido en ese canvas completo, no confinado a una esquina. Recortar
 	 * con las coordenadas ORIGINALES (pequeñas) contra la imagen REAL (más
 	 * grande) sin escalar extraía la región equivocada.
 	 */
@@ -163,7 +163,7 @@ class TextureSheetSlicerTest {
 		// mal formado que ShelfBinPacker nunca produciría en la práctica,
 		// pero que el slicer debe rechazar igual (defensa en profundidad).
 		// Ticket 065: ya no basta con que el placement exceda la imagen
-		// real SIN escalar -- ahora todo rect se escala proporcionalmente
+		// real SIN escalar -- ahora cada rect se escala proporcionalmente
 		// (imagenReal/sheet declarado) antes de recortar, así que un
 		// placement que respeta las dimensiones de su sheet SIEMPRE cabe
 		// en la imagen real tras escalar (por diseño). Para seguir

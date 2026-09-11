@@ -45,7 +45,7 @@ import org.springframework.stereotype.Component;
  * aspect ratio, pixel budget de área) -- una inflación que puede ser de
  * 10-25x (ej. un sheet de 64x32 termina pidiéndose como 816x816 para
  * cumplir el pixel budget mínimo). La API genera contenido real
- * proporcional a TODO el canvas que se le pide, no confinado a una
+ * proporcional al canvas completo que se le pide, no confinado a una
  * esquina -- así que recortar con las coordenadas ORIGINALES (pequeñas)
  * contra la imagen REAL (mucho más grande) extraía una esquina
  * mayormente vacía/negra, no el contenido generado real. Corregido:

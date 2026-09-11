@@ -189,8 +189,7 @@ class TextureGenerationSheetPlannerTest {
 
 		assertThat(sheets).hasSize(1);
 		List<CuboidFacePlacement> placements = sheets.getFirst().placements();
-		assertThat(placements).hasSize(5); // 6 caras - 1 degenerada (NORTH)
-		assertThat(placements).noneMatch(p -> p.face() == FaceName.NORTH);
+		assertThat(placements).hasSize(5).noneMatch(p -> p.face() == FaceName.NORTH); // 6 caras - 1 degenerada (NORTH)
 	}
 
 	/**
