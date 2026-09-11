@@ -35,17 +35,29 @@
  * `GET /api/jobs/{jobId}/texture-result` (`beforeAtlasPngBase64`/
  * `afterAtlasPngBase64`) -- no hace falta reconstruir nada a mano.
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GSidebar, { type GSidebarKey } from '../../design-system/components/GSidebar.vue'
 import GButton from '../../design-system/components/GButton.vue'
+import GSelect, { type GSelectOption } from '../../design-system/components/GSelect.vue'
 import IconButton from '../../design-system/components/IconButton.vue'
 import IconCheck from '../../design-system/icons/IconCheck.vue'
+import IconCuboid from '../../design-system/icons/IconCuboid.vue'
+import IconEye from '../../design-system/icons/IconEye.vue'
+import IconMosaic from '../../design-system/icons/IconMosaic.vue'
+import IconTarget from '../../design-system/icons/IconTarget.vue'
+import IconUpload from '../../design-system/icons/IconUpload.vue'
 import IconWarning from '../../design-system/icons/IconWarning.vue'
 import IconSparkle from '../../design-system/icons/IconSparkle.vue'
 import { getMob } from '../../projects/mobsApi'
 import { getDraft } from '../../editor/draftPersistenceApi'
-import { listReferenceImages, referenceImageUrl } from '../../api/referenceImagesApi'
+import {
+  listReferenceImages,
+  referenceImageUrl,
+  uploadReferenceImage,
+  MAX_REFERENCE_IMAGE_BYTES,
+  SUPPORTED_REFERENCE_IMAGE_TYPES,
+} from '../../api/referenceImagesApi'
 import {
   applyTexture,
   getTextureResult,
@@ -71,14 +83,20 @@ const router = useRouter()
 const projectId = route.params.projectId as string
 const mobId = route.params.mobId as string
 
-const STYLE_OPTIONS: Array<{ value: TextureStyleValue; label: string }> = [
-  { value: 'faithful', label: 'Fiel a la referencia' },
-  { value: 'minecraft_vanilla', label: 'Minecraft Vanilla' },
-  { value: 'pixel_art', label: 'Pixel Art' },
-  { value: 'realistic', label: 'Realista' },
+/** Ticket 067 -- rediseño con VoBo del PO sobre preview interactivo (https://claude.ai/code/artifact/9efe4c8d-2776-4f94-be58-6caa4fb78ebc): radio buttons personalizados con ícono, nunca `<input type="radio">` nativo. */
+const STYLE_OPTIONS: Array<{ value: TextureStyleValue; label: string; icon: Component }> = [
+  { value: 'faithful', label: 'Fiel a la referencia', icon: IconTarget },
+  { value: 'minecraft_vanilla', label: 'Minecraft Vanilla', icon: IconCuboid },
+  { value: 'pixel_art', label: 'Pixel Art', icon: IconMosaic },
+  { value: 'realistic', label: 'Realista', icon: IconEye },
 ]
 
 const DETAIL_LEVELS: readonly TextureDetailLevelValue[] = ['low', 'medium', 'high']
+/** Ticket 067 -- el slider nativo (`<input type="range">`) pasa a un control segmentado de 3 opciones: un slider ARIA personalizado es un widget de alto riesgo de accesibilidad para solo 3 valores discretos: un `role="radiogroup"` cubre lo mismo con el mismo patrón ya usado en `STYLE_OPTIONS`, sin reinventar un slider a mano. */
+const DETAIL_LABELS: readonly string[] = ['Bajo', 'Medio', 'Alto']
+
+/** Ticket 067 -- valor centinela para "Modelo completo" en el `GSelect` de "Parte a generar" (su `modelValue` es siempre `string`, nunca `null`) -- se traduce a/desde `targetBoneId` (`string | null`) en `selectedBoneValue`. */
+const WHOLE_MODEL_VALUE = ''
 
 interface BoneOption {
   id: string
@@ -103,6 +121,96 @@ const detailIndex = ref(1)
 const detailLevel = computed<TextureDetailLevelValue>(() => DETAIL_LEVELS[detailIndex.value]!)
 const targetBoneId = ref<string | null>(null)
 const startError = ref<string | null>(null)
+
+const boneSelectOptions = computed<GSelectOption[]>(() => [
+  { value: WHOLE_MODEL_VALUE, label: 'Modelo completo' },
+  ...boneOptions.value.map((bone) => ({ value: bone.id, label: bone.name })),
+])
+const selectedBoneValue = computed<string>({
+  get: () => targetBoneId.value ?? WHOLE_MODEL_VALUE,
+  set: (value) => {
+    targetBoneId.value = value === WHOLE_MODEL_VALUE ? null : value
+  },
+})
+
+// ---- reemplazo de la imagen de referencia (ticket 067, VoBo del PO) ----
+const replacingReference = ref(false)
+const replaceReferenceError = ref<string | null>(null)
+const referenceFileInputEl = ref<HTMLInputElement>()
+
+function openReferenceFilePicker(): void {
+  referenceFileInputEl.value?.click()
+}
+
+/** Mismos límites/mensajes que `ReferenceStep.vue` (027) -- valida client-side antes de subir, mismo criterio que el resto del proyecto. */
+async function handleReferenceFileChange(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0] ?? null
+  input.value = '' // permite re-elegir el mismo archivo dos veces seguidas (mismo criterio que TextureImportPanel/pngImportDecode)
+  if (!file) {
+    return
+  }
+  if (!SUPPORTED_REFERENCE_IMAGE_TYPES.includes(file.type)) {
+    replaceReferenceError.value = `Formato no soportado: '${file.type || 'desconocido'}' -- solo se aceptan PNG o JPEG.`
+    return
+  }
+  if (file.size > MAX_REFERENCE_IMAGE_BYTES) {
+    replaceReferenceError.value = `La imagen pesa ${(file.size / (1024 * 1024)).toFixed(1)}MB -- el máximo soportado es 10MB.`
+    return
+  }
+  replaceReferenceError.value = null
+  replacingReference.value = true
+  try {
+    const summary = await uploadReferenceImage(mobId, file)
+    // `ReferenceImageService` es append-only (024) -- subir una nueva imagen
+    // la vuelve automáticamente "la" referencia (`mostRecentReference` en el
+    // backend siempre toma la última) sin necesitar ningún endpoint nuevo.
+    referenceUrl.value = referenceImageUrl(summary.url)
+    hasReferenceImage.value = true
+  } catch (error) {
+    replaceReferenceError.value = error instanceof ApiError ? error.message : 'No se pudo subir la nueva imagen de referencia.'
+  } finally {
+    replacingReference.value = false
+  }
+}
+
+// ---- radiogroups personalizados (Estilo/Detalle, ticket 067) ----
+// Patrón WAI-ARIA "Radio Group" con roving tabindex: solo la opción
+// seleccionada (o la primera, si ninguna) es alcanzable con Tab -- las
+// flechas mueven foco+selección DENTRO del grupo (con wrap-around, mismo
+// comportamiento validado en el preview interactivo). Un solo helper
+// genérico para los 2 grupos de esta pantalla (Estilo de 4 opciones,
+// Detalle de 3) en vez de duplicar la lógica de teclado.
+function handleRadioGroupKeydown(event: KeyboardEvent, currentIndex: number, count: number, selectIndex: (index: number) => void, buttonRefs: HTMLButtonElement[]): void {
+  if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(event.key)) {
+    return
+  }
+  event.preventDefault()
+  const delta = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1
+  const nextIndex = (currentIndex + delta + count) % count
+  selectIndex(nextIndex)
+  void nextTick(() => buttonRefs[nextIndex]?.focus())
+}
+
+const styleButtonRefs = ref<HTMLButtonElement[]>([])
+function setStyleButtonRef(el: Element | null, index: number): void {
+  if (el) {
+    styleButtonRefs.value[index] = el as HTMLButtonElement
+  }
+}
+function handleStyleKeydown(event: KeyboardEvent, index: number): void {
+  handleRadioGroupKeydown(event, index, STYLE_OPTIONS.length, (next) => (style.value = STYLE_OPTIONS[next]!.value), styleButtonRefs.value)
+}
+
+const detailButtonRefs = ref<HTMLButtonElement[]>([])
+function setDetailButtonRef(el: Element | null, index: number): void {
+  if (el) {
+    detailButtonRefs.value[index] = el as HTMLButtonElement
+  }
+}
+function handleDetailKeydown(event: KeyboardEvent, index: number): void {
+  handleRadioGroupKeydown(event, index, DETAIL_LABELS.length, (next) => (detailIndex.value = next), detailButtonRefs.value)
+}
 
 // ---- progreso ----
 const phase = ref<Phase>('form')
@@ -362,15 +470,28 @@ function handleSidebarSelect(key: GSidebarKey): void {
             <div class="texture-ai-generator__reference">
               <img v-if="referenceUrl" class="texture-ai-generator__reference-img" :src="referenceUrl" alt="Referencia del mob" />
               <div v-else class="texture-ai-generator__reference-placeholder">Sin referencia</div>
+              <div v-if="phase === 'form'" class="texture-ai-generator__reference-replace">
+                <GButton type="button" variant="secondary" :disabled="replacingReference" @click="openReferenceFilePicker">
+                  <template #icon><IconUpload :size="16" /></template>
+                  {{ replacingReference ? 'Subiendo…' : 'Cambiar imagen' }}
+                </GButton>
+                <input ref="referenceFileInputEl" aria-label="Elegir nueva imagen de referencia" type="file" accept="image/png,image/jpeg" class="texture-ai-generator__sr-only" @change="handleReferenceFileChange" />
+              </div>
+            </div>
+            <p v-if="replaceReferenceError" class="texture-ai-generator__notice texture-ai-generator__notice--error"><IconWarning :size="14" /> {{ replaceReferenceError }}</p>
+
+            <div>
+              <p id="texture-style-label" class="texture-ai-generator__section-label">Estilo</p>
+              <div class="texture-ai-generator__style-grid" role="radiogroup" aria-labelledby="texture-style-label">
+                <button v-for="(option, index) in STYLE_OPTIONS" :key="option.value" :ref="(el) => setStyleButtonRef(el as Element | null, index)" type="button" role="radio" class="texture-ai-generator__style-card" :class="{ 'texture-ai-generator__style-card--active': style === option.value }" :aria-checked="style === option.value" :tabindex="style === option.value ? 0 : -1" :disabled="phase !== 'form'" @click="style = option.value" @keydown="handleStyleKeydown($event, index)"><component :is="option.icon" :size="20" aria-hidden="true" />{{ option.label }}<IconCheck class="texture-ai-generator__style-card-check" :size="16" aria-hidden="true" /></button>
+              </div>
             </div>
 
-            <fieldset class="texture-ai-generator__fieldset" :disabled="phase !== 'form'">
-              <legend>Estilo</legend>
-              <label v-for="option in STYLE_OPTIONS" :key="option.value" class="texture-ai-generator__radio">
-                <input v-model="style" type="radio" name="texture-style" :value="option.value" />
-                {{ option.label }}
-              </label>
-            </fieldset>
+            <p v-if="startError" class="texture-ai-generator__notice texture-ai-generator__notice--error">{{ startError }}</p>
+            <GButton v-if="phase === 'form'" type="button" variant="primary" class="texture-ai-generator__generate-btn" :disabled="!canSubmit" @click="submitGeneration">
+              <template #icon><IconSparkle :size="16" /></template>
+              Generar con IA
+            </GButton>
           </div>
 
           <div class="texture-ai-generator__column">
@@ -418,41 +539,29 @@ function handleSidebarSelect(key: GSidebarKey): void {
             </div>
 
             <div class="texture-ai-generator__detail">
-              <label class="texture-ai-generator__detail-label" for="texture-detail-range">Detalle</label>
-              <div class="texture-ai-generator__detail-row">
-                <span>Bajo</span>
-                <input id="texture-detail-range" v-model.number="detailIndex" type="range" min="0" max="2" step="1" :disabled="phase !== 'form'" aria-label="Nivel de detalle" />
-                <span>Alto</span>
+              <p id="texture-detail-label" class="texture-ai-generator__section-label">Detalle</p>
+              <div class="texture-ai-generator__segmented" role="radiogroup" aria-labelledby="texture-detail-label">
+                <button v-for="(detailLabel, index) in DETAIL_LABELS" :key="detailLabel" :ref="(el) => setDetailButtonRef(el as Element | null, index)" type="button" role="radio" class="texture-ai-generator__segmented-opt" :class="{ 'texture-ai-generator__segmented-opt--active': detailIndex === index }" :aria-checked="detailIndex === index" :tabindex="detailIndex === index ? 0 : -1" :disabled="phase !== 'form'" @click="detailIndex = index" @keydown="handleDetailKeydown($event, index)">{{ detailLabel }}</button>
               </div>
+            </div>
+
+            <div class="texture-ai-generator__part">
+              <p id="texture-part-label" class="texture-ai-generator__section-label">Parte a generar</p>
+              <GSelect v-model="selectedBoneValue" :options="boneSelectOptions" label="Parte a generar" :disabled="phase !== 'form'" />
             </div>
           </div>
         </div>
 
-        <div class="texture-ai-generator__footer">
-          <label class="texture-ai-generator__part-label">
-            Parte a generar
-            <select v-model="targetBoneId" class="texture-ai-generator__select" aria-label="Parte a generar" :disabled="phase !== 'form'">
-              <option :value="null">Modelo completo</option>
-              <option v-for="bone in boneOptions" :key="bone.id" :value="bone.id">{{ bone.name }}</option>
-            </select>
-          </label>
-
-          <p v-if="startError" class="texture-ai-generator__notice texture-ai-generator__notice--error">{{ startError }}</p>
-
-          <template v-if="phase === 'form'">
-            <GButton variant="primary" :disabled="!canSubmit" @click="submitGeneration">Regenerar textura</GButton>
-          </template>
-          <template v-else-if="phase === 'result'">
-            <p v-if="result?.hasHandPaintedOverwrite" class="texture-ai-generator__notice texture-ai-generator__notice--warning">
-              <IconWarning :size="14" /> Esta propuesta sobrescribirá contenido pintado A MANO en algunas caras -- no solo generado por IA.
-            </p>
-            <p v-if="applyError" class="texture-ai-generator__notice texture-ai-generator__notice--error">{{ applyError }}</p>
-            <GButton v-if="staleBase" variant="secondary" :disabled="applying" @click="retryGeneration">Regenerar contra el estado actual</GButton>
-            <div class="texture-ai-generator__actions">
-              <GButton variant="secondary" :disabled="applying" @click="reject">Rechazar</GButton>
-              <GButton variant="primary" :disabled="applying" @click="apply">{{ applying ? 'Aplicando…' : 'Aplicar' }}</GButton>
-            </div>
-          </template>
+        <div v-if="phase === 'result'" class="texture-ai-generator__footer">
+          <p v-if="result?.hasHandPaintedOverwrite" class="texture-ai-generator__notice texture-ai-generator__notice--warning">
+            <IconWarning :size="14" /> Esta propuesta sobrescribirá contenido pintado A MANO en algunas caras -- no solo generado por IA.
+          </p>
+          <p v-if="applyError" class="texture-ai-generator__notice texture-ai-generator__notice--error">{{ applyError }}</p>
+          <GButton v-if="staleBase" variant="secondary" :disabled="applying" @click="retryGeneration">Regenerar contra el estado actual</GButton>
+          <div class="texture-ai-generator__actions">
+            <GButton variant="secondary" :disabled="applying" @click="reject">Rechazar</GButton>
+            <GButton variant="primary" :disabled="applying" @click="apply">{{ applying ? 'Aplicando…' : 'Aplicar' }}</GButton>
+          </div>
         </div>
       </div>
     </main>
@@ -569,51 +678,141 @@ function handleSidebarSelect(key: GSidebarKey): void {
   image-rendering: pixelated;
 }
 
-.texture-ai-generator__fieldset {
-  border: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.texture-ai-generator__fieldset legend {
-  padding: 0 0 var(--space-2);
+.texture-ai-generator__section-label {
+  margin: 0 0 var(--space-2);
   color: var(--muted);
   font-size: var(--text-sm);
 }
 
-.texture-ai-generator__radio {
-  display: flex;
-  align-items: center;
+/* Ticket 067 -- radiogroup de "Estilo" con VoBo del PO sobre el preview
+   interactivo (https://claude.ai/code/artifact/9efe4c8d-2776-4f94-be58-6caa4fb78ebc):
+   tarjetas con ícono, nunca `<input type="radio">` nativo -- mismo criterio
+   ya validado por `GSelect.vue` (058) para "sin componentes nativos". */
+.texture-ai-generator__style-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: var(--space-2);
-  min-height: var(--hit-target-min);
+}
+
+.texture-ai-generator__style-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 88px;
+  padding: var(--space-3);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  text-align: center;
   cursor: pointer;
+  transition: var(--transition-fast);
 }
 
-.texture-ai-generator__detail {
+.texture-ai-generator__style-card:hover:not(:disabled) {
+  border-color: #3a4956;
+  background: var(--surface-2);
+}
+
+.texture-ai-generator__style-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.texture-ai-generator__style-card--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.texture-ai-generator__style-card-check {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  color: var(--accent);
+  visibility: hidden;
+}
+
+.texture-ai-generator__style-card--active .texture-ai-generator__style-card-check {
+  visibility: visible;
+}
+
+.texture-ai-generator__generate-btn {
+  width: 100%;
+}
+
+/* Ticket 067 -- reemplazo de la imagen de referencia (VoBo del PO):
+   overlay "Cambiar imagen" siempre visible bajo la referencia (no solo al
+   hover) -- mismo criterio de accesibilidad que el resto de la pantalla
+   (nada exclusivo de hover/mouse). */
+.texture-ai-generator__reference-replace {
+  display: flex;
+  justify-content: center;
+}
+
+.texture-ai-generator__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.texture-ai-generator__detail,
+.texture-ai-generator__part {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
-.texture-ai-generator__detail-label {
-  color: var(--muted);
-  font-size: var(--text-sm);
-}
-
-.texture-ai-generator__detail-row {
+/* Ticket 067 -- el slider nativo de Detalle pasa a un control segmentado de
+   3 opciones (ver nota en `DETAIL_LABELS`, script). */
+.texture-ai-generator__segmented {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--muted);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
-.texture-ai-generator__detail-row input[type='range'] {
+.texture-ai-generator__segmented-opt {
   flex: 1;
-  accent-color: var(--accent);
+  min-height: var(--hit-target-min);
+  padding: 0 var(--space-2);
+  background: var(--surface);
+  border: none;
+  border-right: var(--border-width) solid var(--border);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.texture-ai-generator__segmented-opt:last-child {
+  border-right: none;
+}
+
+.texture-ai-generator__segmented-opt:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.texture-ai-generator__segmented-opt:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.texture-ai-generator__segmented-opt--active {
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
 }
 
 .texture-ai-generator__progress-block {
@@ -728,26 +927,6 @@ function handleSidebarSelect(key: GSidebarKey): void {
   gap: var(--space-3);
   padding-top: var(--space-3);
   border-top: var(--border-width) solid var(--border);
-}
-
-.texture-ai-generator__part-label {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--muted);
-  width: 260px;
-  max-width: 100%;
-}
-
-.texture-ai-generator__select {
-  min-height: var(--hit-target-min);
-  padding: 0 var(--space-3);
-  background: var(--surface);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--text);
-  font-size: var(--text-base);
 }
 
 .texture-ai-generator__actions {

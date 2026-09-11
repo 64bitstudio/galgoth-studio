@@ -14,9 +14,13 @@ vi.mock('../../../editor/draftPersistenceApi', () => ({
 }))
 
 const listReferenceImages = vi.fn()
+const uploadReferenceImage = vi.fn()
 vi.mock('../../../api/referenceImagesApi', () => ({
   listReferenceImages: (...args: unknown[]) => listReferenceImages(...args),
+  uploadReferenceImage: (...args: unknown[]) => uploadReferenceImage(...args),
   referenceImageUrl: (relativeUrl: string) => `http://localhost:8080${relativeUrl}`,
+  MAX_REFERENCE_IMAGE_BYTES: 10 * 1024 * 1024,
+  SUPPORTED_REFERENCE_IMAGE_TYPES: ['image/png', 'image/jpeg'],
 }))
 
 const startTextureGeneration = vi.fn()
@@ -114,6 +118,35 @@ function buttonWithText(wrapper: ReturnType<typeof mount>, text: string) {
   return buttons(wrapper).find((b) => b.text() === text)
 }
 
+/** Ticket 067 -- Estilo/Detalle son ahora `role="radio"` personalizados, nunca `<input type="radio">`/`<input type="range">` nativos. */
+function styleCards(wrapper: ReturnType<typeof mount>) {
+  return wrapper.findAll('.texture-ai-generator__style-card')
+}
+
+function detailOptions(wrapper: ReturnType<typeof mount>) {
+  return wrapper.findAll('.texture-ai-generator__segmented-opt')
+}
+
+/** Ticket 067 -- "Parte a generar" es ahora un `GSelect` (058), nunca `<select>` nativo. */
+async function openBoneSelect(wrapper: ReturnType<typeof mount>): Promise<void> {
+  await wrapper.get('button.g-select__trigger').trigger('click')
+}
+
+async function pickBoneOption(wrapper: ReturnType<typeof mount>, label: string): Promise<void> {
+  await openBoneSelect(wrapper)
+  const option = wrapper.findAll('.g-select__option').find((o) => o.text() === label)!
+  await option.trigger('click')
+}
+
+const FAKE_REFERENCE_FILE = new File([new Uint8Array([1, 2, 3])], 'nueva-referencia.png', { type: 'image/png' })
+
+async function selectReferenceFile(wrapper: ReturnType<typeof mount>, file: File): Promise<void> {
+  const input = wrapper.get('input[aria-label="Elegir nueva imagen de referencia"]').element as HTMLInputElement
+  Object.defineProperty(input, 'files', { value: [file], configurable: true })
+  input.dispatchEvent(new Event('change'))
+  await flushPromises()
+}
+
 const fakeCtx = { drawImage: vi.fn(), clearRect: vi.fn() }
 
 describe('TextureAiGeneratorScreen.vue', () => {
@@ -121,6 +154,7 @@ describe('TextureAiGeneratorScreen.vue', () => {
     getMob.mockReset().mockResolvedValue(mobSummary)
     getDraft.mockReset().mockResolvedValue(draftView)
     listReferenceImages.mockReset().mockResolvedValue(references)
+    uploadReferenceImage.mockReset()
     startTextureGeneration.mockReset().mockResolvedValue({ jobId: 'job-1' })
     getTextureResult.mockReset()
     applyTexture.mockReset()
@@ -147,19 +181,20 @@ describe('TextureAiGeneratorScreen.vue', () => {
     expect(img.exists()).toBe(true)
     expect(img.attributes('src')).toContain('/api/mobs/mob-1/references/r1')
 
-    const radios = wrapper.findAll('input[type="radio"]')
-    expect(radios).toHaveLength(4)
+    const cards = styleCards(wrapper)
+    expect(cards).toHaveLength(4)
     expect(wrapper.text()).toContain('Fiel a la referencia')
     expect(wrapper.text()).toContain('Minecraft Vanilla')
     expect(wrapper.text()).toContain('Pixel Art')
     expect(wrapper.text()).toContain('Realista')
+    expect(cards[0]!.attributes('aria-checked')).toBe('true') // 'faithful' es el default
 
-    expect(wrapper.find('input[type="range"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Bajo')
-    expect(wrapper.text()).toContain('Alto')
+    const detailOpts = detailOptions(wrapper)
+    expect(detailOpts.map((o) => o.text())).toEqual(['Bajo', 'Medio', 'Alto'])
+    expect(detailOpts[1]!.attributes('aria-checked')).toBe('true') // índice 1 ('medium') es el default
 
-    const select = wrapper.find('select')
-    const options = select.findAll('option').map((o) => o.text())
+    await openBoneSelect(wrapper)
+    const options = wrapper.findAll('.g-select__option').map((o) => o.text())
     expect(options).toEqual(['Modelo completo', 'head']) // empty_bone (sin cuboids) queda afuera
   })
 
@@ -172,14 +207,14 @@ describe('TextureAiGeneratorScreen.vue', () => {
     expect(wrapper.text()).toContain('Este mob no existe.')
   })
 
-  it('sin ninguna imagen de referencia, muestra el aviso y "Regenerar textura" queda deshabilitado', async () => {
+  it('sin ninguna imagen de referencia, muestra el aviso y "Generar con IA" queda deshabilitado', async () => {
     listReferenceImages.mockResolvedValue([])
     const router = await routerAt()
     const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
     await flushPromises()
 
     expect(wrapper.text()).toContain('no se puede generar textura por IA')
-    const button = buttonWithText(wrapper, 'Regenerar textura')!
+    const button = buttonWithText(wrapper, 'Generar con IA')!
     expect(button.attributes('disabled')).toBeDefined()
   })
 
@@ -188,11 +223,11 @@ describe('TextureAiGeneratorScreen.vue', () => {
     const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
     await flushPromises()
 
-    await wrapper.findAll('input[type="radio"]')[2]!.setValue() // Pixel Art
-    await wrapper.find('input[type="range"]').setValue(2) // Alto
-    await wrapper.find('select').setValue('b1') // head
+    await styleCards(wrapper)[2]!.trigger('click') // Pixel Art
+    await detailOptions(wrapper)[2]!.trigger('click') // Alto
+    await pickBoneOption(wrapper, 'head')
 
-    await buttonWithText(wrapper, 'Regenerar textura')!.trigger('click')
+    await buttonWithText(wrapper, 'Generar con IA')!.trigger('click')
     await flushPromises()
 
     expect(startTextureGeneration).toHaveBeenCalledWith('mob-1', { style: 'pixel_art', detailLevel: 'high', boneId: 'b1' })
@@ -204,7 +239,7 @@ describe('TextureAiGeneratorScreen.vue', () => {
     const router = await routerAt()
     const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
     await flushPromises()
-    await buttonWithText(wrapper, 'Regenerar textura')!.trigger('click')
+    await buttonWithText(wrapper, 'Generar con IA')!.trigger('click')
     await flushPromises()
 
     FakeEventSource.instances[0]!.emit(
@@ -239,7 +274,7 @@ describe('TextureAiGeneratorScreen.vue', () => {
     const router = await routerAt()
     const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
     await flushPromises()
-    await buttonWithText(wrapper, 'Regenerar textura')!.trigger('click')
+    await buttonWithText(wrapper, 'Generar con IA')!.trigger('click')
     await flushPromises()
 
     FakeEventSource.instances[0]!.emit('progress', progressEvent({ seq: 2, stage: 'completado', progressPct: 100 }))
@@ -269,7 +304,7 @@ describe('TextureAiGeneratorScreen.vue', () => {
     const router = await routerAt()
     const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
     await flushPromises()
-    await buttonWithText(wrapper, 'Regenerar textura')!.trigger('click')
+    await buttonWithText(wrapper, 'Generar con IA')!.trigger('click')
     await flushPromises()
     FakeEventSource.instances[0]!.emit('progress', progressEvent({ seq: 2, stage: 'completado', progressPct: 100 }))
     await flushPromises()
@@ -281,7 +316,7 @@ describe('TextureAiGeneratorScreen.vue', () => {
     const router = await routerAt()
     const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
     await flushPromises()
-    await buttonWithText(wrapper, 'Regenerar textura')!.trigger('click')
+    await buttonWithText(wrapper, 'Generar con IA')!.trigger('click')
     await flushPromises()
 
     FakeEventSource.instances[0]!.emit('progress', progressEvent({ seq: 2, stage: 'fallido', message: 'Fallo del proveedor de imágenes.' }))
@@ -305,7 +340,7 @@ describe('TextureAiGeneratorScreen.vue', () => {
     const router = await routerAt()
     const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
     await flushPromises()
-    await buttonWithText(wrapper, 'Regenerar textura')!.trigger('click')
+    await buttonWithText(wrapper, 'Generar con IA')!.trigger('click')
     await flushPromises()
     FakeEventSource.instances[0]!.emit('progress', progressEvent({ seq: 2, stage: 'completado' }))
     await flushPromises()
@@ -313,7 +348,7 @@ describe('TextureAiGeneratorScreen.vue', () => {
     await buttonWithText(wrapper, 'Rechazar')!.trigger('click')
 
     expect(applyTexture).not.toHaveBeenCalled()
-    expect(buttonWithText(wrapper, 'Regenerar textura')).toBeDefined()
+    expect(buttonWithText(wrapper, 'Generar con IA')).toBeDefined()
   })
 
   it('Aplicar exitoso llama a applyTexture y navega de vuelta al editor del mob', async () => {
@@ -331,7 +366,7 @@ describe('TextureAiGeneratorScreen.vue', () => {
     const router = await routerAt()
     const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
     await flushPromises()
-    await buttonWithText(wrapper, 'Regenerar textura')!.trigger('click')
+    await buttonWithText(wrapper, 'Generar con IA')!.trigger('click')
     await flushPromises()
     FakeEventSource.instances[0]!.emit('progress', progressEvent({ seq: 2, stage: 'completado' }))
     await flushPromises()
@@ -358,7 +393,7 @@ describe('TextureAiGeneratorScreen.vue', () => {
     const router = await routerAt()
     const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
     await flushPromises()
-    await buttonWithText(wrapper, 'Regenerar textura')!.trigger('click')
+    await buttonWithText(wrapper, 'Generar con IA')!.trigger('click')
     await flushPromises()
     FakeEventSource.instances[0]!.emit('progress', progressEvent({ seq: 2, stage: 'completado' }))
     await flushPromises()
@@ -368,5 +403,87 @@ describe('TextureAiGeneratorScreen.vue', () => {
 
     expect(wrapper.text()).toContain('El draft avanzó desde que se generó esta propuesta.')
     expect(buttonWithText(wrapper, 'Regenerar contra el estado actual')).toBeDefined()
+  })
+
+  describe('ticket 067: rediseño sin componentes nativos (VoBo del PO, preview https://claude.ai/code/artifact/9efe4c8d-2776-4f94-be58-6caa4fb78ebc)', () => {
+    it('el radiogroup de Estilo se navega con flechas, con wrap-around', async () => {
+      const router = await routerAt()
+      const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
+      await flushPromises()
+
+      await styleCards(wrapper)[0]!.trigger('keydown', { key: 'ArrowRight' })
+      expect(styleCards(wrapper)[1]!.attributes('aria-checked')).toBe('true') // 'minecraft_vanilla'
+
+      await styleCards(wrapper)[3]!.trigger('keydown', { key: 'ArrowRight' })
+      expect(styleCards(wrapper)[0]!.attributes('aria-checked')).toBe('true') // wrap-around de vuelta a 'faithful'
+
+      await styleCards(wrapper)[0]!.trigger('keydown', { key: 'ArrowLeft' })
+      expect(styleCards(wrapper)[3]!.attributes('aria-checked')).toBe('true') // wrap-around hacia atrás a 'realistic'
+    })
+
+    it('el segmented de Detalle se navega con flechas, con wrap-around', async () => {
+      const router = await routerAt()
+      const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
+      await flushPromises()
+
+      await detailOptions(wrapper)[2]!.trigger('keydown', { key: 'ArrowRight' })
+      expect(detailOptions(wrapper)[0]!.attributes('aria-checked')).toBe('true') // wrap-around a 'Bajo'
+    })
+
+    it('reemplazar la imagen de referencia: sube el archivo y actualiza la imagen mostrada', async () => {
+      uploadReferenceImage.mockResolvedValue({
+        id: 'r2',
+        url: '/api/mobs/mob-1/references/r2',
+        width: 200,
+        height: 200,
+        contentType: 'image/png',
+        createdAt: '',
+      })
+      const router = await routerAt()
+      const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
+      await flushPromises()
+
+      await selectReferenceFile(wrapper, FAKE_REFERENCE_FILE)
+
+      expect(uploadReferenceImage).toHaveBeenCalledWith('mob-1', FAKE_REFERENCE_FILE)
+      const img = wrapper.find('img[alt="Referencia del mob"]')
+      expect(img.attributes('src')).toContain('/api/mobs/mob-1/references/r2')
+    })
+
+    it('reemplazar la imagen de referencia: formato no soportado muestra error y no sube nada', async () => {
+      const router = await routerAt()
+      const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
+      await flushPromises()
+
+      const gifFile = new File([new Uint8Array([1])], 'x.gif', { type: 'image/gif' })
+      await selectReferenceFile(wrapper, gifFile)
+
+      expect(uploadReferenceImage).not.toHaveBeenCalled()
+      expect(wrapper.text()).toContain("Formato no soportado: 'image/gif' -- solo se aceptan PNG o JPEG.")
+    })
+
+    it('reemplazar la imagen de referencia: archivo demasiado pesado muestra error y no sube nada', async () => {
+      const router = await routerAt()
+      const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
+      await flushPromises()
+
+      const oversizedFile = new File([new Uint8Array([1])], 'grande.png', { type: 'image/png' })
+      Object.defineProperty(oversizedFile, 'size', { value: 11 * 1024 * 1024 })
+      await selectReferenceFile(wrapper, oversizedFile)
+
+      expect(uploadReferenceImage).not.toHaveBeenCalled()
+      expect(wrapper.text()).toContain('el máximo soportado es 10MB')
+    })
+
+    it('reemplazar la imagen de referencia: un error del servidor se muestra sin romper el formulario', async () => {
+      uploadReferenceImage.mockRejectedValue(new ApiError('No se pudo subir la imagen.', 500, 'INTERNAL_ERROR'))
+      const router = await routerAt()
+      const wrapper = mount(TextureAiGeneratorScreen, { global: { plugins: [router] } })
+      await flushPromises()
+
+      await selectReferenceFile(wrapper, FAKE_REFERENCE_FILE)
+
+      expect(wrapper.text()).toContain('No se pudo subir la imagen.')
+    })
   })
 })
