@@ -13,7 +13,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.galgothstudio.backend.aiorchestrator.provider.ImageGenerationProvider.TextureGenerationSheetRequest;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -110,51 +114,63 @@ class OpenAiImageProviderTest {
 	}
 
 	/**
-	 * Ticket 059 (hallazgo real, verificación en vivo contra `studio-dev`):
-	 * la API real de OpenAI rechazó un sheet real de 58x8 con
-	 * {@code "Invalid size '58x8'. Width and height must both be divisible
-	 * by 16."} -- ningún test anterior de esta clase lo detectó porque
-	 * TODOS usaban dimensiones ya múltiplos de 16 (64x32/128x128/16x16),
-	 * el mismo patrón de fixture-no-realista ya encontrado en
-	 * `TextureGenerationSheetPlanner`. Este test usa las dimensiones
-	 * EXACTAS del caso real que falló.
+	 * Consolida en un solo `@ParameterizedTest` (hallazgo real de Sonar,
+	 * S5976 -- "Replace these 5 tests with a single Parameterized one",
+	 * mismo patrón ya establecido en `ModelIntentValidatorTest`) los 5
+	 * casos de ajuste de `size` encontrados en vivo contra `studio-dev`:
+	 * ticket 059 (múltiplo de 16) y ticket 060 (aspect ratio máximo 3:1)
+	 * -- ver `tamanosDeSheetYElResultadoEsperado` para el detalle de cada
+	 * caso real.
 	 */
-	@Test
-	void generateTextureSheet_con_dimensiones_no_multiplo_de_16_las_redondea_hacia_arriba_AC_hallazgo_real() {
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("tamanosDeSheetYElResultadoEsperado")
+	void generateTextureSheet_ajusta_el_size_a_las_restricciones_reales_de_la_API_de_OpenAI(
+			String caso, int width, int height, String expectedSize) {
 		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];
 		OpenAiImageProvider provider = newProviderWithMockServer(serverBox, TEST_API_KEY, GENERIC_MODEL);
 
 		serverBox[0]
 				.expect(requestTo(BASE_URL + "/v1/images/generations"))
-				.andExpect(jsonPath("$.size").value("64x16")) // 58->64, 8->16
+				.andExpect(jsonPath("$.size").value(expectedSize))
 				.andRespond(withSuccess(
 						"""
 						{"data":[{"b64_json":"%s"}]}
 						""".formatted(base64Png(new byte[] {1})),
 						MediaType.APPLICATION_JSON));
 
-		provider.generateTextureSheet(new TextureGenerationSheetRequest("prompt", null, 58, 8, null));
+		provider.generateTextureSheet(new TextureGenerationSheetRequest("prompt", null, width, height, null));
 
 		serverBox[0].verify();
 	}
 
-	@Test
-	void generateTextureSheet_con_dimensiones_ya_multiplo_de_16_no_las_altera() {
-		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];
-		OpenAiImageProvider provider = newProviderWithMockServer(serverBox, TEST_API_KEY, GENERIC_MODEL);
-
-		serverBox[0]
-				.expect(requestTo(BASE_URL + "/v1/images/generations"))
-				.andExpect(jsonPath("$.size").value("32x32"))
-				.andRespond(withSuccess(
-						"""
-						{"data":[{"b64_json":"%s"}]}
-						""".formatted(base64Png(new byte[] {1})),
-						MediaType.APPLICATION_JSON));
-
-		provider.generateTextureSheet(new TextureGenerationSheetRequest("prompt", null, 32, 32, null));
-
-		serverBox[0].verify();
+	private static Stream<Arguments> tamanosDeSheetYElResultadoEsperado() {
+		return Stream.of(
+				// Ticket 059 (hallazgo real, verificación en vivo contra `studio-dev`):
+				// dimensiones EXACTAS del sheet real que la API rechazó primero con
+				// "Invalid size '58x8'. Width and height must both be divisible by 16." --
+				// ningún test anterior lo detectó porque todos usaban dimensiones ya
+				// múltiplos de 16 (mismo patrón de fixture-no-realista de
+				// `TextureGenerationSheetPlanner`). El resultado final combina también
+				// el hallazgo de 060 (58->64, 8->16->32: 16 por sí solo da ratio 4:1,
+				// rechazado por separado).
+				Arguments.of("58x8 real (no múltiplo de 16 + ratio excedido tras redondear) -> 64x32", 58, 8, "64x32"),
+				// Ticket 060 (segundo hallazgo real, misma verificación): 64x16 ya es
+				// múltiplo de 16 pero ratio 4:1 -- la API real lo rechazó por separado
+				// con "The maximum supported aspect ratio is 3:1." Aislado de 058x8 para
+				// no mezclar los dos hallazgos en un solo caso.
+				Arguments.of("64x16 (ratio 4:1, ya múltiplo de 16) -> alto agrandado a 32", 64, 16, "64x32"),
+				// Mismo ajuste, orientación invertida -- confirma que el clamp de
+				// aspect ratio es simétrico (ancho agrandado, no el alto).
+				Arguments.of("16x64 (ratio 1:4, vertical) -> ancho agrandado a 32", 16, 64, "32x64"),
+				// Un ratio 3:1 exacto (el límite mismo) NO debe alterarse -- confirma
+				// que el clamp es "> 3", no "3 inclusive". Nota: la API real solo
+				// confirmó que 4:1 se rechaza; que 3:1 exacto SÍ se acepta es una
+				// lectura razonable del mensaje de error, no verificada en vivo -- si
+				// un futuro intento real muestra lo contrario, este caso debe ajustarse.
+				Arguments.of("48x16 (ratio exactamente 3:1) sin alterar", 48, 16, "48x16"),
+				// Caso base: ya múltiplo de 16 y dentro del ratio permitido -- ningún
+				// ajuste debería aplicarse.
+				Arguments.of("32x32 (ya múltiplo de 16, ratio 1:1) sin alterar", 32, 32, "32x32"));
 	}
 
 	@Test

@@ -216,6 +216,13 @@ Frontend (Vue3+Three.js) --REST/SSE--> Backend (Spring Boot, monolito modular)
 - **TDD real**: nuevo test con las dimensiones EXACTAS del caso real que falló (58x8 -> 64x16), confirmado que falla contra el código viejo (`git stash` del fix, re-corrida) antes de aplicar la corrección.
 - **Verificación real**: `./gradlew clean test` completo, backend: 414/414 tests, 0 failures.
 
+**Addendum post-milestone -- fix crítico: OpenAI rechaza sheets con aspect ratio mayor a 3:1** (`done/061-...`, NO es un ticket del desglose original, tercer hallazgo consecutivo de la misma verificación en vivo -- 059 destapó 060, 060 destapó este):
+- **Hallazgo real**: con `58x8` ya redondeado a múltiplo de 16 (`64x16`, ratio 4:1), la API real rechazó la llamada con `400 Bad Request: "Invalid size '64x16'. The maximum supported aspect ratio is 3:1."`.
+- **Corrección**: `OpenAiImageProvider.sizeParam` agranda (nunca encoge) el lado más chico, después del redondeo a múltiplo de 16, hasta que el ratio quede dentro de 3:1 -- en ambas orientaciones. Mismo mecanismo de "margen inerte descartado por `TextureSheetSlicer`" que 060. `58x8` termina en `64x32` (no `64x16`), combinando los 3 hallazgos (059+060+061) en el mismo caso real.
+- **TDD real**: 3 tests nuevos (horizontal, vertical, límite exacto 3:1 sin alterar), confirmado que fallan contra el código sin este fix antes de aplicarlo.
+- **Verificación real**: `./gradlew clean test` completo, backend: 417/417 tests, 0 failures.
+- **Patrón repetido, señalado explícitamente**: tercer bug real seguido (059/060/061) del mismo tipo -- solo la verificación EN VIVO contra la API real (no mocks con valores convenientes) los destapó, uno por uno, iterando error por error.
+
 Este archivo se completa a medida que cada ticket del milestone M0 en adelante aterriza código real (ver `pending/`/`in-process/`/`done/` para el estado de cada pieza).
 
 ## Referencias
