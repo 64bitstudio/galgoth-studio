@@ -730,6 +730,25 @@ describe('TextureCanvas.vue', () => {
       expect(pixelAt(store.atlas!.pixels, 8, 2, 2)).toEqual([255, 0, 0, 255])
     })
 
+    it('Deshacer/Rehacer sincronizan el <canvas> visible y el preview 3D, no solo el store -- hallazgo real de la verificación en vivo: el store cambiaba pero la pantalla se quedaba mostrando el estado viejo', async () => {
+      const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
+      const store = useTextureEditorStore()
+      const before = store.readRegion({ x: 2, y: 2, width: 1, height: 1 })!
+      store.recordPatch({ x: 2, y: 2, width: 1, height: 1 }, before, new Uint8ClampedArray([255, 0, 0, 255]))
+      await nextTick()
+
+      // `markDirty()` viaja SIEMPRE junto con `syncDataTexture()`/`redraw()`
+      // en el resto del componente (ver `finishStroke`/fill) -- si
+      // `saveState` pasa a 'dirty' acá, confirma que Deshacer/Rehacer pasan
+      // por el mismo camino real, no solo por `textureEditorStore.undo()`
+      // aislado (que por sí solo NUNCA vuelve a pintar el <canvas>/preview).
+      await w.get('button[aria-label="Deshacer"]').trigger('click')
+      expect(w.vm.saveState).toBe('dirty')
+
+      await w.get('button[aria-label="Rehacer"]').trigger('click')
+      expect(w.vm.saveState).toBe('dirty')
+    })
+
     it('Ctrl/Cmd+Z con el foco en un campo de texto real (ej. el textarea del Asistente IA) no deshace nada', async () => {
       await mountCanvas(modelWith({ width: 8, height: 8 }))
       const store = useTextureEditorStore()
