@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { decodePngFileToAtlasBuffer, PngDecodeError } from '../pngImportDecode'
+import { decodePngBytesToAtlasBuffer, PngDecodeError } from '../pngImportDecode'
 
-describe('decodePngFileToAtlasBuffer', () => {
+describe('decodePngBytesToAtlasBuffer', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
@@ -11,8 +11,8 @@ describe('decodePngFileToAtlasBuffer', () => {
     vi.stubGlobal('createImageBitmap', undefined)
     const file = new File([new Uint8Array([1, 2, 3])], 'x.png', { type: 'image/png' })
 
-    await expect(decodePngFileToAtlasBuffer(file)).rejects.toBeInstanceOf(PngDecodeError)
-    await expect(decodePngFileToAtlasBuffer(file)).rejects.toThrow(/no soporta/i)
+    await expect(decodePngBytesToAtlasBuffer(file)).rejects.toBeInstanceOf(PngDecodeError)
+    await expect(decodePngBytesToAtlasBuffer(file)).rejects.toThrow(/no soporta/i)
   })
 
   it('lanza PngDecodeError con un mensaje claro cuando createImageBitmap rechaza (archivo no es una imagen válida)', async () => {
@@ -22,8 +22,8 @@ describe('decodePngFileToAtlasBuffer', () => {
     )
     const file = new File([new Uint8Array([1, 2, 3])], 'x.png', { type: 'image/png' })
 
-    await expect(decodePngFileToAtlasBuffer(file)).rejects.toBeInstanceOf(PngDecodeError)
-    await expect(decodePngFileToAtlasBuffer(file)).rejects.toThrow(/no se pudo decodificar/i)
+    await expect(decodePngBytesToAtlasBuffer(file)).rejects.toBeInstanceOf(PngDecodeError)
+    await expect(decodePngBytesToAtlasBuffer(file)).rejects.toThrow(/no se pudo decodificar/i)
   })
 
   it('decodifica el bitmap a un AtlasBuffer RGBA de las mismas dimensiones -- 1:1, sin escalar', async () => {
@@ -37,7 +37,7 @@ describe('decodePngFileToAtlasBuffer', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage, getImageData } as unknown as CanvasRenderingContext2D)
 
     const file = new File([new Uint8Array([1, 2, 3])], 'x.png', { type: 'image/png' })
-    const result = await decodePngFileToAtlasBuffer(file)
+    const result = await decodePngBytesToAtlasBuffer(file)
 
     expect(result.width).toBe(2)
     expect(result.height).toBe(3)
@@ -54,7 +54,7 @@ describe('decodePngFileToAtlasBuffer', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
 
     const file = new File([new Uint8Array([1, 2, 3])], 'x.png', { type: 'image/png' })
-    await expect(decodePngFileToAtlasBuffer(file)).rejects.toBeInstanceOf(PngDecodeError)
+    await expect(decodePngBytesToAtlasBuffer(file)).rejects.toBeInstanceOf(PngDecodeError)
     expect(close).toHaveBeenCalled()
   })
 })

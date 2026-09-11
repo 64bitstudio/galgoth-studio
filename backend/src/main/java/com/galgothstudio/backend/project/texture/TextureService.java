@@ -1,6 +1,7 @@
 package com.galgothstudio.backend.project.texture;
 
 import com.galgothstudio.backend.asset.AssetStorageService;
+import com.galgothstudio.backend.project.draft.DraftPersistenceService;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
 import com.galgothstudio.backend.project.persistence.MobRepository;
 import java.awt.image.BufferedImage;
@@ -11,6 +12,7 @@ import java.io.UncheckedIOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.Optional;
 import java.util.UUID;
 import javax.imageio.ImageIO;
 import org.springframework.stereotype.Service;
@@ -35,6 +37,23 @@ import org.springframework.transaction.annotation.Transactional;
  * visual siempre produce el mismo `storageKey`, sin importar qué
  * encoder lo produjo. El propio {@link ImageIO} PNG writer es
  * determinista (no embebe timestamps ni metadata variable por defecto).
+ *
+ * <p><b>Hallazgo real (ticket 066, reportado por el PO)</b>: este
+ * servicio nunca tuvo una contraparte de LECTURA -- solo {@link #upload}.
+ * `TextureCanvas.vue` cargaba el atlas en memoria SOLO con
+ * ancho/alto (`textureEditorStore.loadAtlas(width, height)`, sin
+ * `pixels`), nunca con los bytes ya persistidos -- al recargar la
+ * página, el editor mostraba un atlas VACÍO aunque el mob ya tuviera una
+ * textura real guardada (confirmado en vivo: una textura recién generada
+ * por IA y aplicada, hash-verificada en `mob_revisions`, desaparecía por
+ * completo del canvas y del preview 3D tras recargar). Nadie lo detectó
+ * antes porque hasta el ticket 065 nunca hubo una textura real
+ * sustancial que valiera la pena recargar -- el flujo de pintado manual
+ * siempre mantuvo el atlas en memoria durante una sola sesión, sin
+ * necesidad de releerlo del backend. {@link #download} resuelve el
+ * `storageKey` VIGENTE desde el draft (nunca desde una revisión vieja
+ * o un valor cacheado por el cliente -- mismo criterio de autoridad del
+ * backend que {@link #upload}) y devuelve sus bytes tal cual.
  */
 @Service
 public class TextureService {
@@ -46,10 +65,13 @@ public class TextureService {
 
 	private final MobRepository mobRepository;
 	private final AssetStorageService assetStorageService;
+	private final DraftPersistenceService draftPersistenceService;
 
-	public TextureService(MobRepository mobRepository, AssetStorageService assetStorageService) {
+	public TextureService(
+			MobRepository mobRepository, AssetStorageService assetStorageService, DraftPersistenceService draftPersistenceService) {
 		this.mobRepository = mobRepository;
 		this.assetStorageService = assetStorageService;
+		this.draftPersistenceService = draftPersistenceService;
 	}
 
 	@Transactional(readOnly = true)
@@ -66,6 +88,27 @@ public class TextureService {
 		}
 
 		return new TextureUploadResponse(storageKey);
+	}
+
+	/**
+	 * `Optional.empty()` -- nunca una excepción -- si el draft del mob
+	 * todavía no tiene ninguna textura real ({@code texture.storageKey}
+	 * null, el caso de un mob recién creado que solo tiene el
+	 * placeholder por defecto) o si el asset referenciado ya no existe en
+	 * el storage. Un mob sin NINGÚN draft todavía (nunca "Usar este
+	 * modelo") deja propagar {@code DraftNotFoundException} de
+	 * {@link DraftPersistenceService#getDraft} tal cual -- ya mapea a 404
+	 * en {@code ApiExceptionHandler}, la misma semántica de "nada que
+	 * descargar" que este método expone explícitamente para los otros
+	 * dos casos.
+	 */
+	@Transactional(readOnly = true)
+	public Optional<byte[]> download(UUID mobId) {
+		String storageKey = draftPersistenceService.getDraft(mobId).model().texture().storageKey();
+		if (storageKey == null) {
+			return Optional.empty();
+		}
+		return assetStorageService.get(storageKey);
 	}
 
 	/** @return los bytes PNG canónicos -- nunca confía en el `Content-Type` declarado por el cliente, decodifica de verdad. */

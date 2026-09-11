@@ -50,7 +50,7 @@
 import { computed, ref, watch } from 'vue'
 import GButton from '../../design-system/components/GButton.vue'
 import IconUpload from '../../design-system/icons/IconUpload.vue'
-import { decodePngFileToAtlasBuffer, PngDecodeError } from './pngImportDecode'
+import { decodePngBytesToAtlasBuffer, PngDecodeError } from './pngImportDecode'
 import { cropOrPad, describeImportAdjustment, type ImportAdjustment } from './textureImportTools'
 import type { TextureRect } from './TexturePatchCommand'
 import { useTextureEditorStore } from './textureEditorStore'
@@ -114,7 +114,7 @@ async function onFileChange(event: Event): Promise<void> {
 
   error.value = null
   try {
-    const decoded = await decodePngFileToAtlasBuffer(file)
+    const decoded = await decodePngBytesToAtlasBuffer(file)
     const { rect, label } = props.resolveTarget()
     const before = textureEditorStore.readRegion(rect)
     if (!before) {

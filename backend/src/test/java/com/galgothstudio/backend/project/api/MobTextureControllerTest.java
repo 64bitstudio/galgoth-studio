@@ -2,16 +2,26 @@ package com.galgothstudio.backend.project.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.galgothstudio.backend.TestcontainersConfiguration;
 import com.galgothstudio.backend.asset.AssetStorageService;
+import com.galgothstudio.backend.domain.model.BaseType;
+import com.galgothstudio.backend.domain.model.ExportSettings;
+import com.galgothstudio.backend.domain.model.FormatVersion;
+import com.galgothstudio.backend.domain.model.MobProjectModel;
+import com.galgothstudio.backend.domain.model.TextureDocument;
+import com.galgothstudio.backend.domain.model.UvLayout;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
@@ -45,6 +55,9 @@ class MobTextureControllerTest {
 	@Autowired
 	private AssetStorageService assetStorageService;
 
+	@Autowired
+	private ObjectMapper objectMapper;
+
 	// PNG 1x1 real (no un array de bytes arbitrario) -- válido de verdad, mínimo posible.
 	private static final byte[] TINY_PNG =
 			Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
@@ -56,6 +69,23 @@ class MobTextureControllerTest {
 		jdbc.update(
 				"insert into mobs (id, project_id, name, base_type, status) values (?, ?, ?, ?, ?)",
 				mobId, projectId, "Carcomido", "humanoid", "draft");
+		return mobId;
+	}
+
+	/** Modelo mínimo, sin bones/cuboids (irrelevantes para el ticket 066) -- solo el `texture.storageKey` importa. */
+	private String modelJsonWithTexture(String mobId, String storageKey) throws Exception {
+		TextureDocument texture = new TextureDocument(64, 64, storageKey);
+		MobProjectModel model = new MobProjectModel(
+				mobId, "project-1", "Test Mob", BaseType.HUMANOID, MobProjectModel.UNITS_MINECRAFT_PIXELS, List.of(), List.of(),
+				texture, new UvLayout(64, 64, List.of()), List.of(), new ExportSettings(FormatVersion.V5), List.of());
+		return objectMapper.writeValueAsString(model);
+	}
+
+	/** Igual que `aProjectAndMob()`, pero además con un draft cuyo `texture.storageKey` es el dado (o `null`). */
+	private UUID aMobWithDraft(String textureStorageKeyOrNull) throws Exception {
+		UUID mobId = aProjectAndMob();
+		String modelJson = modelJsonWithTexture(mobId.toString(), textureStorageKeyOrNull);
+		jdbc.update("insert into mob_drafts (mob_id, draft_model_jsonb, draft_version) values (?, ?::jsonb, 1)", mobId, modelJson);
 		return mobId;
 	}
 
@@ -136,6 +166,49 @@ class MobTextureControllerTest {
 		mockMvc.perform(put("/api/mobs/{mobId}/texture", UUID.randomUUID())
 						.contentType(MediaType.IMAGE_PNG)
 						.content(TINY_PNG))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.error", is("MOB_NOT_FOUND")));
+	}
+
+	/**
+	 * Ticket 066 (hallazgo real, reportado por el PO): sin este endpoint,
+	 * el frontend no tenía forma de recuperar la textura ya persistida al
+	 * recargar la página -- el editor mostraba un atlas vacío aunque el
+	 * mob tuviera una textura real guardada.
+	 */
+	@Test
+	void descargar_la_textura_ya_subida_devuelve_sus_bytes_exactos_AC_hallazgo_real() throws Exception {
+		// storageKey content-addressed real (mismo cálculo que TextureService.upload) -- este test
+		// no ejercita el upload en sí, solo el download por un storageKey ya vigente en el draft.
+		String storageKey = expectedStorageKeyFor(TINY_PNG);
+		assetStorageService.put(storageKey, TINY_PNG, "image/png");
+		UUID mobId = aMobWithDraft(storageKey);
+
+		mockMvc.perform(get("/api/mobs/{mobId}/texture", mobId))
+				.andExpect(status().isOk())
+				.andExpect(content().contentType(MediaType.IMAGE_PNG))
+				.andExpect(content().bytes(TINY_PNG));
+	}
+
+	@Test
+	void descargar_la_textura_de_un_mob_con_draft_pero_sin_textura_todavia_responde_404() throws Exception {
+		UUID mobId = aMobWithDraft(null);
+
+		mockMvc.perform(get("/api/mobs/{mobId}/texture", mobId)).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void descargar_la_textura_de_un_mob_sin_ningun_draft_todavia_responde_404() throws Exception {
+		UUID mobId = aProjectAndMob(); // sin insertar mob_drafts
+
+		mockMvc.perform(get("/api/mobs/{mobId}/texture", mobId))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.error", is("DRAFT_NOT_FOUND")));
+	}
+
+	@Test
+	void descargar_la_textura_de_un_mob_inexistente_responde_404() throws Exception {
+		mockMvc.perform(get("/api/mobs/{mobId}/texture", UUID.randomUUID()))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.error", is("MOB_NOT_FOUND")));
 	}
