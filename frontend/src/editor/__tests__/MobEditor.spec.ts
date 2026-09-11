@@ -17,7 +17,24 @@ vi.mock('three', async (importOriginal) => {
   return { ...actual, WebGLRenderer: FakeWebGLRenderer }
 })
 
+// Ticket 068 -- "Guardar" sube a la fila superior compartida de este
+// componente y delega en el hijo activo (`EditorToolbar.vue`/
+// `TextureCanvas.vue`, vía `defineExpose`). Para probar esa delegación de
+// punta a punta con los hijos REALES (no shallow-stubeados) se mockean los
+// mismos módulos de guardado que ya mockean `EditorToolbar.spec.ts`/
+// `TextureCanvas.spec.ts` -- `getDraft` sigue siendo el real (usa fetch,
+// ya stubeado por test vía `vi.stubGlobal('fetch', ...)` más abajo).
+vi.mock('../draftPersistenceApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../draftPersistenceApi')>()
+  return { ...actual, saveRevision: vi.fn() }
+})
+vi.mock('../thumbnailApi', () => ({ uploadThumbnail: vi.fn() }))
+vi.mock('../texture/textureFlush', () => ({ flushPaintedTexture: vi.fn(async (model) => model) }))
+vi.mock('../../api/textureUploadApi', () => ({ downloadTexture: vi.fn().mockResolvedValue(null) }))
+
 const { default: MobEditor } = await import('../MobEditor.vue')
+const { saveRevision } = await import('../draftPersistenceApi')
+const { threeViewportService } = await import('../../viewport/ThreeViewportService')
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -29,6 +46,7 @@ async function routerAt(projectId: string, mobId: string): Promise<Router> {
     routes: [
       { path: '/projects/:projectId/mobs/:mobId/edit', component: MobEditor },
       { path: '/projects/:projectId/mobs/:mobId/export', component: { template: '<div>export</div>' } },
+      { path: '/projects/:projectId/mobs/:mobId/texture/generate-ai', component: { template: '<div>generate-ai</div>' } },
     ],
   })
   await router.push(`/projects/${projectId}/mobs/${mobId}/edit`)
@@ -304,6 +322,95 @@ describe('MobEditor.vue', () => {
       expect(wrapper.findComponent({ name: 'TextureCanvas' }).exists()).toBe(false)
       expect(wrapper.findComponent({ name: 'ThreeViewport' }).exists()).toBe(true)
       expect(wrapper.findComponent({ name: 'EditorToolbar' }).exists()).toBe(true)
+    })
+  })
+
+  describe('Ticket 068: fila superior homologada (Reset cámara/Asistente IA/Exportar/Guardar) en las dos tabs', () => {
+    const draftModel = {
+      mobId: 'mob-1',
+      projectId: 'p1',
+      name: 'Carcomido',
+      baseType: 'humanoid' as const,
+      units: 'minecraft_pixels' as const,
+      bones: [],
+      cuboids: [],
+      texture: { width: 8, height: 8, storageKey: null },
+      uv: { textureWidth: 8, textureHeight: 8, regions: [] },
+      animations: [],
+      exportSettings: { preferredFormatVersion: 'v5' as const },
+      referenceImages: [],
+    }
+
+    // A diferencia de los describe anteriores, acá NO se shallow-stubea
+    // EditorToolbar/TextureCanvas -- la delegación de "Guardar" (vía
+    // defineExpose) es justamente lo que se está probando, y un stub no
+    // expone nada real.
+    async function mountLoaded(): Promise<ReturnType<typeof shallowMount>> {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof fetch>(async (url) => {
+          const u = String(url)
+          if (u.match(/\/api\/mobs\/mob-1$/)) {
+            return jsonResponse({ id: 'mob-1', name: 'Carcomido', baseType: 'humanoid', status: 'draft', thumbnailKey: null, updatedAt: '' })
+          }
+          if (u.endsWith('/api/mobs/mob-1/draft')) {
+            return jsonResponse({ mobId: 'mob-1', draftVersion: 2, model: draftModel, updatedAt: '' })
+          }
+          throw new Error(`fetch inesperado: ${u}`)
+        }),
+      )
+      const wrapper = shallowMount(MobEditor, {
+        global: { plugins: [await routerAt('p1', 'mob-1')], stubs: { GButton: false, EditorToolbar: false, TextureCanvas: false } },
+      })
+      await flushPromises()
+      return wrapper
+    }
+
+    async function switchToTextura(wrapper: ReturnType<typeof shallowMount>): Promise<void> {
+      await wrapper.findComponent({ name: 'EditorHeader' }).vm.$emit('update:activeTab', 'textura')
+      await flushPromises()
+    }
+
+    it('se muestran en las dos tabs -- antes desaparecían por completo en Textura (v-if="activeTab === \'modelo\'")', async () => {
+      const wrapper = await mountLoaded()
+      const topLabels = (): string[] => wrapper.findAll('button').map((b) => b.text()).filter(Boolean)
+      expect(topLabels()).toEqual(expect.arrayContaining(['Reset cámara', 'Asistente IA', 'Exportar', 'Guardar']))
+
+      await switchToTextura(wrapper)
+
+      expect(topLabels()).toEqual(expect.arrayContaining(['Reset cámara', 'Generar con IA', 'Exportar', 'Guardar']))
+    })
+
+    it('en Textura, el botón compartido de IA (ahora "Generar con IA" en la fila superior) navega a la ruta real del generador -- reemplaza el botón que antes vivía dentro de TextureCanvas.vue', async () => {
+      const wrapper = await mountLoaded()
+      await switchToTextura(wrapper)
+      const router = wrapper.vm.$router
+
+      await wrapper.findAll('button').find((b) => b.text() === 'Generar con IA')!.trigger('click')
+      await flushPromises()
+
+      expect(router.currentRoute.value.path).toBe('/projects/p1/mobs/mob-1/texture/generate-ai')
+    })
+
+    it('Guardar (fila superior) delega en EditorToolbar.handleSave cuando la tab activa es Modelo', async () => {
+      const wrapper = await mountLoaded()
+
+      await wrapper.findAll('button').find((b) => b.text() === 'Guardar')!.trigger('click')
+      await flushPromises()
+
+      expect(saveRevision).toHaveBeenCalledWith('mob-1', expect.objectContaining({ mobId: 'mob-1' }))
+    })
+
+    it('Guardar (fila superior) delega en TextureCanvas.handleSave cuando la tab activa es Textura', async () => {
+      const wrapper = await mountLoaded()
+      await switchToTextura(wrapper)
+      vi.mocked(saveRevision).mockClear()
+      vi.spyOn(threeViewportService, 'captureThumbnail').mockResolvedValue(new Blob(['png'], { type: 'image/png' }))
+
+      await wrapper.findAll('button').find((b) => b.text() === 'Guardar')!.trigger('click')
+      await flushPromises()
+
+      expect(saveRevision).toHaveBeenCalledWith('mob-1', expect.objectContaining({ mobId: 'mob-1' }))
     })
   })
 })

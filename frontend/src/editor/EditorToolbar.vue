@@ -29,8 +29,20 @@
  * flush falla, el guardado completo se aborta (mismo `catch` que ya
  * cubre un `saveRevision` fallido) -- nunca se crea una Revision con una
  * referencia de textura colgante.
+ *
+ * Ticket 068 (feedback del PO -- homologación Modelo/Textura): el botón
+ * "Guardar" en sí ya NO vive acá -- sube a la fila superior compartida
+ * de `MobEditor.vue` (junto a Reset cámara/Asistente IA/Exportar), igual
+ * en las dos tabs. Este componente expone `saveState`/`canSave`/
+ * `handleSave` vía `defineExpose` para que ese botón compartido controle
+ * el guardado sin duplicar la orquestación (flush + saveRevision +
+ * thumbnail) acá adentro. El indicador de estado (`TextureSaveStatus`,
+ * ya usado por Textura desde el 058) SÍ se queda acá, en esta toolbar --
+ * reemplaza el mensaje efímero que mostraba antes (`saveMessage`) por el
+ * mismo estado persistente de 4 valores que ya usa Textura, respaldado
+ * por `draftModelStore.dirty` (nuevo en este ticket).
  */
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { threeViewportService } from '../viewport/ThreeViewportService'
 import { useDraftModelStore } from './draftModelStore'
 import { useGeometryApplyStore } from './geometryApplyStore'
@@ -39,7 +51,7 @@ import { saveRevision } from './draftPersistenceApi'
 import { uploadThumbnail } from './thumbnailApi'
 import { flushPaintedTexture } from './texture/textureFlush'
 import IconButton from '../design-system/components/IconButton.vue'
-import GButton from '../design-system/components/GButton.vue'
+import TextureSaveStatus, { type TextureSaveState } from './texture/TextureSaveStatus.vue'
 import IconMove from '../design-system/icons/IconMove.vue'
 import IconScale from '../design-system/icons/IconScale.vue'
 import IconRotate from '../design-system/icons/IconRotate.vue'
@@ -62,7 +74,22 @@ const geometryApply = useGeometryApplyStore()
 const selection = useSelectionStore()
 const mode = ref<TransformMode>('translate')
 const saving = ref(false)
-const saveMessage = ref<string | null>(null)
+/** Ticket 068 -- reemplaza el `saveMessage` efímero anterior; solo se llena cuando `saveState` es 'error' (mismo criterio que `draft.lastError`/`geometryApply.lastError`, ya mostrados acá al lado). */
+const saveErrorMessage = ref<string | null>(null)
+
+/** Ticket 068 -- mismo estado persistente de 4 valores que ya usa `TextureSaveStatus`/Textura, respaldado por `draftModelStore.dirty` en vez de un mensaje efímero. */
+const saveState = computed<TextureSaveState>(() => {
+  if (saving.value) {
+    return 'saving'
+  }
+  if (saveErrorMessage.value) {
+    return 'error'
+  }
+  return draft.dirty ? 'dirty' : 'saved'
+})
+
+/** Ticket 068 -- el botón "Guardar" ya no vive acá (sube a la fila superior compartida de `MobEditor.vue`), pero la condición de habilitado sigue siendo dueña de este componente. */
+const canSave = computed(() => !!draft.model && !saving.value)
 
 function setMode(newMode: TransformMode): void {
   mode.value = newMode
@@ -147,16 +174,16 @@ async function handleSave(): Promise<void> {
     return
   }
   saving.value = true
-  saveMessage.value = null
+  saveErrorMessage.value = null
   try {
     const flushedModel = await flushPaintedTexture(model)
     if (flushedModel !== model) {
       draft.commitExternalModel(flushedModel)
     }
-    const result = await saveRevision(flushedModel.mobId, flushedModel)
-    saveMessage.value = result.created ? `Guardado (revisión ${result.revisionNumber}).` : (result.reason ?? 'Sin cambios.')
+    await saveRevision(flushedModel.mobId, flushedModel)
+    draft.markSaved()
   } catch (error) {
-    saveMessage.value = error instanceof Error ? error.message : 'No se pudo guardar.'
+    saveErrorMessage.value = error instanceof Error ? error.message : 'No se pudo guardar.'
     saving.value = false
     return
   }
@@ -172,6 +199,8 @@ async function handleSave(): Promise<void> {
     saving.value = false
   }
 }
+
+defineExpose({ saveState, canSave, handleSave })
 </script>
 
 <template>
@@ -198,8 +227,8 @@ async function handleSave(): Promise<void> {
     </fieldset>
     <div class="editor-toolbar__spacer" />
     <span v-if="draft.lastError || geometryApply.lastError" class="editor-toolbar__error">{{ draft.lastError ?? geometryApply.lastError }}</span>
-    <span v-if="saveMessage" class="editor-toolbar__save-message">{{ saveMessage }}</span>
-    <GButton variant="primary" :disabled="!draft.model || saving" @click="handleSave">{{ saving ? 'Guardando…' : 'Guardar' }}</GButton>
+    <span v-if="saveErrorMessage" class="editor-toolbar__error">{{ saveErrorMessage }}</span>
+    <TextureSaveStatus :state="saveState" />
   </div>
 </template>
 
@@ -242,11 +271,5 @@ async function handleSave(): Promise<void> {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--danger);
-}
-
-.editor-toolbar__save-message {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--accent);
 }
 </style>

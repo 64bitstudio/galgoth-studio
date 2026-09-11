@@ -88,20 +88,17 @@
  */
 import { DataTexture, RGBAFormat, NearestFilter } from 'three'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import type { FaceName, MobProjectModel } from '../../domain/MobProjectModel'
 import { threeViewportService } from '../../viewport/ThreeViewportService'
 import type { CuboidFaceRef } from '../../viewport/textureUvMapping'
 import IconButton from '../../design-system/components/IconButton.vue'
-import GButton from '../../design-system/components/GButton.vue'
 import GSelect, { type GSelectOption } from '../../design-system/components/GSelect.vue'
 import IconBrush from '../../design-system/icons/IconBrush.vue'
 import IconBucket from '../../design-system/icons/IconBucket.vue'
 import IconEraser from '../../design-system/icons/IconEraser.vue'
 import IconEyedropper from '../../design-system/icons/IconEyedropper.vue'
 import IconGrid from '../../design-system/icons/IconGrid.vue'
-import IconSave from '../../design-system/icons/IconSave.vue'
-import IconSparkle from '../../design-system/icons/IconSparkle.vue'
+import IconHand from '../../design-system/icons/IconHand.vue'
 import IconWarning from '../../design-system/icons/IconWarning.vue'
 import IconZoomIn from '../../design-system/icons/IconZoomIn.vue'
 import IconZoomOut from '../../design-system/icons/IconZoomOut.vue'
@@ -154,9 +151,13 @@ const ZOOM_WHEEL_FACTOR = 1.12
 const BASE_SCALE = 4
 const EYEDROPPER_TOAST_MS = 1800
 
+/** Ticket 068 -- límites del separador arrastrable entre el lienzo y el preview 3D (feedback del PO: "que el lienzo sea redimensionable"). */
+const MIN_PREVIEW_PANEL_PX = 200
+const MAX_PREVIEW_PANEL_PX = 560
+const DEFAULT_PREVIEW_PANEL_PX = 320
+
 const props = defineProps<{ model: MobProjectModel }>()
 
-const router = useRouter()
 const textureEditorStore = useTextureEditorStore()
 const textureSelectionStore = useTextureSelectionStore()
 const draftModelStore = useDraftModelStore()
@@ -172,10 +173,16 @@ const showGrid = ref(false)
 const zoomPercent = ref(100)
 const spaceDown = ref(false)
 const isPanning = ref(false)
+/** Ticket 068 -- botón de mano: mueve el lienzo con un click sostenido, sin necesitar la barra espaciadora (mismo mecanismo de pan de abajo, solo cambia qué lo activa). */
+const handToolActive = ref(false)
 const pickedColorToast = ref<string | null>(null)
 const saveState = ref<TextureSaveState>('saved')
 /** Ticket 066: `null` mientras la carga inicial del atlas persistido salió bien; un mensaje si falló -- ver `loadModelAtlas`. */
 const atlasLoadError = ref<string | null>(null)
+
+/** Ticket 068 -- ancho del panel de preview 3D, controlado por el separador arrastrable (`.texture-canvas__splitter`). */
+const previewPanelWidthPx = ref(DEFAULT_PREVIEW_PANEL_PX)
+const isDraggingSplitter = ref(false)
 
 /**
  * Puente entre el selector de región (formato `regionKey`, ticket 047) y
@@ -351,7 +358,7 @@ function handleViewportWheel(event: WheelEvent): void {
 let panStart: { x: number; y: number; scrollLeft: number; scrollTop: number } | null = null
 
 function handleViewportPointerDown(event: PointerEvent): void {
-  if (!spaceDown.value || event.button !== 0) {
+  if (!(spaceDown.value || handToolActive.value) || event.button !== 0) {
     return
   }
   const viewport = canvasViewportRef.value
@@ -375,6 +382,66 @@ function handleViewportPointerMove(event: PointerEvent): void {
 function handleViewportPointerUp(): void {
   isPanning.value = false
   panStart = null
+}
+
+// -- Separador arrastrable entre el lienzo y el preview 3D (ticket 068,
+// feedback del PO: "el lienzo debe ser redimensionable") ------------------
+let splitterStartX = 0
+let splitterStartWidthPx = 0
+
+function handleSplitterPointerDown(event: PointerEvent): void {
+  if (event.button !== 0) {
+    return
+  }
+  isDraggingSplitter.value = true
+  splitterStartX = event.clientX
+  splitterStartWidthPx = previewPanelWidthPx.value
+  ;(event.target as HTMLElement).setPointerCapture(event.pointerId)
+  event.preventDefault()
+}
+
+function handleSplitterPointerMove(event: PointerEvent): void {
+  if (!isDraggingSplitter.value) {
+    return
+  }
+  // El separador queda a la IZQUIERDA del preview -- arrastrarlo hacia la
+  // izquierda agranda el preview (delta negativo = ancho positivo).
+  const delta = splitterStartX - event.clientX
+  previewPanelWidthPx.value = Math.max(MIN_PREVIEW_PANEL_PX, Math.min(MAX_PREVIEW_PANEL_PX, splitterStartWidthPx + delta))
+  if (previewContainerRef.value) {
+    threeViewportService.resizeToContainer(previewContainerRef.value)
+  }
+}
+
+function handleSplitterPointerUp(event: PointerEvent): void {
+  isDraggingSplitter.value = false
+  const target = event.target as HTMLElement
+  if (typeof target.hasPointerCapture === 'function' && target.hasPointerCapture(event.pointerId)) {
+    target.releasePointerCapture(event.pointerId)
+  }
+}
+
+const SPLITTER_KEYBOARD_STEP_PX = 20
+
+/**
+ * Patrón WAI-ARIA "Separator (Focusable)"/"Window Splitter" (APG): al
+ * llevar `aria-valuenow` el separador pasa a ser un widget interactivo
+ * real, no solo decorativo -- por eso también necesita soportar el
+ * teclado (hallazgo real de Sonar: `tabindex` sin esto es un widget que
+ * se puede enfocar pero no operar). Flecha izquierda = agranda el
+ * preview (mismo sentido que arrastrar el separador hacia la izquierda,
+ * ver `handleSplitterPointerMove`); derecha = lo achica.
+ */
+function handleSplitterKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+    return
+  }
+  event.preventDefault()
+  const delta = event.key === 'ArrowLeft' ? SPLITTER_KEYBOARD_STEP_PX : -SPLITTER_KEYBOARD_STEP_PX
+  previewPanelWidthPx.value = Math.max(MIN_PREVIEW_PANEL_PX, Math.min(MAX_PREVIEW_PANEL_PX, previewPanelWidthPx.value + delta))
+  if (previewContainerRef.value) {
+    threeViewportService.resizeToContainer(previewContainerRef.value)
+  }
 }
 
 // -- Textura 3D en vivo (HU-26) -----------------------------------------
@@ -581,9 +648,16 @@ async function handleSave(): Promise<void> {
   }
 }
 
-function openAiGenerator(): void {
-  router.push(`/projects/${props.model.projectId}/mobs/${props.model.mobId}/texture/generate-ai`)
-}
+/**
+ * Ticket 068 (feedback del PO -- homologación Modelo/Textura): "Guardar"
+ * y "Generar con IA" ya NO viven acá -- suben a la fila superior
+ * compartida de `MobEditor.vue` (junto a Reset cámara/Exportar), igual
+ * que en Modelo. `canSave` reemplaza la condición `:disabled` que antes
+ * vivía inline en el botón de este mismo archivo.
+ */
+const canSave = computed(() => saveState.value !== 'saving' && atlasLoadError.value === null)
+
+defineExpose({ saveState, canSave, handleSave })
 
 // -- Trazo de Pincel/Borrador: UN solo recordPatch() por trazo completo --
 let strokeBeforeFull: Uint8ClampedArray | null = null
@@ -639,8 +713,8 @@ function finishStroke(): void {
 }
 
 function handlePointerDown(event: PointerEvent): void {
-  if (spaceDown.value) {
-    return // barra espaciadora mantenida -- este pointerdown es para pan, no para pintar (ver handleViewportPointerDown).
+  if (spaceDown.value || handToolActive.value) {
+    return // barra espaciadora mantenida o herramienta de mano activa -- este pointerdown es para pan, no para pintar (ver handleViewportPointerDown).
   }
   const atlas = textureEditorStore.atlas
   const point = canvasPointToAtlas(event)
@@ -735,6 +809,10 @@ function showEyedropperToast(hex: string): void {
 
       <TextureColorPicker v-model="activeColorHex" />
 
+      <div class="texture-canvas__tb-group">
+        <IconButton label="Mover lienzo (mano)" :active="handToolActive" @click="handToolActive = !handToolActive"><IconHand /></IconButton>
+      </div>
+
       <span class="texture-canvas__tb-sep" aria-hidden="true"></span>
 
       <div class="texture-canvas__zoomctl">
@@ -750,12 +828,9 @@ function showEyedropperToast(hex: string): void {
         <TextureImportPanel :target-label="importTargetLabel" :resolve-target="resolveImportTarget" @imported="handleImported" />
       </div>
 
-      <GButton variant="accent" @click="openAiGenerator"><template #icon><IconSparkle :size="16" /></template>Generar con IA</GButton>
-
       <div class="texture-canvas__tb-grow"></div>
 
       <TextureSaveStatus :state="saveState" />
-      <GButton variant="primary" :disabled="saveState === 'saving' || atlasLoadError !== null" @click="handleSave"><template #icon><IconSave :size="16" /></template>{{ saveState === 'saving' ? 'Guardando…' : 'Guardar' }}</GButton>
     </div>
 
     <div class="texture-canvas__main">
@@ -763,7 +838,7 @@ function showEyedropperToast(hex: string): void {
         <div
           ref="canvasViewportRef"
           class="texture-canvas__viewport app-scroll"
-          :class="{ 'texture-canvas__viewport--pan-ready': spaceDown, 'texture-canvas__viewport--panning': isPanning }"
+          :class="{ 'texture-canvas__viewport--pan-ready': spaceDown || handToolActive, 'texture-canvas__viewport--panning': isPanning }"
           @wheel="handleViewportWheel"
           @pointerdown="handleViewportPointerDown"
           @pointermove="handleViewportPointerMove"
@@ -786,7 +861,26 @@ function showEyedropperToast(hex: string): void {
         </div>
       </section>
 
-      <aside class="texture-canvas__preview-panel" aria-label="Preview 3D">
+      <div
+        class="texture-canvas__splitter"
+        :class="{ 'texture-canvas__splitter--dragging': isDraggingSplitter }"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Redimensionar el preview 3D"
+        :aria-valuenow="previewPanelWidthPx"
+        :aria-valuemin="MIN_PREVIEW_PANEL_PX"
+        :aria-valuemax="MAX_PREVIEW_PANEL_PX"
+        tabindex="0"
+        @pointerdown="handleSplitterPointerDown"
+        @pointermove="handleSplitterPointerMove"
+        @pointerup="handleSplitterPointerUp"
+        @pointercancel="handleSplitterPointerUp"
+        @keydown="handleSplitterKeydown"
+      >
+        <div class="texture-canvas__splitter-grip" aria-hidden="true"></div>
+      </div>
+
+      <aside class="texture-canvas__preview-panel" :style="{ width: `${previewPanelWidthPx}px` }" aria-label="Preview 3D">
         <div ref="previewContainerRef" class="texture-canvas__preview" aria-hidden="true"></div>
       </aside>
     </div>
@@ -835,6 +929,21 @@ function showEyedropperToast(hex: string): void {
 }
 
 /* ---- Toolbar horizontal (zona 1) --------------------------------- */
+/*
+ * Ticket 068 -- hallazgo real reportado por el PO: "la botonera muestra
+ * un scroll en Modelo y Textura, que nunca salga". La causa real acá era
+ * `flex-wrap: wrap` (NO un overflow-x): con la ventana en anchos
+ * normales de trabajo, la fila entera no entraba y "Guardar" (antes acá,
+ * ver 068 más abajo) quedaba huérfano en una segunda línea.
+ *
+ * Fix real: `nowrap` + UNA sola "válvula de presión". El selector de
+ * región (`.tb-group--region`, envuelve un GSelect) es el ÚNICO elemento
+ * que se permite achicar -- su `.g-select__value` ya trunca con elipsis
+ * (ver GSelect.vue), así que achicarlo nunca rompe nada visualmente. Todo
+ * lo demás de la fila queda con flex-shrink:0 (heredado de IconButton.vue/
+ * GButton.vue, o declarado acá para los grupos/separadores propios) --
+ * nunca se aprieta ni se aplana bajo presión.
+ */
 .texture-canvas__toolbar {
   flex: 0 0 auto;
   display: flex;
@@ -843,7 +952,12 @@ function showEyedropperToast(hex: string): void {
   padding: var(--space-2) var(--space-3);
   background: var(--panel);
   border-bottom: var(--border-width) solid var(--border);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.texture-canvas__toolbar > * {
+  flex-shrink: 0;
 }
 
 .texture-canvas__tb-group {
@@ -878,6 +992,8 @@ function showEyedropperToast(hex: string): void {
 
 .texture-canvas__tb-group--region {
   min-width: 140px;
+  /* La única "válvula de presión" del toolbar -- ver nota arriba en `.texture-canvas__toolbar`. */
+  flex-shrink: 1;
 }
 
 .texture-canvas__tb-group--brush {
@@ -896,6 +1012,7 @@ function showEyedropperToast(hex: string): void {
 
 .texture-canvas__tb-grow {
   flex: 1 1 auto;
+  min-width: 0;
 }
 
 .texture-canvas__tb-import {
@@ -954,7 +1071,50 @@ function showEyedropperToast(hex: string): void {
   position: relative;
   display: flex;
   background: var(--bg);
-  border-right: var(--border-width) solid var(--border);
+}
+
+/* Ticket 068 (feedback del PO -- "el lienzo debe ser redimensionable"):
+   separador arrastrable entre el lienzo y el preview 3D -- reemplaza el
+   `border-right` fijo de `.texture-canvas__canvas-panel` (la línea ahora
+   vive acá, en el propio separador). */
+.texture-canvas__splitter {
+  width: 10px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  touch-action: none;
+}
+
+.texture-canvas__splitter::before {
+  content: '';
+  width: var(--border-width);
+  height: 100%;
+  background: var(--border);
+}
+
+.texture-canvas__splitter:hover::before,
+.texture-canvas__splitter--dragging::before {
+  background: var(--accent);
+}
+
+.texture-canvas__splitter-grip {
+  position: absolute;
+  width: 4px;
+  height: 32px;
+  border-radius: 3px;
+  background: var(--muted);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.texture-canvas__splitter:hover .texture-canvas__splitter-grip,
+.texture-canvas__splitter--dragging .texture-canvas__splitter-grip {
+  background: var(--accent);
+  opacity: 1;
 }
 
 .texture-canvas__viewport {
@@ -1045,8 +1205,10 @@ function showEyedropperToast(hex: string): void {
   z-index: 10;
 }
 
+/* Ticket 068: el ancho ya no es fijo -- lo controla `previewPanelWidthPx`
+   (separador arrastrable) vía :style inline; acá solo quedan las
+   propiedades que no varían. */
 .texture-canvas__preview-panel {
-  width: 320px;
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;

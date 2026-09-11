@@ -380,4 +380,53 @@ describe('useDraftModelStore', () => {
       expect(store.canRedo).toBe(true)
     })
   })
+
+  describe('ticket 068: estado de guardado persistente (dirty/markSaved)', () => {
+    it('load() empieza en dirty=false -- cargar un mob no es un cambio sin guardar', () => {
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], []))
+      expect(store.dirty).toBe(false)
+    })
+
+    it('cualquier Command exitoso (ej. addBone) marca dirty=true', () => {
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], []))
+      store.addBone(null, 'nuevo', [0, 0, 0], [0, 0, 0])
+      expect(store.dirty).toBe(true)
+    })
+
+    it('commitExternalModel (cambios confirmados server-side, ej. Resize) también marca dirty=true', () => {
+      const store = useDraftModelStore()
+      const before = modelWith([bone('b', null)], [cuboid('c', 'b')])
+      store.load(before)
+      store.commitExternalModel({ ...before, name: 'Renombrado' })
+      expect(store.dirty).toBe(true)
+    })
+
+    it('markSaved() limpia dirty -- se llama después de un saveRevision exitoso', () => {
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], []))
+      store.addBone(null, 'nuevo', [0, 0, 0], [0, 0, 0])
+      expect(store.dirty).toBe(true)
+      store.markSaved()
+      expect(store.dirty).toBe(false)
+    })
+
+    it('un Command RECHAZADO (ej. moveCuboid sobre un id inexistente) no marca dirty', () => {
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], []))
+      store.moveSelectedCuboid('no-existe', [1, 0, 0])
+      expect(store.lastError).not.toBeNull()
+      expect(store.dirty).toBe(false)
+    })
+
+    it('load() de un mob nuevo resetea dirty=false, incluso si el anterior tenía cambios sin guardar', () => {
+      const store = useDraftModelStore()
+      store.load(modelWith([bone('b', null)], []))
+      store.addBone(null, 'nuevo', [0, 0, 0], [0, 0, 0])
+      expect(store.dirty).toBe(true)
+      store.load(modelWith([bone('b2', null)], []))
+      expect(store.dirty).toBe(false)
+    })
+  })
 })

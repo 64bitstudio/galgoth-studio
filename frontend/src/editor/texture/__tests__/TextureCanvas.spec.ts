@@ -159,7 +159,7 @@ async function routerPlugin(): Promise<Router> {
 }
 
 describe('TextureCanvas.vue', () => {
-  let wrapper: ReturnType<typeof mount> | null = null
+  let wrapper: ReturnType<typeof mount<typeof TextureCanvas>> | null = null
 
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -172,7 +172,7 @@ describe('TextureCanvas.vue', () => {
     vi.restoreAllMocks()
   })
 
-  async function mountCanvas(model: MobProjectModel): Promise<ReturnType<typeof mount>> {
+  async function mountCanvas(model: MobProjectModel): Promise<ReturnType<typeof mount<typeof TextureCanvas>>> {
     const router = await routerPlugin()
     wrapper = mount(TextureCanvas, { props: { model }, global: { plugins: [router] } })
     return wrapper
@@ -228,8 +228,10 @@ describe('TextureCanvas.vue', () => {
 
       const alert = wrapper.get('[role="alert"]')
       expect(alert.text()).toContain('No se pudo cargar la textura guardada')
-      const guardarButton = wrapper.findAll('button').find((b) => b.text().includes('Guardar'))!
-      expect(guardarButton.attributes('disabled')).toBeDefined()
+      // Ticket 068: "Guardar" ya no es un botón de este componente (sube a
+      // la fila superior compartida de MobEditor.vue) -- la condición de
+      // bloqueo se verifica sobre `canSave`, expuesto vía defineExpose.
+      expect(wrapper.vm.canSave).toBe(false)
     })
   })
 
@@ -616,6 +618,110 @@ describe('TextureCanvas.vue', () => {
     })
   })
 
+  describe('ticket 068: botón de mano (mover el lienzo con un click, sin depender solo de la barra espaciadora)', () => {
+    it('con la barra espaciadora mantenida (comportamiento ya existente), arrastrar sobre el viewport hace scroll -- nunca pinta', async () => {
+      const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
+      const viewport = w.get('.texture-canvas__viewport').element as HTMLDivElement
+      Object.defineProperty(viewport, 'setPointerCapture', { value: vi.fn() })
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }))
+      await nextTick()
+      expect(w.get('.texture-canvas__viewport').classes()).toContain('texture-canvas__viewport--pan-ready')
+
+      dispatchPointer(viewport, 'pointerdown', 100, 100)
+      dispatchPointer(viewport, 'pointermove', 60, 100)
+
+      expect(viewport.scrollLeft).toBe(40) // se movió por pan -- no se registró ningún trazo de pintado
+    })
+
+    it('el botón de mano activa el modo pan con un click (sin necesitar la barra espaciadora), y arrastrar sobre el lienzo mueve el scroll en vez de pintar', async () => {
+      const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
+      const viewport = w.get('.texture-canvas__viewport').element as HTMLDivElement
+      Object.defineProperty(viewport, 'setPointerCapture', { value: vi.fn() })
+
+      await w.get('button[aria-label="Mover lienzo (mano)"]').trigger('click')
+      expect(w.get('button[aria-label="Mover lienzo (mano)"]').classes()).toContain('icon-button--active')
+      expect(w.get('.texture-canvas__viewport').classes()).toContain('texture-canvas__viewport--pan-ready')
+
+      dispatchPointer(viewport, 'pointerdown', 100, 100)
+      dispatchPointer(viewport, 'pointermove', 60, 100)
+
+      expect(viewport.scrollLeft).toBe(40)
+
+      // Mientras la mano está activa, el canvas de pintado tampoco debe
+      // registrar ningún trazo -- mismo criterio que la barra espaciadora.
+      mockCanvasRect(8, 8)
+      const canvas = w.get('canvas.texture-canvas__bitmap').element as HTMLCanvasElement
+      const beforePixels = useTextureEditorStore().atlas!.pixels.slice()
+      dispatchPointer(canvas, 'pointerdown', 2, 2)
+      dispatchPointer(canvas, 'pointerup', 2, 2)
+      expect(useTextureEditorStore().atlas!.pixels).toEqual(beforePixels) // sin cambios -- no pintó
+    })
+
+    it('clickear el botón de mano de nuevo desactiva el modo pan', async () => {
+      const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
+      await w.get('button[aria-label="Mover lienzo (mano)"]').trigger('click')
+      await w.get('button[aria-label="Mover lienzo (mano)"]').trigger('click')
+
+      expect(w.get('button[aria-label="Mover lienzo (mano)"]').classes()).not.toContain('icon-button--active')
+      expect(w.get('.texture-canvas__viewport').classes()).not.toContain('texture-canvas__viewport--pan-ready')
+    })
+  })
+
+  describe('ticket 068: separador arrastrable entre el lienzo y el preview 3D', () => {
+    it('arranca en el ancho por defecto (320px) y el separador está presente', async () => {
+      const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
+      expect(w.get('.texture-canvas__preview-panel').attributes('style')).toContain('width: 320px')
+      expect(w.find('.texture-canvas__splitter').exists()).toBe(true)
+    })
+
+    it('arrastrar el separador hacia la izquierda agranda el panel de preview', async () => {
+      const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
+      const splitter = w.get('.texture-canvas__splitter').element as HTMLDivElement
+      Object.defineProperty(splitter, 'setPointerCapture', { value: vi.fn() })
+      Object.defineProperty(splitter, 'hasPointerCapture', { value: vi.fn().mockReturnValue(true) })
+      Object.defineProperty(splitter, 'releasePointerCapture', { value: vi.fn() })
+
+      dispatchPointer(splitter, 'pointerdown', 500, 100)
+      dispatchPointer(splitter, 'pointermove', 440, 100) // 60px hacia la izquierda -> +60px de preview
+      dispatchPointer(splitter, 'pointerup', 440, 100)
+      await nextTick()
+
+      expect(w.get('.texture-canvas__preview-panel').attributes('style')).toContain('width: 380px')
+    })
+
+    it('el ancho del preview nunca baja de 200px ni sube de 560px, sin importar cuánto se arrastre', async () => {
+      const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
+      const splitter = w.get('.texture-canvas__splitter').element as HTMLDivElement
+      Object.defineProperty(splitter, 'setPointerCapture', { value: vi.fn() })
+
+      dispatchPointer(splitter, 'pointerdown', 500, 100)
+      dispatchPointer(splitter, 'pointermove', 2000, 100) // arrastre extremo hacia la derecha -> achicaría de más
+      await nextTick()
+      expect(w.get('.texture-canvas__preview-panel').attributes('style')).toContain('width: 200px')
+
+      dispatchPointer(splitter, 'pointermove', -2000, 100) // arrastre extremo hacia la izquierda -> agrandaría de más
+      await nextTick()
+      expect(w.get('.texture-canvas__preview-panel').attributes('style')).toContain('width: 560px')
+    })
+
+    it('el separador es operable por teclado (patrón WAI-ARIA "Separator (Focusable)") -- flecha izquierda agranda el preview, derecha lo achica, con los mismos límites', async () => {
+      const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
+      const splitter = w.get('.texture-canvas__splitter')
+      expect(splitter.attributes('role')).toBe('separator')
+      expect(splitter.attributes('aria-valuenow')).toBe('320')
+      expect(splitter.attributes('aria-valuemin')).toBe('200')
+      expect(splitter.attributes('aria-valuemax')).toBe('560')
+
+      await splitter.trigger('keydown', { key: 'ArrowLeft' })
+      expect(w.get('.texture-canvas__preview-panel').attributes('style')).toContain('width: 340px')
+      expect(splitter.attributes('aria-valuenow')).toBe('340')
+
+      await splitter.trigger('keydown', { key: 'ArrowRight' })
+      await splitter.trigger('keydown', { key: 'ArrowRight' })
+      expect(w.get('.texture-canvas__preview-panel').attributes('style')).toContain('width: 300px')
+    })
+  })
+
   describe('ticket 058: guardado con indicador de 4 estados (reutiliza el flush de 056)', () => {
     it('arranca en estado "Guardado" al cargar el atlas', async () => {
       const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
@@ -634,11 +740,17 @@ describe('TextureCanvas.vue', () => {
       expect(w.get('.texture-save-status').text()).toBe('Cambios sin guardar')
     })
 
-    it('Guardar exitoso termina en "Guardado" (reutiliza flushPaintedTexture + saveRevision, mismo mecanismo que EditorToolbar)', async () => {
+    it('Guardar exitoso (invocado vía handleSave expuesto -- ticket 068: el botón sube a MobEditor.vue) termina en "Guardado", reutilizando flushPaintedTexture + saveRevision', async () => {
       const { saveRevision } = await import('../../draftPersistenceApi')
       vi.mocked(saveRevision).mockResolvedValue({ created: true, revisionNumber: 1, reason: null })
       const { uploadThumbnail } = await import('../../thumbnailApi')
       vi.mocked(uploadThumbnail).mockResolvedValue(undefined)
+      // Ticket 068: a diferencia de un `trigger('click')` (fire-and-forget
+      // desde el punto de vista del test), acá se espera la promesa de
+      // `handleSave()` COMPLETA -- si `captureThumbnail` quedara sin
+      // mockear, `canvas.toBlob` (no implementado en jsdom) la dejaría
+      // pendiente para siempre y el test colgaría hasta el timeout.
+      vi.spyOn(threeViewportService, 'captureThumbnail').mockResolvedValue(new Blob(['png'], { type: 'image/png' }))
 
       const w = await mountCanvas(modelWith({ width: 8, height: 8 }))
       mockCanvasRect(8, 8)
@@ -648,7 +760,7 @@ describe('TextureCanvas.vue', () => {
       await nextTick()
       expect(w.get('.texture-save-status').text()).toBe('Cambios sin guardar')
 
-      await w.find('.g-button--primary').trigger('click')
+      await w.vm.handleSave()
       await flushPromises()
 
       expect(saveRevision).toHaveBeenCalled()
@@ -666,22 +778,11 @@ describe('TextureCanvas.vue', () => {
       dispatchPointer(canvas, 'pointerup', 2, 2)
       await nextTick()
 
-      await w.find('.g-button--primary').trigger('click')
+      await w.vm.handleSave()
       await flushPromises()
 
       expect(w.get('.texture-save-status').text()).toBe('Error al guardar')
     })
-  })
-
-  it('ticket 058: el botón "Generar con IA" navega a la ruta real del generador (054/055) -- no reimplementa el pipeline', async () => {
-    const model = modelWith({ width: 8, height: 8 })
-    const w = await mountCanvas(model)
-    const router = w.vm.$router
-
-    await w.findAll('button').find((b) => b.text().includes('Generar con IA'))!.trigger('click')
-    await flushPromises()
-
-    expect(router.currentRoute.value.path).toBe(`/projects/${model.projectId}/mobs/${model.mobId}/texture/generate-ai`)
   })
 
   describe('ticket 048 -- import de PNG (región seleccionada y atlas completo)', () => {
