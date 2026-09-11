@@ -67,11 +67,12 @@ class OpenAiImageProviderTest {
 				.andExpect(header("Authorization", "Bearer test-api-key"))
 				.andExpect(jsonPath("$.model").value(CONFIGURED_MODEL))
 				.andExpect(jsonPath("$.prompt").value("cabeza de goblin\n\nStyle: pixel-art"))
-				// 512x256 a propósito: ya sobre el piso mínimo (ticket 061) y dentro
-				// del ratio permitido, así este test verifica el wiring de
-				// model/prompt/n/size sin acoplarse al valor exacto del piso mínimo
-				// (eso lo cubre `tamanosDeSheetYElResultadoEsperado`, dedicado).
-				.andExpect(jsonPath("$.size").value("512x256"))
+				// 1024x1024 a propósito: tamaño estándar real (área 1 048 576px, ya
+				// sobre el pixel budget mínimo real de 655 360px, ticket 063) y
+				// dentro del ratio permitido, así este test verifica el wiring de
+				// model/prompt/n/size sin acoplarse al ajuste de tamaño (eso lo
+				// cubre `tamanosDeSheetProblematicos`, dedicado).
+				.andExpect(jsonPath("$.size").value("1024x1024"))
 				.andExpect(jsonPath("$.n").value(1))
 				.andRespond(withSuccess(
 						"""
@@ -79,7 +80,7 @@ class OpenAiImageProviderTest {
 						""".formatted(base64Png(resultBytes)),
 						MediaType.APPLICATION_JSON));
 
-		byte[] actual = provider.generateTextureSheet(new TextureGenerationSheetRequest("cabeza de goblin", null, 512, 256, "pixel-art"));
+		byte[] actual = provider.generateTextureSheet(new TextureGenerationSheetRequest("cabeza de goblin", null, 1024, 1024, "pixel-art"));
 
 		assertThat(actual).isEqualTo(resultBytes);
 		serverBox[0].verify();
@@ -117,26 +118,38 @@ class OpenAiImageProviderTest {
 		serverBox[0].verify();
 	}
 
+	/** Bit a bit igual que `MAX_ASPECT_RATIO`/`MIN_PIXEL_BUDGET` de `OpenAiImageProvider` -- duplicados a propósito acá (no accesibles desde el test, son `private`) para que las aserciones de invariantes verifiquen el mismo contrato documentado que el código real, no un valor mágico copiado sin explicación. */
+	private static final int MAX_ASPECT_RATIO_DOCUMENTADO = 3;
+	private static final long MIN_PIXEL_BUDGET_DOCUMENTADO = 655_360L;
+
 	/**
 	 * Consolida en un solo `@ParameterizedTest` (hallazgo real de Sonar,
 	 * S5976 -- "Replace these 5 tests with a single Parameterized one",
 	 * mismo patrón ya establecido en `ModelIntentValidatorTest`) los
 	 * casos de ajuste de `size` encontrados en vivo contra `studio-dev`:
 	 * ticket 059 (múltiplo de 16), ticket 060 (aspect ratio máximo 3:1) y
-	 * ticket 061 (piso mínimo de 256px por lado) -- ver
-	 * `tamanosDeSheetYElResultadoEsperado` para el detalle de cada caso
-	 * real.
+	 * ticket 063 (pixel budget mínimo de ÁREA, corrigiendo el piso por
+	 * lado equivocado de 061) -- ver `tamanosDeSheetProblematicos` para
+	 * el detalle de cada caso real.
+	 *
+	 * <p>Verifica INVARIANTES (múltiplo de 16, ratio <= 3:1, área >=
+	 * pixel budget) en vez de un valor `size` exacto por caso -- a
+	 * diferencia de 059/060, donde la propia API dio el número exacto
+	 * esperado, acá el ajuste involucra escalado proporcional con
+	 * redondeos encadenados; fijar un literal exacto a mano (como hizo
+	 * 061, incorrectamente) es frágil y propenso a error aritmético. Las
+	 * 3 invariantes SÍ están confirmadas por la API real (mensajes de
+	 * error de 059/060/063), así que son el contrato correcto a probar.
 	 */
 	@ParameterizedTest(name = "{0}")
-	@MethodSource("tamanosDeSheetYElResultadoEsperado")
-	void generateTextureSheet_ajusta_el_size_a_las_restricciones_reales_de_la_API_de_OpenAI(
-			String caso, int width, int height, String expectedSize) {
+	@MethodSource("tamanosDeSheetProblematicos")
+	void generateTextureSheet_ajusta_el_size_a_las_restricciones_reales_de_la_API_de_OpenAI(String caso, int width, int height) {
 		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];
 		OpenAiImageProvider provider = newProviderWithMockServer(serverBox, TEST_API_KEY, GENERIC_MODEL);
 
 		serverBox[0]
 				.expect(requestTo(BASE_URL + "/v1/images/generations"))
-				.andExpect(jsonPath("$.size").value(expectedSize))
+				.andExpect(sizeCumpleLasRestriccionesRealesDeLaApi())
 				.andRespond(withSuccess(
 						"""
 						{"data":[{"b64_json":"%s"}]}
@@ -148,49 +161,56 @@ class OpenAiImageProviderTest {
 		serverBox[0].verify();
 	}
 
-	private static Stream<Arguments> tamanosDeSheetYElResultadoEsperado() {
+	private RequestMatcher sizeCumpleLasRestriccionesRealesDeLaApi() {
+		return request -> {
+			String body = ((MockClientHttpRequest) request).getBodyAsString(StandardCharsets.UTF_8);
+			String size = new ObjectMapper().readTree(body).get("size").asText();
+			String[] parts = size.split("x");
+			int w = Integer.parseInt(parts[0]);
+			int h = Integer.parseInt(parts[1]);
+			assertThat(w % 16).as("ancho múltiplo de 16 (%s)", size).isZero();
+			assertThat(h % 16).as("alto múltiplo de 16 (%s)", size).isZero();
+			assertThat(Math.max(w, h))
+					.as("aspect ratio dentro de %s:1 (%s)", MAX_ASPECT_RATIO_DOCUMENTADO, size)
+					.isLessThanOrEqualTo(Math.min(w, h) * MAX_ASPECT_RATIO_DOCUMENTADO);
+			assertThat((long) w * h).as("área >= pixel budget mínimo real (%s)", size).isGreaterThanOrEqualTo(MIN_PIXEL_BUDGET_DOCUMENTADO);
+		};
+	}
+
+	private static Stream<Arguments> tamanosDeSheetProblematicos() {
 		return Stream.of(
-				// Ticket 059 (hallazgo real, verificación en vivo contra `studio-dev`):
-				// dimensiones EXACTAS del sheet real que la API rechazó primero con
-				// "Invalid size '58x8'. Width and height must both be divisible by 16." --
-				// ningún test anterior lo detectó porque todos usaban dimensiones ya
-				// múltiplos de 16 (mismo patrón de fixture-no-realista de
-				// `TextureGenerationSheetPlanner`). El resultado final combina los 3
-				// hallazgos reales de esta cadena (059 múltiplo de 16 + 060 aspect
-				// ratio + 061 piso mínimo): 256x256 es el mismo piso al que caen los
-				// 5 primeros casos de esta lista -- ver los 2 casos finales para los
-				// que el piso NO domina el resultado.
-				Arguments.of("58x8 real (no múltiplo de 16 + ratio excedido + bajo el piso mínimo) -> 256x256", 58, 8, "256x256"),
+				// Ticket 059: dimensiones EXACTAS del sheet real que la API rechazó
+				// primero con "Invalid size '58x8'. Width and height must both be
+				// divisible by 16." -- ningún test anterior lo detectó porque todos
+				// usaban dimensiones ya múltiplos de 16 (mismo patrón de
+				// fixture-no-realista de `TextureGenerationSheetPlanner`).
+				Arguments.of("58x8 real (no múltiplo de 16)", 58, 8),
 				// Ticket 060: 64x16 ya es múltiplo de 16 pero ratio 4:1 -- rechazado
-				// por separado con "The maximum supported aspect ratio is 3:1"; además
-				// bajo el piso mínimo de 061.
-				Arguments.of("64x16 (ratio 4:1, ya múltiplo de 16, bajo el piso mínimo) -> 256x256", 64, 16, "256x256"),
+				// por separado con "The maximum supported aspect ratio is 3:1".
+				Arguments.of("64x16 (ratio 4:1, ya múltiplo de 16)", 64, 16),
 				// Mismo ajuste, orientación invertida -- confirma que el clamp de
 				// aspect ratio es simétrico.
-				Arguments.of("16x64 (ratio 1:4, vertical, bajo el piso mínimo) -> 256x256", 16, 64, "256x256"),
-				// Un ratio 3:1 exacto (el límite mismo) no debe alterarse por el clamp
-				// de ratio -- pero el piso mínimo de 061 igual aplica acá.
-				Arguments.of("48x16 (ratio exactamente 3:1, bajo el piso mínimo) -> 256x256", 48, 16, "256x256"),
-				// Caso base: ya múltiplo de 16 y dentro del ratio permitido, pero
-				// igual bajo el piso mínimo de 061.
-				Arguments.of("32x32 (ya múltiplo de 16, ratio 1:1, bajo el piso mínimo) -> 256x256", 32, 32, "256x256"),
-				// Ticket 061 (tercer hallazgo real, misma verificación en vivo): con
-				// el ratio ya corregido (64x32, dentro de 3:1), la API real rechazó
-				// esa MISMA llamada con "Invalid size '64x32'. Requested resolution
-				// is below the current minimum pixel budget." -- este caso aísla el
-				// piso mínimo puro (dimensiones que YA cumplían múltiplo de 16 y
-				// ratio, solo faltaba el piso).
-				Arguments.of("64x32 real (ratio ya corregido, bajo el piso mínimo) -> 256x256", 64, 32, "256x256"),
-				// Caso límite: el ancho ya está en MAX_SHEET_DIMENSION_PX (1536, muy
-				// por encima del piso), pero el alto es minúsculo -- el piso lo sube a
-				// 256, lo que vuelve a exceder el ratio 3:1 (1536 > 256*3) y dispara
-				// un SEGUNDO ajuste de ratio sobre el valor ya "pisado" (no solo sobre
-				// el redondeo original) -- confirma el orden correcto: piso ANTES del
-				// clamp de ratio, no después.
-				Arguments.of("1536x8 (ancho ya en el máximo técnico, alto bajo el piso) -> el piso sube el alto a 256, pero eso reexcede el ratio 3:1 -> se re-agranda a 512", 1536, 8, "1536x512"),
-				// Ambos lados ya sobre el piso mínimo y dentro del ratio -- confirma
-				// que el piso es transparente/no-op cuando no hace falta.
-				Arguments.of("512x512 (ya sobre el piso mínimo, ratio 1:1) sin alterar", 512, 512, "512x512"));
+				Arguments.of("16x64 (ratio 1:4, vertical)", 16, 64),
+				// Un ratio 3:1 exacto (el límite mismo) no debe disparar el clamp de
+				// ratio (aunque el pixel budget igual puede aplicar).
+				Arguments.of("48x16 (ratio exactamente 3:1)", 48, 16),
+				// Ticket 063 (cuarto hallazgo real, corrige el piso por lado
+				// equivocado de 061): con el ratio ya corregido (64x32, dentro de
+				// 3:1), la API real rechazó esa MISMA llamada con "Invalid size
+				// '64x32'. Requested resolution is below the current minimum pixel
+				// budget." -- y el piso de 061 (256x256 = 65 536px) SIGUIÓ
+				// fallando en la siguiente verificación en vivo, confirmando que la
+				// restricción real es de ÁREA (655 360px mínimo), no de lado.
+				Arguments.of("64x32 real (ratio ya corregido, bajo el pixel budget real de área)", 64, 32),
+				Arguments.of("256x256 real (el piso por lado de 061, INCORRECTO, también bajo el pixel budget real)", 256, 256),
+				// Caso límite: el ancho ya está en MAX_SHEET_DIMENSION_PX (1536), pero
+				// el alto es minúsculo -- confirma que el escalado por pixel budget
+				// preserva el ratio ya corregido, sin necesitar reajustarlo (área
+				// tras el clamp de ratio ya alcanza el mínimo sin escalar más).
+				Arguments.of("1536x8 (ancho ya en el máximo técnico, alto minúsculo)", 1536, 8),
+				// Caso base: ya múltiplo de 16, dentro del ratio, y de área
+				// pequeña -- ejercita el camino completo de escalado proporcional.
+				Arguments.of("32x32 (cuadrado pequeño, bajo el pixel budget real)", 32, 32));
 	}
 
 	@Test
