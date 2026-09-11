@@ -1,8 +1,23 @@
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useDraftModelStore } from '../draftModelStore'
+
+// Ticket 069 -- GDrawer.vue usa `<dialog>` nativo (mismo criterio que
+// AppDialog.vue); jsdom no implementa showModal()/close().
+beforeAll(() => {
+  if (!HTMLDialogElement.prototype.showModal) {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '')
+    }
+  }
+  if (!HTMLDialogElement.prototype.close) {
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      this.removeAttribute('open')
+    }
+  }
+})
 
 // MobEditor.vue -> ThreeViewport.vue -> ThreeViewportService.ts construye
 // el singleton (`new WebGLRenderer(...)`) al cargar el módulo -- mismo
@@ -46,7 +61,6 @@ async function routerAt(projectId: string, mobId: string): Promise<Router> {
     routes: [
       { path: '/projects/:projectId/mobs/:mobId/edit', component: MobEditor },
       { path: '/projects/:projectId/mobs/:mobId/export', component: { template: '<div>export</div>' } },
-      { path: '/projects/:projectId/mobs/:mobId/texture/generate-ai', component: { template: '<div>generate-ai</div>' } },
     ],
   })
   await router.push(`/projects/${projectId}/mobs/${mobId}/edit`)
@@ -190,17 +204,17 @@ describe('MobEditor.vue', () => {
       // bajo shallowMount, un componente hijo se stubea SIN su slot
       // (texto invisible, ver vue-test-utils `renderStubDefaultSlot`,
       // default `false`) -- `stubs: { GButton: false }` lo excluye del
-      // shallow-stub para que su texto real siga siendo buscable,
-      // dejando el resto (HierarchyPanel/ThreeViewport/AiEditPanel/etc.)
-      // stubeado igual que antes.
+      // shallow-stub para que su texto real siga siendo buscable. Ticket
+      // 069: `GDrawer: false` hace lo mismo para poder alcanzar el
+      // `AiEditPanel` real que vive dentro de su slot una vez abierto.
       const wrapper = shallowMount(MobEditor, {
-        global: { plugins: [await routerAt('p1', 'mob-1')], stubs: { GButton: false } },
+        global: { plugins: [await routerAt('p1', 'mob-1')], stubs: { GButton: false, GDrawer: false } },
       })
       await flushPromises()
       return wrapper
     }
 
-    it('por default muestra HierarchyPanel + ThreeViewport, y el botón "Asistente IA" cambia a AiEditPanel', async () => {
+    it('por default muestra HierarchyPanel + ThreeViewport, y el botón "Asistente IA" abre el drawer compartido con AiEditPanel dentro (ticket 069)', async () => {
       const wrapper = await mountLoaded()
 
       expect(wrapper.findComponent({ name: 'HierarchyPanel' }).exists()).toBe(true)
@@ -211,8 +225,8 @@ describe('MobEditor.vue', () => {
       await toggle.trigger('click')
 
       expect(wrapper.findComponent({ name: 'AiEditPanel' }).exists()).toBe(true)
-      expect(wrapper.findComponent({ name: 'HierarchyPanel' }).exists()).toBe(false)
-      expect(wrapper.findAll('button').find((b) => b.text() === 'Editor manual')).toBeDefined()
+      // Ticket 069: ya no se reemplaza HierarchyPanel -- el drawer es un overlay modal sobre el editor, no un swap inline.
+      expect(wrapper.findComponent({ name: 'HierarchyPanel' }).exists()).toBe(true)
     })
 
     it('el botón "Exportar" navega a la pantalla de exportación del mob (ticket 032)', async () => {
@@ -356,11 +370,15 @@ describe('MobEditor.vue', () => {
           if (u.endsWith('/api/mobs/mob-1/draft')) {
             return jsonResponse({ mobId: 'mob-1', draftVersion: 2, model: draftModel, updatedAt: '' })
           }
+          if (u.endsWith('/api/mobs/mob-1/references')) {
+            return jsonResponse([]) // TextureAiGeneratorPanel (069) lo pide al montar dentro del drawer -- sin referencia, "Generar con IA" queda deshabilitado, pero eso no es lo que este describe prueba.
+          }
           throw new Error(`fetch inesperado: ${u}`)
         }),
       )
+      // Ticket 069: `GDrawer: false` para alcanzar `TextureAiGeneratorPanel` real dentro de su slot.
       const wrapper = shallowMount(MobEditor, {
-        global: { plugins: [await routerAt('p1', 'mob-1')], stubs: { GButton: false, EditorToolbar: false, TextureCanvas: false } },
+        global: { plugins: [await routerAt('p1', 'mob-1')], stubs: { GButton: false, EditorToolbar: false, TextureCanvas: false, GDrawer: false } },
       })
       await flushPromises()
       return wrapper
@@ -381,15 +399,30 @@ describe('MobEditor.vue', () => {
       expect(topLabels()).toEqual(expect.arrayContaining(['Reset cámara', 'Generar con IA', 'Exportar', 'Guardar']))
     })
 
-    it('en Textura, el botón compartido de IA (ahora "Generar con IA" en la fila superior) navega a la ruta real del generador -- reemplaza el botón que antes vivía dentro de TextureCanvas.vue', async () => {
+    it('en Textura, el botón compartido de IA ("Generar con IA") abre el MISMO drawer compartido, con TextureAiGeneratorPanel dentro (ticket 069 -- antes navegaba a una ruta propia)', async () => {
       const wrapper = await mountLoaded()
       await switchToTextura(wrapper)
-      const router = wrapper.vm.$router
 
       await wrapper.findAll('button').find((b) => b.text() === 'Generar con IA')!.trigger('click')
       await flushPromises()
 
-      expect(router.currentRoute.value.path).toBe('/projects/p1/mobs/mob-1/texture/generate-ai')
+      const panel = wrapper.findComponent({ name: 'TextureAiGeneratorPanel' })
+      expect(panel.exists()).toBe(true)
+      expect(panel.props('mobId')).toBe('mob-1')
+      expect(panel.props('model')).toMatchObject({ mobId: 'mob-1' })
+    })
+
+    it('el título del drawer compartido cambia según la tab activa (Modelo: "Asistente IA" / Textura: "Generador de textura (IA)")', async () => {
+      const wrapperModelo = await mountLoaded()
+      await wrapperModelo.findAll('button').find((b) => b.text() === 'Asistente IA')!.trigger('click')
+      await flushPromises()
+      expect(wrapperModelo.find('.g-drawer__title').text()).toContain('Asistente IA')
+
+      const wrapperTextura = await mountLoaded()
+      await switchToTextura(wrapperTextura)
+      await wrapperTextura.findAll('button').find((b) => b.text() === 'Generar con IA')!.trigger('click')
+      await flushPromises()
+      expect(wrapperTextura.find('.g-drawer__title').text()).toContain('Generador de textura (IA)')
     })
 
     it('Guardar (fila superior) delega en EditorToolbar.handleSave cuando la tab activa es Modelo', async () => {

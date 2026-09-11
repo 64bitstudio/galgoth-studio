@@ -37,12 +37,24 @@
  * propia orquestación de guardado, expuesta vía `defineExpose` --
  * `editorToolbarRef`/`textureCanvasRef` más abajo -- este componente
  * solo decide A CUÁL delegar según `activeTab`, sin duplicar ninguna
- * lógica de negocio); el botón de IA mantiene su comportamiento actual
- * sin cambios (Modelo: toggle inline; Textura: navega al generador, 055)
- * -- unificarlo en un mismo drawer para las dos tabs es una pieza más
- * grande, señalada aparte (ticket 069).
+ * lógica de negocio).
+ *
+ * Ticket 069 (VoBo del PO sobre el mockup
+ * https://claude.ai/code/artifact/a3514398-4fc4-430f-96b2-40299c0038a4):
+ * el botón de IA -- corrección del párrafo anterior, que decía que esto
+ * quedaba para después -- ahora abre el MISMO `GDrawer.vue` compartido en
+ * las dos tabs (antes: toggle inline de `AiEditPanel` en Modelo,
+ * navegación a una ruta propia en Textura). `showAiDrawer` es un solo
+ * flag compartido; el contenido embebido dentro (`AiEditPanel` o
+ * `TextureAiGeneratorPanel`) se decide según `activeTab`, igual que
+ * "Guardar". `TextureAiGeneratorPanel` ya no hace su propio fetch del
+ * draft (llega como prop `model`, el mismo `draft.model` ya cargado acá)
+ * -- al aplicar una textura generada, `handleTextureAiApplied` reobtiene
+ * el draft (el atlas persistido no viaja en el JSON del draft) y le pide
+ * a `TextureCanvas.reloadAtlas()` que lo recargue, sin duplicar la lógica
+ * de descarga/decodificación que ese componente ya tiene.
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ThreeViewport from '../viewport/ThreeViewport.vue'
 import { threeViewportService } from '../viewport/ThreeViewportService'
@@ -52,6 +64,7 @@ import EditorHeader from './EditorHeader.vue'
 import EditorToolbar from './EditorToolbar.vue'
 import AiEditPanel from './AiEditPanel.vue'
 import GenerationPreviewViewport from '../ai/GenerationPreviewViewport.vue'
+import TextureAiGeneratorPanel from '../ai/texture/TextureAiGeneratorPanel.vue'
 import TextureCanvas from './texture/TextureCanvas.vue'
 import { useDraftModelStore } from './draftModelStore'
 import { useGeometryApplyStore } from './geometryApplyStore'
@@ -61,6 +74,7 @@ import { emptyMobProjectModel } from '../domain/emptyMobProjectModel'
 import { ApiError } from '../api/ApiError'
 import GSidebar, { type GSidebarKey } from '../design-system/components/GSidebar.vue'
 import GButton from '../design-system/components/GButton.vue'
+import GDrawer from '../design-system/components/GDrawer.vue'
 import ConfirmDialog from '../design-system/components/ConfirmDialog.vue'
 import IconCamera from '../design-system/icons/IconCamera.vue'
 import IconSparkle from '../design-system/icons/IconSparkle.vue'
@@ -120,7 +134,6 @@ function cancelPendingResize(): void {
 // `ThreeViewportService` (un solo canvas WebGL del proceso), así que no
 // pueden estar montados a la vez. Ver el comentario de cabecera de
 // `AiEditPanel.vue` para el porqué completo.
-const showAiPanel = ref(false)
 const aiPreviewModel = ref<MobProjectModel | null>(null)
 
 function handleAiPreviewModelChanged(model: MobProjectModel | null): void {
@@ -129,6 +142,21 @@ function handleAiPreviewModelChanged(model: MobProjectModel | null): void {
 
 function handleAiEditApplied(model: MobProjectModel): void {
   draft.load(model)
+}
+
+/**
+ * Ticket 069: el generador de textura por IA ya no navega a su propia
+ * ruta -- `applyTexture` (backend) no devuelve el modelo completo (el
+ * atlas persistido nunca viaja en el JSON del draft, ver
+ * `TextureCanvas.loadModelAtlas`), así que hace falta reobtener el draft
+ * y pedirle a `TextureCanvas` que recargue su atlas -- sin duplicar la
+ * lógica de descarga/decodificación que ese componente ya tiene.
+ */
+async function handleTextureAiApplied(): Promise<void> {
+  const draftView = await getDraft(mobId)
+  draft.load(draftView.model)
+  await nextTick() // deja que `:model="draft.model"` le llegue al prop de TextureCanvas antes de pedirle recargar.
+  await textureCanvasRef.value?.reloadAtlas()
 }
 
 /**
@@ -174,12 +202,23 @@ function handleTopSave(): void {
   }
 }
 
+// Ticket 069: un solo flag para el drawer compartido -- el contenido
+// embebido adentro (AiEditPanel/TextureAiGeneratorPanel) se decide según
+// `activeTab`, mismo criterio que `activeSaveState`/`handleTopSave`.
+const showAiDrawer = ref(false)
+
 function handleIaButtonClick(): void {
-  if (activeTab.value === 'modelo') {
-    showAiPanel.value = !showAiPanel.value
-    return
-  }
-  router.push(`/projects/${projectId}/mobs/${mobId}/texture/generate-ai`)
+  showAiDrawer.value = true
+}
+
+function closeAiDrawer(): void {
+  showAiDrawer.value = false
+  // Hallazgo real (069): sin este reset, cerrar el drawer con un plan de
+  // IA activo (031) dejaba el canvas principal trabado en
+  // `GenerationPreviewViewport` en vez de volver al `ThreeViewport`
+  // editable -- bug heredado del toggle inline original, nunca disparado
+  // en la práctica porque nadie cerraba el panel con un plan activo.
+  aiPreviewModel.value = null
 }
 
 onMounted(async () => {
@@ -231,8 +270,8 @@ function backToProject(): void {
           <!-- Ticket 068: esta fila ya no depende de la tab activa -- se muestra siempre, homologada entre Modelo y Textura. -->
           <div class="mob-editor__top-actions">
             <GButton variant="ghost" @click="threeViewportService.resetCamera()"><template #icon><IconCamera :size="16" /></template>Reset cámara</GButton>
-            <GButton :variant="activeTab === 'modelo' && showAiPanel ? 'primary' : 'accent'" @click="handleIaButtonClick">
-              <template #icon><IconSparkle :size="16" /></template>{{ activeTab === 'modelo' ? (showAiPanel ? 'Editor manual' : 'Asistente IA') : 'Generar con IA' }}
+            <GButton :variant="showAiDrawer ? 'primary' : 'accent'" @click="handleIaButtonClick">
+              <template #icon><IconSparkle :size="16" /></template>{{ activeTab === 'modelo' ? 'Asistente IA' : 'Generar con IA' }}
             </GButton>
             <GButton variant="secondary" @click="router.push(`/projects/${projectId}/mobs/${mobId}/export`)"><template #icon><IconExport :size="16" /></template>Exportar</GButton>
             <GButton variant="primary" :disabled="!activeCanSave" @click="handleTopSave">
@@ -244,13 +283,7 @@ function backToProject(): void {
           <EditorToolbar ref="editorToolbarRef" />
           <div class="mob-editor__body">
             <div class="mob-editor__panel mob-editor__panel--left">
-              <AiEditPanel
-                v-if="showAiPanel"
-                :mob-id="mobId"
-                @preview-model-changed="handleAiPreviewModelChanged"
-                @applied="handleAiEditApplied"
-              />
-              <HierarchyPanel v-else />
+              <HierarchyPanel />
             </div>
             <GenerationPreviewViewport v-if="aiPreviewModel" :model="aiPreviewModel" class="mob-editor__canvas" />
             <ThreeViewport v-else class="mob-editor__canvas" />
@@ -275,6 +308,22 @@ function backToProject(): void {
       @confirm="confirmPendingResize"
       @cancel="cancelPendingResize"
     />
+
+    <!-- Ticket 069: drawer compartido del Asistente IA -- mismo GDrawer en las dos tabs, contenido embebido según activeTab. -->
+    <GDrawer
+      v-if="showAiDrawer && draft.model"
+      :title="activeTab === 'modelo' ? 'Asistente IA' : 'Generador de textura (IA)'"
+      @cancel="closeAiDrawer"
+    >
+      <template #title-icon><IconSparkle :size="16" /></template>
+      <AiEditPanel
+        v-if="activeTab === 'modelo'"
+        :mob-id="mobId"
+        @preview-model-changed="handleAiPreviewModelChanged"
+        @applied="handleAiEditApplied"
+      />
+      <TextureAiGeneratorPanel v-else :mob-id="mobId" :model="draft.model" @applied="handleTextureAiApplied" />
+    </GDrawer>
   </div>
 </template>
 

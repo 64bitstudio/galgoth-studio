@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
  * textura, 046/047, nunca subía el bitmap al backend) y el que este
  * ticket cerró explícitamente; el camino de generación por IA (054/055)
  * ya tiene su propia cobertura de componente
- * (`TextureAiGeneratorScreen.spec.ts`) y de pipeline backend.
+ * (`TextureAiGeneratorPanel.spec.ts`) y de pipeline backend.
  *
  * "abre en Blockbench sin diálogos de reparación" (AC #3): mismo criterio
  * ya establecido por 009/012/014/033 -- se verifica que el panel de

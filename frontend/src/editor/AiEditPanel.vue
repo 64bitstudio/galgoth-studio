@@ -24,6 +24,11 @@
  * explícitamente), y es `MobEditor.vue` quien efectivamente monta
  * `GenerationPreviewViewport.vue` en el canvas principal mientras haya
  * un plan activo, en vez de `ThreeViewport.vue`.
+ *
+ * Ticket 069: este componente vive embebido dentro de `GDrawer.vue`
+ * (drawer compartido con el generador de textura de Textura) -- ya NO
+ * renderiza su propio título ("Asistente IA"), lo hace el `title` del
+ * drawer para no duplicarlo.
  */
 import { computed, ref, watch } from 'vue'
 import { applyEdit, requestEditPlan, type EditGeometryPlan } from './aiEditApi'
@@ -109,9 +114,7 @@ async function regenerate(): Promise<void> {
 </script>
 
 <template>
-  <div class="ai-edit-panel app-scroll">
-    <h3 class="ai-edit-panel__title">Asistente IA</h3>
-
+  <div class="ai-edit-panel">
     <template v-if="!plan">
       <textarea
         v-model="instruction"
@@ -178,13 +181,13 @@ async function regenerate(): Promise<void> {
 </template>
 
 <style scoped>
+/* Ticket 069: el padding/scroll del contenedor pasa a ser responsabilidad
+   de `.g-drawer__body` (GDrawer.vue) -- este componente ya no gestiona su
+   propio scroll ni layout de página completa. */
 .ai-edit-panel {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-3);
-  height: 100%;
-  overflow: auto;
 }
 
 .ai-edit-panel__title {

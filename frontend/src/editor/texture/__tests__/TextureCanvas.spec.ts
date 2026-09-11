@@ -2,7 +2,6 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Mesh, MeshStandardMaterial } from 'three'
 import { nextTick } from 'vue'
-import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Cuboid, MobProjectModel, UvRegion } from '../../../domain/MobProjectModel'
 import { FACE_HIGHLIGHT_NAME } from '../../../viewport/buildMobScene'
@@ -146,18 +145,6 @@ async function setActiveColorHex(wrapper: ReturnType<typeof mount>, hex: string)
   await hexInput.trigger('keydown', { key: 'Enter' })
 }
 
-async function routerPlugin(): Promise<Router> {
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [
-      { path: '/', component: { template: '<div />' } },
-      { path: '/projects/:projectId/mobs/:mobId/texture/generate-ai', name: 'texture-ai-generator', component: { template: '<div />' } },
-    ],
-  })
-  await router.push('/')
-  return router
-}
-
 describe('TextureCanvas.vue', () => {
   let wrapper: ReturnType<typeof mount<typeof TextureCanvas>> | null = null
 
@@ -173,8 +160,7 @@ describe('TextureCanvas.vue', () => {
   })
 
   async function mountCanvas(model: MobProjectModel): Promise<ReturnType<typeof mount<typeof TextureCanvas>>> {
-    const router = await routerPlugin()
-    wrapper = mount(TextureCanvas, { props: { model }, global: { plugins: [router] } })
+    wrapper = mount(TextureCanvas, { props: { model } })
     return wrapper
   }
 
@@ -232,6 +218,33 @@ describe('TextureCanvas.vue', () => {
       // la fila superior compartida de MobEditor.vue) -- la condición de
       // bloqueo se verifica sobre `canSave`, expuesto vía defineExpose.
       expect(wrapper.vm.canSave).toBe(false)
+    })
+  })
+
+  describe('ticket 069: reloadAtlas (tras aplicar una textura generada por IA desde el drawer compartido)', () => {
+    beforeEach(() => {
+      mockDownloadTexture.mockReset()
+      mockDecode.mockReset()
+    })
+
+    it('vuelve a descargar/decodificar el atlas del `model` actual -- misma lógica que la carga inicial, sin duplicarla', async () => {
+      // Sin storageKey, la carga inicial nunca llama a downloadTexture -- nada que armar para ese primer mount.
+      const model = modelWith({ width: 4, height: 4, storageKey: null })
+      const wrapper = await mountCanvas(model)
+      await flushPromises()
+      expect(mockDownloadTexture).not.toHaveBeenCalled()
+
+      const pixels = solidPixels(4, 4, [1, 2, 3, 255])
+      const pngBlob = new Blob(['fake-png'], { type: 'image/png' })
+      mockDownloadTexture.mockResolvedValue(pngBlob)
+      mockDecode.mockResolvedValue({ pixels, width: 4, height: 4 })
+      model.texture.storageKey = 'textures/nueva-ia.png' // MobEditor.vue reemplaza `draft.model` con uno recién obtenido -- acá se muta el mismo objeto por simplicidad, la prop es la misma referencia.
+
+      await wrapper.vm.reloadAtlas()
+
+      expect(mockDownloadTexture).toHaveBeenCalledWith('mob-1')
+      const store = useTextureEditorStore()
+      expect(store.atlas?.pixels).toEqual(pixels)
     })
   })
 

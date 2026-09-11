@@ -657,7 +657,18 @@ async function handleSave(): Promise<void> {
  */
 const canSave = computed(() => saveState.value !== 'saving' && atlasLoadError.value === null)
 
-defineExpose({ saveState, canSave, handleSave })
+/**
+ * Ticket 069: tras aplicar una textura generada por IA (drawer
+ * compartido, `TextureAiGeneratorPanel.vue`), `MobEditor.vue` reobtiene
+ * el draft (el atlas persistido no viaja en su JSON) y necesita que este
+ * componente vuelva a descargar/decodificar el PNG real -- reusa
+ * `loadModelAtlas` tal cual, sin duplicar esa lógica.
+ */
+async function reloadAtlas(): Promise<void> {
+  await loadModelAtlas(props.model)
+}
+
+defineExpose({ saveState, canSave, handleSave, reloadAtlas })
 
 // -- Trazo de Pincel/Borrador: UN solo recordPatch() por trazo completo --
 let strokeBeforeFull: Uint8ClampedArray | null = null
