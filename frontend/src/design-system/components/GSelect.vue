@@ -39,13 +39,18 @@ export interface GSelectOption {
   label: string
 }
 
-const props = defineProps<{
-  modelValue: string
-  options: GSelectOption[]
-  label: string
-  /** Placeholder mostrado si `modelValue` no matchea ninguna opción (ej. antes de la primera carga). */
-  placeholder?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    modelValue: string
+    options: GSelectOption[]
+    label: string
+    /** Placeholder mostrado si `modelValue` no matchea ninguna opción (ej. antes de la primera carga). */
+    placeholder?: string
+    /** Ticket 067 -- primer consumidor (`TextureAiGeneratorScreen.vue`) que necesita deshabilitar el select mientras hay una generación en curso. */
+    disabled?: boolean
+  }>(),
+  { disabled: false },
+)
 
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
 
@@ -137,6 +142,7 @@ onBeforeUnmount(() => document.removeEventListener('click', handleDocumentClick)
       :aria-label="label"
       aria-haspopup="listbox"
       :aria-expanded="isOpen"
+      :disabled="disabled"
       @click="toggle"
       @keydown="handleTriggerKeydown"
     >
@@ -205,6 +211,11 @@ onBeforeUnmount(() => document.removeEventListener('click', handleDocumentClick)
 .g-select--open .g-select__trigger {
   border-color: var(--accent);
   background: var(--surface-2);
+}
+
+.g-select__trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .g-select__value {
