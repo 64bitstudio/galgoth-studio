@@ -96,6 +96,28 @@ export class ThreeViewportService {
   private currentMobGroup: Group | null = null
   private animationHandle: number | null = null
   private readonly raycaster = new Raycaster()
+  /**
+   * Post-074 (hallazgo real del PO -- "si abro el sidebar se rompe todo",
+   * reportado sobre la tab Textura): `resizeToContainer` solo se llamaba
+   * al montar (`attachTo`) o al arrastrar el splitter del preview 3D --
+   * nunca cuando el CONTENEDOR cambiaba de tamaño por otra razón (ej.
+   * `GSidebar.vue` expandiéndose/colapsando, que angosta/ensancha
+   * `.mob-editor`/`.texture-canvas` sin que nada dentro de este servicio
+   * se enterara). El `<canvas>` de Three.js no tiene ningún CSS que lo
+   * fuerce a 100% de su contenedor (`resizeToContainer` llama
+   * `renderer.setSize(w, h, false)` -- el `false` es a propósito, ver su
+   * docstring -- así que sus atributos `width`/`height` HTML quedan
+   * fijos al tamaño del contenedor en el momento del último resize real,
+   * y el canvas se ve recortado/desalineado en cuanto ese contenedor
+   * cambia de tamaño sin que nadie vuelva a llamar `resizeToContainer`.
+   *
+   * Fix en el servicio compartido (no en cada componente que lo consume)
+   * a propósito: TODAS las pantallas que reutilizan este singleton
+   * (`ThreeViewport.vue` en Modelo, `TextureCanvas.vue` en Textura,
+   * `GenerationPreviewViewport.vue`) quedan cubiertas por el mismo
+   * `ResizeObserver`, sin duplicar la lógica de resize en cada una.
+   */
+  private resizeObserver: ResizeObserver | null = null
 
   constructor() {
     this.renderer = new WebGLRenderer({ antialias: true })
@@ -135,14 +157,26 @@ export class ThreeViewportService {
     return this.renderer.domElement
   }
 
-  /** Mueve el canvas compartido al contenedor dado (nunca crea uno nuevo). */
+  /**
+   * Mueve el canvas compartido al contenedor dado (nunca crea uno nuevo).
+   * Post-074: además observa el tamaño de `container` (`ResizeObserver`)
+   * mientras esté attacheado -- cualquier cambio de tamaño futuro (sidebar
+   * expandiéndose/colapsando, splitter, resize de ventana) re-sincroniza
+   * el renderer/cámara automáticamente, sin depender de que cada pantalla
+   * consumidora recuerde llamar `resizeToContainer` a mano.
+   */
   attachTo(container: HTMLElement): void {
     container.appendChild(this.canvas)
     this.resizeToContainer(container)
+    this.resizeObserver?.disconnect()
+    this.resizeObserver = new ResizeObserver(() => this.resizeToContainer(container))
+    this.resizeObserver.observe(container)
   }
 
   detach(): void {
     this.stopRenderLoop()
+    this.resizeObserver?.disconnect()
+    this.resizeObserver = null
     this.canvas.remove()
   }
 

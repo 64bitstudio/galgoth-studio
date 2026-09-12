@@ -98,6 +98,94 @@ describe('ThreeViewportService', () => {
     rafSpy.mockRestore()
   })
 
+  describe('post-074 (hallazgo real del PO -- "si abro el sidebar se rompe todo"): ResizeObserver en attachTo/detach', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals() // restaura el FakeResizeObserver global de test-setup.ts -- estos tests reemplazan `ResizeObserver` con un espía propio.
+    })
+
+    /**
+     * Espía el constructor global de ResizeObserver -- captura el callback
+     * real que el servicio le pasa, para poder dispararlo a mano (jsdom no
+     * hace layout real, nunca dispararía uno solo). `disconnect()` marca el
+     * observer como desconectado -- mismo comportamiento real de un
+     * ResizeObserver de verdad (tras `disconnect()`, ningún resize
+     * posterior vuelve a invocar el callback).
+     */
+    function stubResizeObserver(): { observeSpy: ReturnType<typeof vi.fn>; disconnectSpy: ReturnType<typeof vi.fn>; fireResize: () => void } {
+      const observeSpy = vi.fn()
+      const disconnectSpy = vi.fn()
+      let capturedCallback: ResizeObserverCallback | undefined
+      let connected = true
+      vi.stubGlobal(
+        'ResizeObserver',
+        vi.fn().mockImplementation(function FakeResizeObserver(cb: ResizeObserverCallback) {
+          capturedCallback = cb
+          connected = true
+          return {
+            observe: observeSpy,
+            unobserve: vi.fn(),
+            disconnect: (...args: unknown[]) => {
+              connected = false
+              disconnectSpy(...args)
+            },
+          }
+        }),
+      )
+      return {
+        observeSpy,
+        disconnectSpy,
+        fireResize: () => {
+          if (connected) {
+            capturedCallback!([], {} as ResizeObserver)
+          }
+        },
+      }
+    }
+
+    it('attachTo observa el contenedor -- un resize SIN llamar resizeToContainer a mano resincroniza renderer/cámara', () => {
+      const { observeSpy, fireResize } = stubResizeObserver()
+      const container = document.createElement('div')
+      Object.defineProperty(container, 'clientWidth', { value: 500, configurable: true })
+      Object.defineProperty(container, 'clientHeight', { value: 250, configurable: true })
+
+      service.attachTo(container)
+      expect(observeSpy).toHaveBeenCalledWith(container)
+      vi.mocked(service.renderer.setSize).mockClear()
+
+      // Simula el contenedor angostándose por otra razón (ej. GSidebar expandiéndose) -- nadie llama resizeToContainer a mano.
+      Object.defineProperty(container, 'clientWidth', { value: 300, configurable: true })
+      fireResize()
+
+      expect(service.renderer.setSize).toHaveBeenCalledWith(300, 250, false)
+      expect(service.camera.aspect).toBe(300 / 250)
+    })
+
+    it('detach desconecta el ResizeObserver -- un resize posterior ya no toca el renderer', () => {
+      const { disconnectSpy, fireResize } = stubResizeObserver()
+      const container = document.createElement('div')
+      service.attachTo(container)
+
+      service.detach()
+      vi.mocked(service.renderer.setSize).mockClear()
+      fireResize()
+
+      expect(disconnectSpy).toHaveBeenCalled()
+      expect(service.renderer.setSize).not.toHaveBeenCalled()
+    })
+
+    it('reatachear a otro contenedor desconecta el observer del contenedor VIEJO -- nunca observa dos contenedores a la vez', () => {
+      const { disconnectSpy, observeSpy } = stubResizeObserver()
+      const containerA = document.createElement('div')
+      const containerB = document.createElement('div')
+
+      service.attachTo(containerA)
+      service.attachTo(containerB)
+
+      expect(disconnectSpy).toHaveBeenCalledTimes(1) // el observer de containerA, antes de crear el de containerB
+      expect(observeSpy).toHaveBeenCalledWith(containerB)
+    })
+  })
+
   it('setModel reemplaza el mob anterior en la escena -- nunca acumula grupos viejos', () => {
     service.setModel(emptyModel('mob-uno'))
     service.setModel(emptyModel('mob-dos'))

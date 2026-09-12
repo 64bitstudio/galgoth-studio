@@ -14,6 +14,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    setupFiles: ['./src/test-setup.ts'],
     // `e2e/` es la suite Playwright (ticket 033) -- usa su propio `test`/
     // `expect` de `@playwright/test`, incompatible con Vitest; sin esta
     // exclusión, Vitest intenta correrla igual y falla al importarla.
