@@ -17,14 +17,14 @@ beforeAll(() => {
 })
 
 function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
-  return {id: 'p1', name: 'Galgoth', mobCount: 0, mobThumbnails: [], createdAt: '', updatedAt: '', ...overrides}
+  return {id: 'p1', name: 'Galgoth', description: null, mobCount: 0, mobThumbnails: [], status: 'draft', createdAt: '', updatedAt: '', ...overrides}
 }
 
 describe('AiMobProjectPickerDialog.vue', () => {
   it('sin proyectos, arranca directo en modo "nuevo proyecto" (sin selector vacío)', () => {
     const wrapper = mount(AiMobProjectPickerDialog, {props: {projects: []}})
 
-    expect(wrapper.find('select').exists()).toBe(false)
+    expect(wrapper.find('.g-select').exists()).toBe(false)
     expect(wrapper.find('input').exists()).toBe(true)
   })
 
@@ -49,7 +49,8 @@ describe('AiMobProjectPickerDialog.vue', () => {
   it('con proyectos existentes, el selector arranca en el primero y confirmar emite confirm con projectId', async () => {
     const wrapper = mount(AiMobProjectPickerDialog, {props: {projects: [project({id: 'p1'}), project({id: 'p2', name: 'Otro'})]}})
 
-    expect(wrapper.find('select').exists()).toBe(true)
+    expect(wrapper.find('.g-select').exists()).toBe(true)
+    expect(wrapper.get('.g-select__trigger').text()).toBe('Galgoth')
     await wrapper.findAll('button').find((b) => b.text() === 'Continuar')!.trigger('click')
 
     expect(wrapper.emitted('confirm')).toEqual([[{projectId: 'p1'}]])
@@ -58,7 +59,8 @@ describe('AiMobProjectPickerDialog.vue', () => {
   it('con proyectos existentes, elegir "+ Nuevo proyecto" muestra el campo de nombre', async () => {
     const wrapper = mount(AiMobProjectPickerDialog, {props: {projects: [project()]}})
 
-    await wrapper.find('select').setValue('__new__')
+    await wrapper.get('.g-select__trigger').trigger('click')
+    await wrapper.findAll('.g-select__option').find((o) => o.text().includes('+ Nuevo proyecto'))!.trigger('click')
 
     expect(wrapper.find('input').exists()).toBe(true)
   })

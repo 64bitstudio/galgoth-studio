@@ -279,6 +279,37 @@
       ]
     },
     {
+      "name": "Mobs recientes cruzando proyectos (ticket 071)",
+      "item": [
+        {
+          "name": "Listar mobs recientes (Inicio -- Continuar trabajando)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/mobs/recent?limit=3",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mobs",
+                "recent"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "3",
+                  "description": "Opcional, default 3, tope 20. Un valor inválido/ausente cae al default (nunca 400)."
+                }
+              ]
+            },
+            "description": "RecentMobSummary[] (id, projectId, name, baseType, status, thumbnailKey, updatedAt) -- mismo shape que MobSummary más projectId, cruzando TODOS los proyectos no eliminados, ordenado por updatedAt descendente."
+          }
+        }
+      ]
+    },
+    {
       "name": "Thumbnails (ticket 023)",
       "item": [
         {

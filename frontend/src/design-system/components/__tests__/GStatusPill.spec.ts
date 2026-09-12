@@ -4,8 +4,8 @@ import GStatusPill from '../GStatusPill.vue'
 
 describe('GStatusPill', () => {
   it.each([
-    ['ready', 'Ready'],
-    ['in-progress', 'In progress'],
+    ['ready', 'Listo'],
+    ['in-progress', 'En progreso'],
     ['draft', 'Draft'],
   ] as const)(
     'status=%s muestra la etiqueta "%s" Y un ícono -- nunca solo color',
