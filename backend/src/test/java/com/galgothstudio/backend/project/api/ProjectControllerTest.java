@@ -57,7 +57,7 @@ class ProjectControllerTest {
 		entityManager.flush();
 	}
 
-	/** Ticket 073 -- body de `PATCH` con `description` explícita (ver docstring de `RenameProjectRequest`: el contrato espera que todo caller la reenvíe siempre, aunque no cambie). */
+	/** Ticket 073 -- body de `PATCH` con `description` explícita (ver docstring de `RenameProjectRequest`: el contrato espera que cualquier caller la reenvíe siempre, aunque no cambie). */
 	private String renameBody(String name, String description) {
 		String descriptionJson = description == null ? "null" : "\"" + description + "\"";
 		return "{\"name\":\"" + name + "\",\"description\":" + descriptionJson + "}";
@@ -266,10 +266,10 @@ class ProjectControllerTest {
 
 	@Test
 	void un_proyecto_recien_creado_no_tiene_descripcion() throws Exception {
-		MvcResult created = mockMvc.perform(post("/api/projects")
+		mockMvc.perform(post("/api/projects")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Sin descripción todavía")))
-				.andReturn();
+				.andExpect(status().isCreated());
 
 		mockMvc.perform(get("/api/projects"))
 				.andExpect(jsonPath("$[0].description", is(nullValue())));
