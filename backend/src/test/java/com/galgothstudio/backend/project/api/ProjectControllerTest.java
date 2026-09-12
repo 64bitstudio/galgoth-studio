@@ -3,6 +3,7 @@ package com.galgothstudio.backend.project.api;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -56,15 +57,26 @@ class ProjectControllerTest {
 		entityManager.flush();
 	}
 
+	/** Ticket 073 -- body de `PATCH` con `description` explícita (ver docstring de `RenameProjectRequest`: el contrato espera que todo caller la reenvíe siempre, aunque no cambie). */
+	private String renameBody(String name, String description) {
+		String descriptionJson = description == null ? "null" : "\"" + description + "\"";
+		return "{\"name\":\"" + name + "\",\"description\":" + descriptionJson + "}";
+	}
+
 	private String createBody(String name) {
 		return "{\"name\":\"" + name + "\"}";
 	}
 
 	private UUID aMobIn(UUID projectId, String name) {
+		return aMobIn(projectId, name, "draft");
+	}
+
+	/** Ticket 072 -- variante con `status` configurable, para probar la derivación de `ProjectSummary.status`. */
+	private UUID aMobIn(UUID projectId, String name, String status) {
 		UUID id = UUID.randomUUID();
 		jdbc.update(
 				"insert into mobs (id, project_id, name, base_type, status) values (?, ?, ?, ?, ?)",
-				id, projectId, name, "humanoid", "draft");
+				id, projectId, name, "humanoid", status);
 		return id;
 	}
 
@@ -145,6 +157,45 @@ class ProjectControllerTest {
 				.andExpect(jsonPath("$[0].mobThumbnails", hasSize(3))); // AC "+N": el frontend calcula N = mobCount - 3
 	}
 
+	// -- ticket 072: status derivado (active/draft) --------------------------
+
+	@Test
+	void un_proyecto_sin_mobs_es_draft() throws Exception {
+		mockMvc.perform(post("/api/projects").contentType(MediaType.APPLICATION_JSON).content(createBody("Vacío")));
+
+		mockMvc.perform(get("/api/projects")).andExpect(jsonPath("$[0].status", is("draft")));
+	}
+
+	@Test
+	void un_proyecto_con_todos_sus_mobs_en_draft_es_draft() throws Exception {
+		MvcResult created = mockMvc.perform(post("/api/projects")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Todo en draft")))
+				.andReturn();
+		UUID projectId = UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText());
+		flush();
+		aMobIn(projectId, "mob-1", "draft");
+		aMobIn(projectId, "mob-2", "draft");
+		flush();
+
+		mockMvc.perform(get("/api/projects")).andExpect(jsonPath("$[0].status", is("draft")));
+	}
+
+	@Test
+	void un_proyecto_con_al_menos_un_mob_fuera_de_draft_es_active() throws Exception {
+		MvcResult created = mockMvc.perform(post("/api/projects")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Con progreso real")))
+				.andReturn();
+		UUID projectId = UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText());
+		flush();
+		aMobIn(projectId, "mob-draft", "draft");
+		aMobIn(projectId, "mob-en-progreso", "in_progress");
+		flush();
+
+		mockMvc.perform(get("/api/projects")).andExpect(jsonPath("$[0].status", is("active")));
+	}
+
 	@Test
 	void listar_excluye_mobs_eliminados_del_conteo_y_de_las_miniaturas_ticket_039() throws Exception {
 		MvcResult created = mockMvc.perform(post("/api/projects")
@@ -193,6 +244,35 @@ class ProjectControllerTest {
 						.content(createBody("Nombre nuevo")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.name", is("Nombre nuevo")));
+	}
+
+	@Test
+	void editar_la_descripcion_la_actualiza_y_persiste() throws Exception {
+		MvcResult created = mockMvc.perform(post("/api/projects")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Galgoth")))
+				.andReturn();
+		String projectId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
+
+		mockMvc.perform(patch("/api/projects/{id}", projectId)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(renameBody("Galgoth", "Universo de criaturas oscuras y corrompidas.")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.description", is("Universo de criaturas oscuras y corrompidas.")));
+
+		mockMvc.perform(get("/api/projects/{id}", projectId))
+				.andExpect(jsonPath("$.description", is("Universo de criaturas oscuras y corrompidas.")));
+	}
+
+	@Test
+	void un_proyecto_recien_creado_no_tiene_descripcion() throws Exception {
+		MvcResult created = mockMvc.perform(post("/api/projects")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Sin descripción todavía")))
+				.andReturn();
+
+		mockMvc.perform(get("/api/projects"))
+				.andExpect(jsonPath("$[0].description", is(nullValue())));
 	}
 
 	@Test

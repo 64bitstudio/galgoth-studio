@@ -13,11 +13,17 @@ export interface MobThumbnail {
   thumbnailKey: string | null
 }
 
+/** Ticket 072 -- derivado en el backend a partir de los mobs del proyecto, no una columna real: "active" si tiene algún mob fuera de draft, "draft" si todos son draft o no tiene ninguno. */
+export type ProjectStatus = 'active' | 'draft'
+
 export interface ProjectSummary {
   id: string
   name: string
+  /** Ticket 073 -- opcional, `null` si el proyecto no tiene. Viaja también acá (no solo en `ProjectDetail`) para que "Renombrar" desde `ProjectsDashboard.vue` pueda reenviarla sin cambios (ver `renameProject`). */
+  description: string | null
   mobCount: number
   mobThumbnails: MobThumbnail[]
+  status: ProjectStatus
   createdAt: string
   updatedAt: string
 }
@@ -25,6 +31,7 @@ export interface ProjectSummary {
 export interface ProjectDetail {
   id: string
   name: string
+  description: string | null
   mobCount: number
   createdAt: string
   updatedAt: string
@@ -71,8 +78,9 @@ export function createProject(name: string): Promise<ProjectDetail> {
   return request<ProjectDetail>('/api/projects', { method: 'POST', body: JSON.stringify({ name }) })
 }
 
-export function renameProject(id: string, name: string): Promise<ProjectDetail> {
-  return request<ProjectDetail>(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) })
+/** Ticket 073 -- `description` siempre explícita (nunca omitida): el caller reenvía el valor actual tal cual si no lo está cambiando (ver docstring del backend, `RenameProjectRequest`) -- omitirla la borraría. */
+export function renameProject(id: string, name: string, description: string | null): Promise<ProjectDetail> {
+  return request<ProjectDetail>(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify({ name, description }) })
 }
 
 export function deleteProject(id: string): Promise<void> {

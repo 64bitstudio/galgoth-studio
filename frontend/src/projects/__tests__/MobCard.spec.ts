@@ -37,13 +37,41 @@ describe('MobCard.vue', () => {
   it('mapea el status "in_progress" (guion bajo en la BD) al pill "in-progress" (guion medio)', () => {
     const wrapper = mount(MobCard, { props: { mob: mob({ status: 'in_progress' }) } })
 
-    expect(wrapper.text()).toContain('In progress')
+    expect(wrapper.text()).toContain('En progreso')
   })
 
   it('mapea el status "ready" al pill correspondiente', () => {
     const wrapper = mount(MobCard, { props: { mob: mob({ status: 'ready' }) } })
 
-    expect(wrapper.text()).toContain('Ready')
+    expect(wrapper.text()).toContain('Listo')
+  })
+
+  // Ticket 073 -- el footer ahora muestra el tipo de base (ícono + etiqueta) en vez de solo el pill de estado.
+  describe('ticket 073 -- footer con tipo de base', () => {
+    it.each([
+      ['humanoid', 'Humanoide'],
+      ['arachnid', 'Arácnido'],
+      ['quadruped', 'Cuadrúpedo'],
+      ['flying', 'Volador'],
+      ['custom', 'Personalizado'],
+    ] as const)('baseType "%s" muestra la etiqueta "%s"', (baseType, label) => {
+      const wrapper = mount(MobCard, { props: { mob: mob({ baseType }) } })
+
+      expect(wrapper.get('.mob-card__type').text()).toContain(label)
+    })
+
+    it('el footer incluye la fecha relativa de edición', () => {
+      const wrapper = mount(MobCard, { props: { mob: mob({ updatedAt: new Date().toISOString() }) } })
+
+      expect(wrapper.get('.mob-card__type').text()).toContain('·')
+    })
+
+    it('el pill de estado se superpone a la miniatura, no vive en el footer', () => {
+      const wrapper = mount(MobCard, { props: { mob: mob({ status: 'ready' }) } })
+
+      expect(wrapper.get('.mob-card__thumbnail').find('.g-status-pill').exists()).toBe(true)
+      expect(wrapper.get('.mob-card__footer').find('.g-status-pill').exists()).toBe(false)
+    })
   })
 
   describe('ticket 039 -- menú de acciones ⋮', () => {

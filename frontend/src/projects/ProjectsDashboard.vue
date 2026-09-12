@@ -1,30 +1,37 @@
 <script setup lang="ts">
 /**
- * Dashboard "Mis proyectos" (HU-01/HU-02, mockup 01 -- ticket 021).
- * Simplificación consciente, documentada (no una reinterpretación
- * silenciosa): el mockup separa "Inicio" (saludo + "Proyectos
- * recientes" + link "Ver todos") de "Mis proyectos" (listado completo),
- * pero el AC de este ticket solo describe la segunda -- se implementa
- * un único dashboard con el listado COMPLETO, y tanto "Inicio" como
- * "Mis proyectos" en el sidebar apuntan aquí por ahora.
- *
- * Ticket 039 (corrección de producto): "Crear un mob con IA" pasa a ser
- * la CTA PRINCIPAL, habilitada, primera opción visual, acento mint --
- * el flujo de generación IA ya existe y es funcionalidad central del
- * producto, no "una fase futura". "Crear nuevo proyecto" (antes
- * "Proyecto vacío") queda como alternativa secundaria. El diálogo de
- * "Eliminar" pasa de un `GPanel`+backdrop ad-hoc a `ConfirmDialog.vue`
- * (design system), con loading real y bloqueo de doble submit --
- * `deleteBusy`/`duplicatingId` evitan reintentar la misma operación
- * mientras el backend todavía no respondió.
+ * Dashboard "Mis proyectos" (HU-01/HU-02, ticket 021; rediseño de
+ * fidelidad visual estricta, ticket 072, VoBo del PO sobre el preview
+ * interactivo). Historia de la pantalla:
+ * - Ticket 021: listado completo, simplificación consciente (compartía
+ *   pantalla con "Inicio", que entonces no existía por separado).
+ * - Ticket 039: agrega las CTA "Crear un mob con IA"/"Crear nuevo
+ *   proyecto" arriba del listado (más un saludo "Buenos días").
+ * - Ticket 071 (rediseño de Inicio): "Inicio" pasa a tener su propia
+ *   pantalla real (`HomeView.vue`, en "/") -- ESTE componente, ahora
+ *   solo en "/projects", sigue siendo el saludo+CTA+listado heredados de
+ *   039, sin tocar (decisión explícita de ese ticket: solo Inicio
+ *   estaba en su alcance).
+ * - Ticket 072 (este): la referencia visual rediseña "Mis proyectos" con
+ *   su propia identidad -- título+subtítulo (no el saludo de Inicio),
+ *   buscador, botón "+ Nuevo proyecto", badge de estado por card
+ *   (`ProjectCard.vue`) y una card "Nuevo proyecto" punteada al final
+ *   de la grilla. El flujo "Crear un mob con IA" (con su selector de
+ *   proyecto) YA NO vive acá -- la referencia no lo incluye, y ese
+ *   punto de entrada ya existe completo en Inicio (ticket 071).
+ * - Post-073 (pedido explícito del PO tras revisar el detalle de
+ *   proyecto en vivo): agrega el mismo breadcrumb "Galgoth Studio >
+ *   Mis proyectos" que ya se implementó en `ProjectDetail.vue` --
+ *   mismo patrón visual (`IconChevron`), sin nivel intermedio porque
+ *   esta pantalla YA ES el segundo nivel de esa jerarquía.
  */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import AiMobProjectPickerDialog from './AiMobProjectPickerDialog.vue'
 import ConfirmDialog from '../design-system/components/ConfirmDialog.vue'
 import GSidebar, { type GSidebarKey } from '../design-system/components/GSidebar.vue'
-import IconNewProject from '../design-system/icons/IconNewProject.vue'
-import IconSparkle from '../design-system/icons/IconSparkle.vue'
+import IconChevron from '../design-system/icons/IconChevron.vue'
+import IconPlus from '../design-system/icons/IconPlus.vue'
+import IconSearch from '../design-system/icons/IconSearch.vue'
 import ProjectCard from './ProjectCard.vue'
 import ProjectNameModal from './ProjectNameModal.vue'
 import {
@@ -42,8 +49,17 @@ const router = useRouter()
 const projects = ref<ProjectSummary[]>([])
 const loadError = ref<string | null>(null)
 const actionError = ref<string | null>(null)
+const searchQuery = ref('')
 
-const nameModal = ref<{ mode: 'create' | 'rename'; projectId?: string; initialName?: string } | null>(null)
+const filteredProjects = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) {
+    return projects.value
+  }
+  return projects.value.filter((project) => project.name.toLowerCase().includes(query))
+})
+
+const nameModal = ref<{ mode: 'create' | 'rename'; projectId?: string; initialName?: string; initialDescription?: string | null } | null>(null)
 const nameModalBusy = ref(false)
 const nameModalError = ref<string | null>(null)
 const pendingDelete = ref<ProjectSummary | null>(null)
@@ -70,7 +86,7 @@ function openCreateModal(): void {
 function openRenameModal(projectId: string): void {
   const project = projects.value.find((p) => p.id === projectId)
   nameModalError.value = null
-  nameModal.value = { mode: 'rename', projectId, initialName: project?.name }
+  nameModal.value = { mode: 'rename', projectId, initialName: project?.name, initialDescription: project?.description }
 }
 
 function closeNameModal(): void {
@@ -80,7 +96,7 @@ function closeNameModal(): void {
   nameModal.value = null
 }
 
-async function confirmNameModal(name: string): Promise<void> {
+async function confirmNameModal(name: string, description: string | null): Promise<void> {
   if (!nameModal.value || nameModalBusy.value) {
     return
   }
@@ -92,7 +108,7 @@ async function confirmNameModal(name: string): Promise<void> {
       nameModal.value = null
       await router.push(`/projects/${created.id}`)
     } else if (nameModal.value.projectId) {
-      await renameProject(nameModal.value.projectId, name)
+      await renameProject(nameModal.value.projectId, name, description)
       nameModal.value = null
       await loadProjects()
     }
@@ -160,42 +176,11 @@ function openProject(projectId: string): void {
   router.push(`/projects/${projectId}`)
 }
 
-const showAiProjectPicker = ref(false)
-const aiProjectPickerBusy = ref(false)
-const aiProjectPickerError = ref<string | null>(null)
-
-function openAiWizard(): void {
-  aiProjectPickerError.value = null
-  showAiProjectPicker.value = true
-}
-
-function closeAiProjectPicker(): void {
-  if (aiProjectPickerBusy.value) {
-    return
-  }
-  showAiProjectPicker.value = false
-}
-
-async function confirmAiProjectPicker(choice: { projectId: string } | { newProjectName: string }): Promise<void> {
-  if (aiProjectPickerBusy.value) {
-    return
-  }
-  aiProjectPickerBusy.value = true
-  aiProjectPickerError.value = null
-  try {
-    const projectId = 'projectId' in choice ? choice.projectId : (await createProject(choice.newProjectName)).id
-    showAiProjectPicker.value = false
-    await router.push(`/projects/${projectId}/mobs/new-ai`)
-  } catch (error) {
-    aiProjectPickerError.value = error instanceof ApiError ? error.message : 'No se pudo continuar con la generación IA.'
-  } finally {
-    aiProjectPickerBusy.value = false
-  }
-}
-
-/** "Explorar"/"Plantillas" no tienen pantalla todavía (no-op deliberado) -- "Inicio"/"Mis proyectos" ya apuntan aquí, per el comentario de cabecera. */
+/** Ticket 071 -- "Inicio" ya NO es sinónimo de "Mis proyectos": navega a "/" (HomeView.vue), no a este dashboard. "Explorar"/"Plantillas" no tienen pantalla todavía (no-op deliberado). */
 function handleSidebarSelect(key: GSidebarKey): void {
-  if (key === 'home' || key === 'projects') {
+  if (key === 'home') {
+    router.push('/')
+  } else if (key === 'projects') {
     router.push('/projects')
   }
 }
@@ -205,62 +190,68 @@ function handleSidebarSelect(key: GSidebarKey): void {
   <div class="projects-dashboard-shell">
     <GSidebar active="projects" @select="handleSidebarSelect" />
     <main class="projects-dashboard app-scroll">
-      <h1 class="projects-dashboard__greeting">Buenos días</h1>
-      <p class="projects-dashboard__subtitle">¿Qué quieres crear hoy?</p>
+      <nav class="projects-dashboard__breadcrumb" aria-label="Ruta de navegación">
+        <router-link to="/">Galgoth Studio</router-link>
+        <IconChevron :size="12" />
+        <span>Mis proyectos</span>
+      </nav>
 
-      <div class="projects-dashboard__cta-row">
-        <button type="button" class="projects-dashboard__cta projects-dashboard__cta--primary" @click="openAiWizard">
-          <IconSparkle :size="28" />
-          <span class="projects-dashboard__cta-title">Crear un mob con IA</span>
-          <span class="projects-dashboard__cta-subtitle">Convierte una imagen en un modelo de Minecraft</span>
-        </button>
-        <button type="button" class="projects-dashboard__cta projects-dashboard__cta--secondary" @click="openCreateModal">
-          <IconNewProject :size="28" class="projects-dashboard__cta-icon" />
-          <span class="projects-dashboard__cta-title">Crear nuevo proyecto</span>
-          <span class="projects-dashboard__cta-subtitle">Organiza varios mobs dentro de un mismo proyecto.</span>
+      <h1 class="projects-dashboard__title">Mis proyectos</h1>
+      <p class="projects-dashboard__subtitle">Organiza y administra todos tus mundos y colecciones de mobs.</p>
+
+      <div class="projects-dashboard__toolbar">
+        <div class="projects-dashboard__search">
+          <IconSearch :size="16" class="projects-dashboard__search-icon" />
+          <input v-model="searchQuery" type="search" class="projects-dashboard__search-input" aria-label="Buscar proyectos" placeholder="Buscar proyectos..." />
+        </div>
+        <button type="button" class="projects-dashboard__new-btn" @click="openCreateModal">
+          <IconPlus :size="16" />
+          Nuevo proyecto
         </button>
       </div>
 
-      <p v-if="actionError" class="projects-dashboard__error">{{ actionError }}</p>
-
-      <h2 class="projects-dashboard__section-title">Mis proyectos</h2>
       <p v-if="loadError" class="projects-dashboard__error">{{ loadError }}</p>
-      <p v-else-if="projects.length === 0" class="projects-dashboard__empty">Todavía no tienes proyectos -- crea el primero arriba.</p>
-      <div v-else class="projects-dashboard__grid">
-        <ProjectCard v-for="project in projects" :key="project.id" :project="project" @open="openProject" @action="handleCardAction" />
+      <p v-if="actionError" class="projects-dashboard__error">{{ actionError }}</p>
+      <p v-if="!loadError && searchQuery && filteredProjects.length === 0" class="projects-dashboard__empty">
+        Ningún proyecto coincide con "{{ searchQuery }}".
+      </p>
+
+      <div v-if="!loadError" class="projects-dashboard__grid">
+        <ProjectCard v-for="project in filteredProjects" :key="project.id" :project="project" @open="openProject" @action="handleCardAction" />
+        <button type="button" class="projects-dashboard__new-card" @click="openCreateModal">
+          <span class="projects-dashboard__new-card-icon"><IconPlus :size="20" /></span>
+          <span class="projects-dashboard__new-card-title">Nuevo proyecto</span>
+          <span class="projects-dashboard__new-card-desc">Crea un nuevo mundo de mobs desde cero</span>
+        </button>
       </div>
     </main>
 
-    <ProjectNameModal
-      v-if="nameModal"
-      :mode="nameModal.mode"
-      :initial-name="nameModal.initialName"
-      :busy="nameModalBusy"
-      :error="nameModalError"
-      @confirm="confirmNameModal"
-      @cancel="closeNameModal"
-    />
+    <Transition name="app-dialog">
+      <ProjectNameModal
+        v-if="nameModal"
+        :mode="nameModal.mode"
+        :initial-name="nameModal.initialName"
+        :initial-description="nameModal.initialDescription"
+        :busy="nameModalBusy"
+        :error="nameModalError"
+        @confirm="confirmNameModal"
+        @cancel="closeNameModal"
+      />
+    </Transition>
 
-    <ConfirmDialog
-      v-if="pendingDelete"
-      title="Eliminar proyecto"
-      :message="`¿Eliminar el proyecto &quot;${pendingDelete.name}&quot;? Esta acción no se puede deshacer.`"
-      confirm-label="Eliminar"
-      danger
-      :busy="deleteBusy"
-      :error="deleteError"
-      @confirm="confirmDelete"
-      @cancel="cancelDelete"
-    />
-
-    <AiMobProjectPickerDialog
-      v-if="showAiProjectPicker"
-      :projects="projects"
-      :busy="aiProjectPickerBusy"
-      :error="aiProjectPickerError"
-      @confirm="confirmAiProjectPicker"
-      @cancel="closeAiProjectPicker"
-    />
+    <Transition name="app-dialog">
+      <ConfirmDialog
+        v-if="pendingDelete"
+        title="Eliminar proyecto"
+        :message="`¿Eliminar el proyecto &quot;${pendingDelete.name}&quot;? Esta acción no se puede deshacer.`"
+        confirm-label="Eliminar"
+        danger
+        :busy="deleteBusy"
+        :error="deleteError"
+        @confirm="confirmDelete"
+        @cancel="cancelDelete"
+      />
+    </Transition>
   </div>
 </template>
 
@@ -272,88 +263,169 @@ function handleSidebarSelect(key: GSidebarKey): void {
 
 .projects-dashboard {
   flex: 1;
-  padding: var(--space-6);
+  padding: var(--space-6) var(--space-8);
   overflow: auto;
 }
 
-.projects-dashboard__greeting {
+.projects-dashboard__breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  margin-bottom: var(--space-4);
+}
+
+.projects-dashboard__breadcrumb a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.projects-dashboard__breadcrumb a:hover {
+  color: var(--text);
+}
+
+.projects-dashboard__breadcrumb span {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.projects-dashboard__title {
   margin: 0;
-  font-size: var(--text-xl);
+  font-size: var(--text-2xl);
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
 .projects-dashboard__subtitle {
-  margin: var(--space-1) 0 var(--space-4);
+  margin: var(--space-1) 0 var(--space-6);
   color: var(--muted);
+  font-size: var(--text-md);
 }
 
-.projects-dashboard__cta-row {
+.projects-dashboard__toolbar {
   display: flex;
+  align-items: center;
   gap: var(--space-4);
   margin-bottom: var(--space-6);
 }
 
-.projects-dashboard__cta {
+.projects-dashboard__search {
+  position: relative;
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-1);
-  padding: var(--space-4);
-  border-radius: var(--radius-lg);
+  max-width: 420px;
+}
+
+.projects-dashboard__search-icon {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.projects-dashboard__search-input {
+  width: 100%;
+  min-height: var(--hit-target-min);
+  padding: 0 var(--space-3) 0 38px;
+  background: var(--surface);
   border: var(--border-width) solid var(--border);
-  background: var(--panel);
+  border-radius: var(--radius-md);
   color: var(--text);
+  font-size: var(--text-base);
+}
+
+.projects-dashboard__search-input:hover {
+  border-color: var(--muted);
+}
+
+.projects-dashboard__search-input:focus-visible {
+  border-color: var(--accent);
+}
+
+.projects-dashboard__new-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--hit-target-min);
+  padding: 0 var(--space-4);
+  margin-left: auto;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
   cursor: pointer;
-  text-align: left;
-  max-width: 320px;
+  white-space: nowrap;
+  transition:
+    background-color 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.projects-dashboard__cta:hover {
-  border-color: var(--accent);
+.projects-dashboard__new-btn:hover {
+  background: var(--accent-hover);
 }
 
-.projects-dashboard__cta--primary {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.projects-dashboard__cta--secondary {
-  color: var(--muted);
-}
-
-.projects-dashboard__cta-icon {
-  color: var(--muted);
-  margin-bottom: var(--space-1);
-}
-
-.projects-dashboard__cta-title {
-  font-weight: 600;
-  color: var(--text);
-}
-
-.projects-dashboard__cta--primary .projects-dashboard__cta-title {
-  color: var(--accent);
-}
-
-.projects-dashboard__cta-subtitle {
-  font-size: var(--text-sm);
-  color: var(--muted);
-}
-
-.projects-dashboard__section-title {
-  font-size: var(--text-md);
-  margin: 0 0 var(--space-3);
+.projects-dashboard__new-btn:active {
+  transform: scale(0.98);
 }
 
 .projects-dashboard__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 380px));
   gap: var(--space-4);
+}
+
+.projects-dashboard__new-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-3);
+  min-height: 220px;
+  padding: var(--space-6);
+  background: transparent;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  transition: color 200ms ease, border-color 200ms ease;
+}
+
+.projects-dashboard__new-card:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.projects-dashboard__new-card-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--border);
+  color: inherit;
+}
+
+.projects-dashboard__new-card-title {
+  font-weight: 700;
+  font-size: var(--text-md);
+  color: var(--text);
+}
+
+.projects-dashboard__new-card-desc {
+  font-size: var(--text-sm);
+  max-width: 220px;
 }
 
 .projects-dashboard__empty {
   color: var(--muted);
+  margin-bottom: var(--space-4);
 }
 
 .projects-dashboard__error {

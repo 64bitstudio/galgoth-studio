@@ -41,12 +41,23 @@ describe('projectsApi', () => {
     const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(detail))
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await renameProject('1', 'Renombrado')
+    const result = await renameProject('1', 'Renombrado', null)
 
     expect(result).toEqual(detail)
     const [url, init] = fetchMock.mock.calls[0]!
     expect(String(url)).toContain('/api/projects/1')
     expect(init?.method).toBe('PATCH')
+  })
+
+  // Ticket 073 -- `description` siempre explícita (nunca omitida) en el body del PATCH, para no borrarla accidentalmente.
+  it('renameProject envía `description` siempre explícita en el body, incluso null', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({ id: '1', name: 'Renombrado', description: 'Nueva descripción', mobCount: 0, createdAt: '', updatedAt: '' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await renameProject('1', 'Renombrado', 'Nueva descripción')
+
+    const [, init] = fetchMock.mock.calls[0]!
+    expect(JSON.parse(init?.body as string)).toEqual({ name: 'Renombrado', description: 'Nueva descripción' })
   })
 
   it('deleteProject hace DELETE y no intenta parsear un body en 204', async () => {
