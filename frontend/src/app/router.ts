@@ -53,6 +53,18 @@ const router = createRouter({
       component: () => import('../editor/ExportScreen.vue'),
     },
     {
+      // Ticket 078: login/registro reales contra la API directa de
+      // auth-core-mc (PROP-GS-AUTH-01) -- ver src/auth/.
+      path: '/login',
+      name: 'login',
+      component: () => import('../auth/LoginView.vue'),
+    },
+    {
+      path: '/register',
+      name: 'register',
+      component: () => import('../auth/RegisterView.vue'),
+    },
+    {
       path: '/dev/design-system',
       name: 'design-system-showcase',
       component: () => import('../design-system/Showcase.vue'),
