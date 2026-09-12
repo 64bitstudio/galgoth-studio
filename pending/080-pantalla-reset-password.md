@@ -1,9 +1,11 @@
-# 075 — Pantalla de reset de contraseña
+# 080 — Pantalla de reset de contraseña
+
+> Renumerado de 075 → 080: colisionó con el ticket real 075 ("fix resize viewport al togglear sidebar", ya en `done/`) — ver `fix/renumerar-tickets-auth-072-075`.
 
 ## Objetivo
 El endpoint de recuperación de contraseña ya existe en auth-core-mc, pero galgoth-studio no tiene pantalla para usarlo. Decisión explícita de Marco (`PROP-GS-AUTH-01`, sección 08): entra en el alcance de v1.
 
-**Depende de:** 073 (misma superficie de login/registro).
+**Depende de:** 078 (misma superficie de login/registro).
 
 ## Alcance
 **Incluye:**

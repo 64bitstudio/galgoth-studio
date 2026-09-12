@@ -35,7 +35,7 @@ services:
       DB_NAME: galgoth_studio
       DB_USER: galgoth_studio
       DB_PASSWORD: ${DB_PASSWORD:?falta DB_PASSWORD en deploy/.env.dev}
-      # Ticket 072: Resource Server de auth-core-mc -- emisor real de DEV.
+      # Ticket 077: Resource Server de auth-core-mc -- emisor real de DEV.
       AUTH_CORE_MC_ISSUER: ${AUTH_CORE_MC_ISSUER:-https://auth-dev.64bitstudio.com}
       GALGOTH_STORAGE_MINIO_ENDPOINT: http://minio:9000
       GALGOTH_STORAGE_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?falta MINIO_ROOT_USER en deploy/.env.dev}

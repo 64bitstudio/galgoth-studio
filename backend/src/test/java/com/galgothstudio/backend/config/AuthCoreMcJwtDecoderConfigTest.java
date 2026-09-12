@@ -9,7 +9,7 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 /**
- * Ticket 072: prueba la lógica de validación (issuer + audiencia +
+ * Ticket 077: prueba la lógica de validación (issuer + audiencia +
  * expiración) directamente contra {@link Jwt} construidos a mano — no
  * necesita un token real firmado ni un servidor JWKS, porque
  * {@code NimbusJwtDecoder} solo entra en juego para verificar la firma,

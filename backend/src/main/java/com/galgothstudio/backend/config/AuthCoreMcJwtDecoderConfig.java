@@ -13,7 +13,7 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 /**
- * Ticket 072: auth-core-mc es un Authorization Server COMPARTIDO por
+ * Ticket 077: auth-core-mc es un Authorization Server COMPARTIDO por
  * cualquier tenant/cliente, presente o futuro, firmando con la misma
  * llave — lo único que distingue "este token es para galgoth-studio" de
  * "este token es para cualquier otra app" es el claim {@code aud}

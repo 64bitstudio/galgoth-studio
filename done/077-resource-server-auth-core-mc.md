@@ -1,4 +1,6 @@
-# 072 — Resource Server de auth-core-mc (mecanismo, sin proteger rutas existentes)
+# 077 — Resource Server de auth-core-mc (mecanismo, sin proteger rutas existentes)
+
+> Renumerado de 072 → 077: colisionó con el ticket real 072 ("rediseño de Mis proyectos", mergeado minutos antes por otro trabajo en curso) — ver `fix/renumerar-tickets-auth-072-075`.
 
 ## Objetivo
 Ninguna API de galgoth-studio está protegida hoy — no existe usuario, sesión ni validación de token, y tampoco existe ningún concepto de "dueño" de un proyecto en el dominio (`MobProjectModel` no tiene ownership). Este ticket construye el mecanismo para validar los `accessToken` reales que auth-core-mc emite para el cliente `galgoth-studio` (ya dado de alta en dev/qa/prod, ver `auth-core-mc#052`) — sin la validación de `aud`, un token real de cualquier otro cliente futuro de auth-core-mc pasaría igual (blueprint `PROP-GS-AUTH-01`, Fig. 05).
@@ -19,7 +21,7 @@ Hallazgo real al empezar: `build.gradle` no trae ningún starter de seguridad �
 **No incluye:**
 - Proteger ninguna de las 14 rutas existentes, ni crear una ruta nueva protegida de prueba.
 - Un modelo de ownership de proyectos (`userId`/`sub` en `MobProjectModel` o similar) — ticket futuro, una vez decidido.
-- Nada de las pantallas de login/registro (ticket 073) — 073 no depende de que este ticket bloquee nada, solo de que el mecanismo de validación exista para cuando haga falta.
+- Nada de las pantallas de login/registro (ticket 078) — 078 no depende de que este ticket bloquee nada, solo de que el mecanismo de validación exista para cuando haga falta.
 - Configurar CORS del lado de auth-core-mc (ya es responsabilidad de ese repo, ticket `auth-core-mc#054`).
 
 ## Criterios de aceptación (TDD)
