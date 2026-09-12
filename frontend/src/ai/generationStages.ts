@@ -17,15 +17,54 @@ export interface StageDefinition {
   label: string
   /** Submensaje contextual (ticket 038) -- copy redactada por el equipo, pendiente de aprobación final del PO (ver comentario de `GenerationStep.vue`). */
   hint: string
+  /**
+   * Post-074 (rediseño del wizard, fidelidad visual a la nueva referencia):
+   * descripción en pasado, mostrada en la lista de etapas una vez que ESA
+   * etapa concreta ya se completó (antes solo existía `hint`, en presente
+   * continuo, pensado para la etapa activa) -- ej. "Detectando silueta"
+   * pasa de "Interpretando la forma general del mob…" a "Silueta y
+   * proporciones identificadas." apenas la etapa siguiente arranca.
+   */
+  doneHint: string
 }
 
 export const STAGE_ORDER: readonly StageDefinition[] = [
-  {key: 'analizando_referencia', label: 'Analizando referencia…', hint: 'Esto puede tardar unos segundos…'},
-  {key: 'detectando_silueta', label: 'Detectando silueta…', hint: 'Interpretando la forma general del mob…'},
-  {key: 'creando_rig', label: 'Creando rig…', hint: 'Construyendo el esqueleto que va a animar el modelo…'},
-  {key: 'generando_cuboides', label: 'Generando cuboides…', hint: 'La IA está construyendo el modelo en tiempo real…'},
-  {key: 'preparando_resultado', label: 'Preparando resultado…', hint: 'Aplicando la textura UV final…'},
-  {key: 'validando_geometria', label: 'Validando geometría…', hint: 'Verificando que el modelo sea compatible con Blockbench/FMM…'},
+  {
+    key: 'analizando_referencia',
+    label: 'Analizando referencia…',
+    hint: 'Esto puede tardar unos segundos…',
+    doneHint: 'Imagen procesada correctamente.',
+  },
+  {
+    key: 'detectando_silueta',
+    label: 'Detectando silueta…',
+    hint: 'Interpretando la forma general del mob…',
+    doneHint: 'Silueta y proporciones identificadas.',
+  },
+  {
+    key: 'creando_rig',
+    label: 'Creando rig…',
+    hint: 'Construyendo el esqueleto que va a animar el modelo…',
+    doneHint: 'Rig generado correctamente.',
+  },
+  {
+    key: 'generando_cuboides',
+    label: 'Generando cuboides…',
+    hint: 'La IA está construyendo el modelo en tiempo real…',
+    doneHint: 'Geometría del modelo construida.',
+  },
+  {
+    key: 'preparando_resultado',
+    label: 'Preparando resultado…',
+    hint: 'Aplicando la textura UV final…',
+    doneHint: 'Textura UV aplicada.',
+  },
+  {
+    key: 'validando_geometria',
+    label: 'Validando geometría…',
+    hint: 'Verificando que el modelo sea compatible con Blockbench/FMM…',
+    doneHint: 'Geometría validada correctamente.',
+  },
 ]
 
 export type GenerationOutcome = 'running' | 'completed' | 'failed' | 'cancelled'

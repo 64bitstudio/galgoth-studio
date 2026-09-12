@@ -245,4 +245,79 @@ describe('GenerationStep.vue', () => {
 
     expect(sessionStorage.getItem('galgoth:ai-job:mob-1')).toBeNull()
   })
+
+  // Post-074 -- rediseño del wizard: registro en tiempo real, tiempo por etapa, badges del preview.
+  describe('rediseño post-074', () => {
+    it('cada evento con mensaje agrega un renglón al "Registro en tiempo real"', async () => {
+      const wrapper = mount(GenerationStep, { props: PROPS })
+      await flushPromises()
+
+      FakeEventSource.instances[0]!.emit('progress', progressEvent({ seq: 1, message: 'Analizando imagen de referencia…' }))
+      await flushPromises()
+      FakeEventSource.instances[0]!.emit('progress', progressEvent({ seq: 2, stage: 'detectando_silueta', message: 'Detectando silueta…' }))
+      await flushPromises()
+
+      const log = wrapper.get('.generation-step__log-lines')
+      expect(log.text()).toContain('Analizando imagen de referencia…')
+      expect(log.text()).toContain('Detectando silueta…')
+    })
+
+    it('un evento sin mensaje (null) no agrega ningún renglón vacío al registro', async () => {
+      const wrapper = mount(GenerationStep, { props: PROPS })
+      await flushPromises()
+
+      FakeEventSource.instances[0]!.emit('progress', progressEvent({ seq: 1, stage: 'completado', message: null, progressPct: 100 }))
+      await flushPromises()
+
+      expect(wrapper.get('.generation-step__log-lines').text()).toContain('Esperando el primer evento')
+    })
+
+    it('cada etapa completada muestra su doneHint (descripción en pasado), no el hint en progreso', async () => {
+      const wrapper = mount(GenerationStep, { props: PROPS })
+      await flushPromises()
+
+      FakeEventSource.instances[0]!.emit('progress', progressEvent({ seq: 1, stage: 'detectando_silueta' }))
+      await flushPromises()
+
+      const doneStage = wrapper.findAll('.generation-step__stage--done')[0]!
+      expect(doneStage.text()).toContain('Imagen procesada correctamente.')
+    })
+
+    it('los badges de Polígonos/Huesos reflejan el previewModel en construcción', async () => {
+      const wrapper = mount(GenerationStep, { props: PROPS })
+      await flushPromises()
+
+      FakeEventSource.instances[0]!.emit(
+        'progress',
+        progressEvent({
+          seq: 1,
+          stage: 'creando_rig',
+          payload: {
+            type: 'preview_operations',
+            addedOrUpdatedBones: [
+              { id: 'b1', name: 'body', parentId: null, pivot: [0, 0, 0], rotation: [0, 0, 0] },
+              { id: 'b2', name: 'head', parentId: 'b1', pivot: [0, 0, 0], rotation: [0, 0, 0] },
+            ],
+            addedOrUpdatedCuboids: [],
+            removedCuboidIds: [],
+          },
+        }),
+      )
+      await flushPromises()
+
+      const pills = wrapper.get('.generation-step__stat-pills')
+      expect(pills.text()).toContain('2') // Huesos (rig)
+    })
+
+    it('el botón "Cancelar generación" es de ancho completo con ícono, mismo comportamiento real que antes', async () => {
+      const wrapper = mount(GenerationStep, { props: PROPS })
+      await flushPromises()
+
+      const cancelBtn = wrapper.get('.generation-step__cancel-btn')
+      expect(cancelBtn.text()).toContain('Cancelar generación')
+
+      await cancelBtn.trigger('click')
+      expect(wrapper.text()).toContain('¿Cancelar la generación en curso?')
+    })
+  })
 })

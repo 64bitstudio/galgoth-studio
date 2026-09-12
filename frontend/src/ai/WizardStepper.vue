@@ -6,6 +6,11 @@
  * marcados. Puramente visual (no navegable haciendo clic en un paso
  * futuro): el AC del ticket exige avanzar linealmente completando cada
  * paso, nunca saltar adelante.
+ *
+ * Post-074 (rediseño del wizard, fidelidad visual a la nueva referencia):
+ * el conector entre un paso completado y el siguiente pasa a pintarse en
+ * `--accent` (antes siempre `--border`, sin importar el estado) -- mismo
+ * dato que `stateFor()` ya calculaba, ningún prop/lógica nueva.
  */
 export type WizardStepKey = 'reference' | 'configuration' | 'generation' | 'result'
 
@@ -70,6 +75,10 @@ function stateFor(key: WizardStepKey): 'done' | 'active' | 'pending' {
   height: var(--border-width);
   background: var(--border);
   margin-left: var(--space-2);
+}
+
+.wizard-stepper__step--done:not(:last-child)::after {
+  background: var(--accent);
 }
 
 .wizard-stepper__marker {

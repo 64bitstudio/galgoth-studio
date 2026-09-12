@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import GSelect from '../GSelect.vue'
 
 const OPTIONS = [
@@ -95,5 +95,39 @@ describe('GSelect.vue', () => {
     const wrapper = mount(GSelect, { props: { modelValue: '__none__', options: OPTIONS, label: 'Elegir letra', placeholder: 'Elegir…' } })
 
     expect(wrapper.get('.g-select__trigger').text()).toBe('Elegir…')
+  })
+
+  // Ticket 071 -- hallazgo real reportado en vivo: dentro de un contenedor con `overflow` (ej. `.app-dialog__body`), la lista se recortaba/generaba scroll interno en vez de desbordar por encima. `position: fixed` (CSS) + coordenadas medidas del trigger (inline, en vez de `absolute` con `top`/`left` fijos en CSS) la saca de ese recorte.
+  it('la lista posiciona top/left/width inline según el trigger real, no con CSS estático', async () => {
+    const wrapper = mount(GSelect, { props: { modelValue: 'a', options: OPTIONS, label: 'Elegir letra' }, attachTo: document.body })
+    await wrapper.get('.g-select__trigger').trigger('click')
+
+    const style = wrapper.get('[role="listbox"]').attributes('style') ?? ''
+    expect(style).toContain('top:')
+    expect(style).toContain('left:')
+    expect(style).toContain('width:')
+    wrapper.unmount()
+  })
+
+  it('sin espacio suficiente debajo del trigger, se abre hacia arriba', async () => {
+    const wrapper = mount(GSelect, { props: { modelValue: 'a', options: OPTIONS, label: 'Elegir letra' }, attachTo: document.body })
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(768)
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const rect = { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}) }
+      if (this.classList.contains('g-select__trigger')) {
+        return { ...rect, top: 700, bottom: 720, height: 20, width: 160 }
+      }
+      if (this.classList.contains('g-select__list')) {
+        return { ...rect, height: 200 }
+      }
+      return rect
+    })
+
+    await wrapper.get('.g-select__trigger').trigger('click')
+
+    // Con el trigger en y=700-720 y viewport de 768, arriba (top=700) hay más espacio que abajo (768-720=48) para una lista de 200 -- debe abrirse hacia arriba, con su borde inferior justo encima del trigger.
+    const top = Number((wrapper.get('[role="listbox"]').attributes('style') ?? '').match(/top:\s*(-?\d+)/)?.[1])
+    expect(top).toBeLessThan(700)
+    wrapper.unmount()
   })
 })

@@ -118,4 +118,30 @@ describe('ResultStep.vue', () => {
     }
     expect(wrapper.text()).toContain('No se pudo aceptar este modelo.')
   })
+
+  // Post-074 -- rediseño del wizard.
+  describe('rediseño post-074', () => {
+    it('muestra el pill flotante de compatibilidad FMM sobre el preview, con el mismo dato real', () => {
+      const okWrapper = mount(ResultStep, { props: { jobId: 'job-1', fmmCompatible: true } })
+      expect(okWrapper.get('.result-step__compat-pill').text()).toContain('Compatible con FMM')
+
+      const issueWrapper = mount(ResultStep, { props: { jobId: 'job-1', fmmCompatible: false } })
+      expect(issueWrapper.get('.result-step__compat-pill').text()).toContain('Con problemas de compatibilidad')
+    })
+
+    it('sigue habiendo exactamente 3 <button> -- ningún control decorativo nuevo sin función real (ej. no se agregó "Ver detalle técnico")', () => {
+      const wrapper = mount(ResultStep, { props: { jobId: 'job-1' } })
+      expect(wrapper.findAll('button')).toHaveLength(3)
+      expect(wrapper.text()).not.toContain('detalle técnico')
+    })
+
+    it('muestra los hints de interacción del viewport', () => {
+      const wrapper = mount(ResultStep, { props: { jobId: 'job-1' } })
+      const hints = wrapper.get('.result-step__viewport-hints')
+
+      expect(hints.text()).toContain('Arrastra para rotar')
+      expect(hints.text()).toContain('Usa la rueda para hacer zoom')
+      expect(hints.text()).toContain('Clic derecho para mover')
+    })
+  })
 })
