@@ -27,6 +27,18 @@ async function mountAtRegister(): Promise<ReturnType<typeof mount>> {
   return mount(RegisterView, { global: { plugins: [router] } })
 }
 
+/** Rellena todos los campos con datos válidos, contraseñas coincidentes por defecto (ticket 082). */
+async function fillForm(
+  wrapper: ReturnType<typeof mount>,
+  { password = 'abcd1234', confirmPassword = password }: { password?: string; confirmPassword?: string } = {},
+): Promise<void> {
+  await wrapper.find('input[type="text"]').setValue('Ada')
+  await wrapper.findAll('input[type="text"]')[1]!.setValue('Lovelace')
+  await wrapper.find('input[type="email"]').setValue('ada@example.com')
+  await wrapper.find('input[type="password"]').setValue(password)
+  await wrapper.findAll('input[type="password"]')[1]!.setValue(confirmPassword)
+}
+
 describe('RegisterView.vue', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -46,10 +58,7 @@ describe('RegisterView.vue', () => {
     })
     const wrapper = await mountAtRegister()
 
-    await wrapper.find('input[type="text"]').setValue('Ada')
-    await wrapper.findAll('input[type="text"]')[1]!.setValue('Lovelace')
-    await wrapper.find('input[type="email"]').setValue('ada@example.com')
-    await wrapper.find('input[type="password"]').setValue('abcd1234')
+    await fillForm(wrapper)
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -73,10 +82,7 @@ describe('RegisterView.vue', () => {
     await router.push('/register')
     const wrapper = mount(RegisterView, { global: { plugins: [router] } })
 
-    await wrapper.find('input[type="text"]').setValue('Ada')
-    await wrapper.findAll('input[type="text"]')[1]!.setValue('Lovelace')
-    await wrapper.find('input[type="email"]').setValue('ada@example.com')
-    await wrapper.find('input[type="password"]').setValue('abcd1234')
+    await fillForm(wrapper)
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -87,14 +93,22 @@ describe('RegisterView.vue', () => {
     vi.mocked(authApi.register).mockRejectedValue(new ApiError('Ese email ya está en uso', 409, 'duplicate_identifier'))
     const wrapper = await mountAtRegister()
 
-    await wrapper.find('input[type="text"]').setValue('Ada')
-    await wrapper.findAll('input[type="text"]')[1]!.setValue('Lovelace')
-    await wrapper.find('input[type="email"]').setValue('ada@example.com')
-    await wrapper.find('input[type="password"]').setValue('abcd1234')
+    await fillForm(wrapper)
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
     expect(wrapper.text()).toContain('Ese email ya está en uso')
     expect(wrapper.text()).not.toContain('Revisa tu correo')
+  })
+
+  it('contraseñas que no coinciden bloquean el envío con un error explícito', async () => {
+    const wrapper = await mountAtRegister()
+
+    await fillForm(wrapper, { password: 'abcd1234', confirmPassword: 'distinta5678' })
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Las contraseñas no coinciden')
+    expect(authApi.register).not.toHaveBeenCalled()
   })
 })
