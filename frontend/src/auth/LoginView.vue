@@ -58,8 +58,8 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <div class="auth-view">
-    <section class="auth-view__hero" :style="{ backgroundImage: `url(${backgroundUrl})` }" aria-hidden="true">
+  <div class="auth-view" :style="{ backgroundImage: `url(${backgroundUrl})` }">
+    <section class="auth-view__hero" aria-hidden="true">
       <div class="auth-view__hero-scrim">
         <h2 class="auth-view__hero-title">Da vida a<br /><span class="auth-view__hero-accent">tus ideas</span></h2>
         <p class="auth-view__hero-subtitle">Crea, personaliza y comparte mobs para Minecraft con el poder de la IA.</p>
@@ -137,18 +137,33 @@ async function submit(): Promise<void> {
 
 <style scoped>
 .auth-view {
+  position: relative;
   display: flex;
   min-height: 100vh;
-  background: var(--bg);
+  background-color: var(--bg);
+  background-size: cover;
+  background-position: 32% center;
+}
+
+/* Vela pareja sobre TODA la imagen (no solo el degradado del panel
+   izquierdo) -- sin esto, la mitad derecha se ve notoriamente más clara
+   que la izquierda porque solo esa tenía su propio scrim. */
+.auth-view::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 10, 14, 0.4);
+}
+
+.auth-view__hero,
+.auth-view__panel {
+  position: relative;
 }
 
 .auth-view__hero {
   flex: 1 1 55%;
   display: flex;
   align-items: flex-end;
-  background-color: var(--bg);
-  background-size: cover;
-  background-position: center;
 }
 
 .auth-view__hero-scrim {
@@ -236,12 +251,22 @@ async function submit(): Promise<void> {
   flex-direction: column;
   gap: var(--space-4);
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
   padding: var(--space-6);
-  background: var(--panel);
-  border: var(--border-width) solid var(--border);
+  /* "Vidrio" sobre el fondo continuo de auth-view -- deja verlo apenas
+     en los bordes en vez de un rectángulo opaco que lo corta en seco
+     (hallazgo real de Marco: el fondo se veía "mochado" contra el panel
+     sólido). background-color con alpha + backdrop-filter (mismo recurso
+     que ya usa GenerationStep.vue/ResultStep.vue, aquí con más blur por
+     ser el elemento central de toda la pantalla). */
+  background-color: rgba(17, 24, 32, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: var(--border-width) solid rgba(72, 229, 160, 0.35);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
+  box-shadow:
+    var(--shadow-md),
+    0 0 40px -12px rgba(72, 229, 160, 0.35);
 }
 
 .auth-view__logo {
