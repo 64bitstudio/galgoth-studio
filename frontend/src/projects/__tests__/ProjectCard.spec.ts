@@ -8,8 +8,10 @@ function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
   return {
     id: 'p1',
     name: 'Galgoth',
+    description: null,
     mobCount: 0,
     mobThumbnails: [],
+    status: 'draft',
     createdAt: '',
     updatedAt: '',
     ...overrides,
@@ -23,6 +25,21 @@ describe('ProjectCard.vue', () => {
     expect(wrapper.text()).toContain('Carcomido')
   })
 
+  // Ticket 072 -- badge de estado, derivado en el backend (ver ProjectSummary.status).
+  it('status "active" muestra el badge "Activo"', () => {
+    const wrapper = mount(ProjectCard, { props: { project: project({ status: 'active' }) } })
+
+    expect(wrapper.find('.status-pill--active').exists()).toBe(true)
+    expect(wrapper.get('.status-pill').text()).toBe('Activo')
+  })
+
+  it('status "draft" muestra el badge "Draft"', () => {
+    const wrapper = mount(ProjectCard, { props: { project: project({ status: 'draft' }) } })
+
+    expect(wrapper.find('.status-pill--draft').exists()).toBe(true)
+    expect(wrapper.get('.status-pill').text()).toBe('Draft')
+  })
+
   it('sin mobs, muestra un único placeholder genérico', () => {
     const wrapper = mount(ProjectCard, { props: { project: project() } })
 
@@ -30,7 +47,7 @@ describe('ProjectCard.vue', () => {
     expect(wrapper.find('.project-card__placeholder').exists()).toBe(true)
   })
 
-  it('con más de 3 mobs, muestra hasta 3 miniaturas y el indicador "+N", AC #3', () => {
+  it('con más de 3 mobs, muestra hasta 3 miniaturas y un tile "+N" propio, AC #3', () => {
     const p = project({
       mobCount: 5,
       mobThumbnails: [
@@ -41,8 +58,17 @@ describe('ProjectCard.vue', () => {
     })
     const wrapper = mount(ProjectCard, { props: { project: p } })
 
-    expect(wrapper.findAll('.project-card__thumbnail')).toHaveLength(3)
-    expect(wrapper.text()).toContain('+2')
+    // 3 miniaturas reales + 1 tile "+N" = 4 tiles, todos con la misma clase `.project-card__thumbnail`.
+    expect(wrapper.findAll('.project-card__thumbnail')).toHaveLength(4)
+    expect(wrapper.find('.project-card__more').text()).toBe('+2')
+  })
+
+  it('con 3 mobs o menos, NO muestra el tile "+N"', () => {
+    const p = project({ mobCount: 2, mobThumbnails: [{ mobId: 'm1', thumbnailKey: null }, { mobId: 'm2', thumbnailKey: null }] })
+    const wrapper = mount(ProjectCard, { props: { project: p } })
+
+    expect(wrapper.find('.project-card__more').exists()).toBe(false)
+    expect(wrapper.findAll('.project-card__thumbnail')).toHaveLength(2)
   })
 
   it('una miniatura sin thumbnailKey muestra el placeholder, no un <img> roto, AC #5', () => {

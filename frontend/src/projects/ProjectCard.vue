@@ -1,18 +1,20 @@
 <script setup lang="ts">
 /**
- * Tarjeta de proyecto del dashboard "Mis proyectos" (HU-02, mockup 01).
- * Hasta 3 miniaturas + indicador "+N" cuando el proyecto tiene más de 3
- * mobs (AC #3); miniatura ausente/fallida -> placeholder genérico (AC
- * #5, nunca bloquea el listado). "Export" del menú de acciones queda
- * deshabilitado con su razón visible -- todavía no existe ningún
- * endpoint de exportación expuesto (decisión del Product Owner, ticket
- * 021).
+ * Tarjeta de proyecto del dashboard "Mis proyectos" (HU-02, ticket 021;
+ * rediseño de fidelidad visual estricta, ticket 072, VoBo del PO sobre
+ * el preview interactivo). Cambios del rediseño frente a la versión
+ * anterior: badge de estado del proyecto (`status`, derivado en el
+ * backend -- ver `ProjectSummary`), miniaturas en tiles de tamaño fijo
+ * (no estiradas a ocupar el ancho) con "+N" como su propio tile en vez
+ * de una insignia superpuesta, y el menú ⋮ alineado con el pie de la
+ * card en vez de superpuesto en la esquina.
  *
  * Estructura (hallazgo real de Sonar, S6819: usar `<button>` real en vez
  * de `role="button"` sobre un `<div>`): el `<button>` que abre el
  * detalle NO puede envolver también el botón del menú de `GMenu`
  * (contenido interactivo dentro de un `<button>` es HTML inválido) --
- * el menú vive como hermano, superpuesto visualmente en la esquina.
+ * el menú vive como hermano, superpuesto visualmente en la esquina
+ * inferior derecha (mismo criterio que la versión anterior).
  */
 import { thumbnailUrl } from '../api/apiConfig'
 import { formatRelativeDate } from '../domain/relativeDate'
@@ -42,6 +44,12 @@ function handleAction(projectId: string, actionKey: string): void {
 <template>
   <div class="project-card">
     <button type="button" class="project-card__open" @click="emit('open', project.id)">
+      <span class="project-card__top">
+        <span class="status-pill" :class="`status-pill--${project.status}`">
+          <span class="status-pill__dot" aria-hidden="true" />
+          {{ project.status === 'active' ? 'Activo' : 'Draft' }}
+        </span>
+      </span>
       <span class="project-card__thumbnails">
         <span v-for="thumb in project.mobThumbnails" :key="thumb.mobId" class="project-card__thumbnail">
           <img v-if="thumb.thumbnailKey" :src="thumbnailUrl(thumb.thumbnailKey)!" alt="" />
@@ -50,7 +58,7 @@ function handleAction(projectId: string, actionKey: string): void {
         <span v-if="project.mobThumbnails.length === 0" class="project-card__thumbnail">
           <span class="project-card__placeholder" aria-hidden="true" />
         </span>
-        <span v-if="project.mobCount > 3" class="project-card__more">+{{ project.mobCount - 3 }}</span>
+        <span v-if="project.mobCount > 3" class="project-card__thumbnail project-card__more">+{{ project.mobCount - 3 }}</span>
       </span>
       <span class="project-card__name">{{ project.name }}</span>
       <span class="project-card__meta">{{ mobCountLabel(project.mobCount) }} · {{ formatRelativeDate(project.updatedAt) }}</span>
@@ -67,19 +75,25 @@ function handleAction(projectId: string, actionKey: string): void {
   background: var(--panel);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-lg);
+  transition:
+    border-color 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .project-card:hover {
   border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .project-card__open {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--space-2);
+  gap: var(--space-3);
   width: 100%;
-  padding: var(--space-3);
+  padding: var(--space-4);
   background: transparent;
   border: none;
   border-radius: inherit;
@@ -89,16 +103,61 @@ function handleAction(projectId: string, actionKey: string): void {
   font: inherit;
 }
 
-.project-card__thumbnails {
-  position: relative;
+.project-card__top {
   display: flex;
-  gap: var(--space-1);
+  justify-content: flex-end;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px var(--space-2) 3px 8px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.status-pill__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-pill--active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.status-pill--active .status-pill__dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.status-pill--draft {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.status-pill--draft .status-pill__dot {
+  background: var(--muted);
+}
+
+.project-card__thumbnails {
+  display: flex;
+  gap: var(--space-2);
 }
 
 .project-card__thumbnail {
-  flex: 1;
-  aspect-ratio: 1;
-  display: block;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--surface);
@@ -118,22 +177,18 @@ function handleAction(projectId: string, actionKey: string): void {
 }
 
 .project-card__more {
-  position: absolute;
-  bottom: var(--space-1);
-  right: var(--space-1);
-  background: rgba(0, 0, 0, 0.7);
-  color: var(--text);
-  font-size: var(--text-xs);
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 700;
+  font-size: var(--text-md);
 }
 
 .project-card__name {
-  font-weight: 600;
+  font-weight: 700;
+  font-size: var(--text-md);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-right: var(--space-8); /* deja espacio al menú superpuesto */
 }
 
 .project-card__meta {
@@ -142,11 +197,12 @@ function handleAction(projectId: string, actionKey: string): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding-right: var(--space-8); /* deja espacio al menú superpuesto */
 }
 
 .project-card__menu {
   position: absolute;
-  right: var(--space-2);
-  bottom: var(--space-2);
+  right: var(--space-3);
+  bottom: var(--space-4);
 }
 </style>
