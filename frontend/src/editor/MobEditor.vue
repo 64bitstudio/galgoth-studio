@@ -53,6 +53,12 @@
  * el draft (el atlas persistido no viaja en el JSON del draft) y le pide
  * a `TextureCanvas.reloadAtlas()` que lo recargue, sin duplicar la lógica
  * de descarga/decodificación que ese componente ya tiene.
+ *
+ * Post-073 (pedido explícito del PO): `onMounted` ahora también trae el
+ * proyecto (`getProject`, en paralelo con `getMob` -- ninguna espera a la
+ * otra) SOLO para completar el breadcrumb real de `EditorHeader.vue`
+ * ("Galgoth Studio > Mis proyectos > {proyecto} > {mob}"); no se usaba
+ * para nada más antes de este cambio.
  */
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -70,16 +76,18 @@ import { useDraftModelStore } from './draftModelStore'
 import { useGeometryApplyStore } from './geometryApplyStore'
 import { getDraft } from './draftPersistenceApi'
 import { getMob } from '../projects/mobsApi'
+import { getProject } from '../projects/projectsApi'
 import { emptyMobProjectModel } from '../domain/emptyMobProjectModel'
 import { ApiError } from '../api/ApiError'
 import GSidebar, { type GSidebarKey } from '../design-system/components/GSidebar.vue'
 import GButton from '../design-system/components/GButton.vue'
 import GDrawer from '../design-system/components/GDrawer.vue'
+import GMenu, { type GMenuItem } from '../design-system/components/GMenu.vue'
 import ConfirmDialog from '../design-system/components/ConfirmDialog.vue'
 import IconCamera from '../design-system/icons/IconCamera.vue'
-import IconSparkle from '../design-system/icons/IconSparkle.vue'
-import IconSave from '../design-system/icons/IconSave.vue'
 import IconExport from '../design-system/icons/IconExport.vue'
+import IconSave from '../design-system/icons/IconSave.vue'
+import IconSparkle from '../design-system/icons/IconSparkle.vue'
 import type { TextureSaveState } from './texture/TextureSaveStatus.vue'
 import type { MobProjectModel } from '../domain/MobProjectModel'
 
@@ -93,6 +101,7 @@ const geometryApply = useGeometryApplyStore()
 const loadError = ref<string | null>(null)
 const notFound = ref(false)
 const mobName = ref('')
+const projectName = ref('') // Post-073 -- completa la jerarquía real del breadcrumb (Galgoth Studio > Mis proyectos > {proyecto} > {mob}).
 
 // Ticket 050: tab de workspace activa -- 'modelo' por default, mismo
 // criterio que `EditorHeader.vue` (GTabs) ya usaba antes de fuego.
@@ -202,6 +211,43 @@ function handleTopSave(): void {
   }
 }
 
+/**
+ * Post-075 (hallazgo real del PO -- "son muchos botones que desbordan"):
+ * la fila superior tenía 4 botones (Reset cámara/Asistente IA/Exportar/
+ * Guardar) que desbordaban en viewports angostos. Se consolidan 3 de
+ * ellos (Reset cámara/Exportar/Guardar) en un único menú "⋮" -- el mismo
+ * `GMenu.vue` que ya usan `ProjectCard.vue`/`MobCard.vue`, sin lógica de
+ * dropdown nueva. El botón de IA (Asistente IA/Generar con IA) queda
+ * SIEMPRE visible fuera del menú por instrucción explícita del PO -- es
+ * la acción primaria de la pantalla.
+ *
+ * "Guardar" mantiene su label dinámico ("Guardando…") y su estado
+ * deshabilitado (`!activeCanSave`) como un ítem más del menú -- el
+ * indicador real de "Guardado"/"Cambios sin guardar" sigue siempre
+ * visible en la barra de estado inferior de cada tab (`TextureSaveStatus.vue`),
+ * así que ocultar el BOTÓN de guardar detrás del menú no oculta el
+ * ESTADO real de si hay cambios sin guardar.
+ *
+ * Post-076 (pedido explícito del PO -- "agregale iconos a esas opciones"):
+ * cada ítem lleva el mismo ícono que ya tenía como `GButton` suelto antes
+ * de consolidarlos en este menú (`icon` opcional de `GMenuItem`).
+ */
+const topMenuItems = computed<GMenuItem[]>(() => [
+  { key: 'reset-camera', label: 'Reset cámara', icon: IconCamera },
+  { key: 'export', label: 'Exportar', icon: IconExport },
+  { key: 'save', label: activeSaveState.value === 'saving' ? 'Guardando…' : 'Guardar', icon: IconSave, disabled: !activeCanSave.value },
+])
+
+function handleTopMenuAction(key: string): void {
+  if (key === 'reset-camera') {
+    threeViewportService.resetCamera()
+  } else if (key === 'export') {
+    router.push(`/projects/${projectId}/mobs/${mobId}/export`)
+  } else if (key === 'save') {
+    handleTopSave()
+  }
+}
+
 // Ticket 069: un solo flag para el drawer compartido -- el contenido
 // embebido adentro (AiEditPanel/TextureAiGeneratorPanel) se decide según
 // `activeTab`, mismo criterio que `activeSaveState`/`handleTopSave`.
@@ -223,7 +269,8 @@ function closeAiDrawer(): void {
 
 onMounted(async () => {
   try {
-    const mob = await getMob(mobId)
+    const [project, mob] = await Promise.all([getProject(projectId), getMob(mobId)])
+    projectName.value = project.name
     mobName.value = mob.name
     try {
       const draftView = await getDraft(mobId)
@@ -245,8 +292,11 @@ onMounted(async () => {
   }
 })
 
+/** Ticket 071 -- "Inicio" ya NO es sinónimo de "Mis proyectos": navega a "/" (HomeView.vue), no a "/projects". */
 function handleSidebarSelect(key: GSidebarKey): void {
-  if (key === 'home' || key === 'projects') {
+  if (key === 'home') {
+    router.push('/')
+  } else if (key === 'projects') {
     router.push('/projects')
   }
 }
@@ -266,17 +316,20 @@ function backToProject(): void {
       <p v-else-if="loadError" class="mob-editor__error">{{ loadError }}</p>
       <template v-else-if="draft.model">
         <div class="mob-editor__top">
-          <EditorHeader :mob-name="mobName" :active-tab="activeTab" @update:active-tab="activeTab = $event" />
-          <!-- Ticket 068: esta fila ya no depende de la tab activa -- se muestra siempre, homologada entre Modelo y Textura. -->
+          <EditorHeader
+            :project-id="projectId"
+            :project-name="projectName"
+            :mob-name="mobName"
+            :active-tab="activeTab"
+            @update:active-tab="activeTab = $event"
+          />
+          <!-- Ticket 068: esta fila ya no depende de la tab activa -- se muestra siempre, homologada entre Modelo y Textura.
+               Post-075: Reset cámara/Exportar/Guardar viven en el menú "⋮" -- solo el botón de IA queda siempre visible. -->
           <div class="mob-editor__top-actions">
-            <GButton variant="ghost" @click="threeViewportService.resetCamera()"><template #icon><IconCamera :size="16" /></template>Reset cámara</GButton>
             <GButton :variant="showAiDrawer ? 'primary' : 'accent'" @click="handleIaButtonClick">
               <template #icon><IconSparkle :size="16" /></template>{{ activeTab === 'modelo' ? 'Asistente IA' : 'Generar con IA' }}
             </GButton>
-            <GButton variant="secondary" @click="router.push(`/projects/${projectId}/mobs/${mobId}/export`)"><template #icon><IconExport :size="16" /></template>Exportar</GButton>
-            <GButton variant="primary" :disabled="!activeCanSave" @click="handleTopSave">
-              <template #icon><IconSave :size="16" /></template>{{ activeSaveState === 'saving' ? 'Guardando…' : 'Guardar' }}
-            </GButton>
+            <GMenu :items="topMenuItems" label="Más acciones" @select="handleTopMenuAction" />
           </div>
         </div>
         <template v-if="activeTab === 'modelo'">
@@ -297,17 +350,19 @@ function backToProject(): void {
       <p v-else class="mob-editor__loading">Cargando…</p>
     </main>
 
-    <ConfirmDialog
-      v-if="geometryApply.pendingResizeConfirmation"
-      title="Confirmar pérdida de pintura"
-      :message="pendingResizeMessage"
-      confirm-label="Confirmar"
-      danger
-      :busy="geometryApply.busy"
-      :error="geometryApply.lastError"
-      @confirm="confirmPendingResize"
-      @cancel="cancelPendingResize"
-    />
+    <Transition name="app-dialog">
+      <ConfirmDialog
+        v-if="geometryApply.pendingResizeConfirmation"
+        title="Confirmar pérdida de pintura"
+        :message="pendingResizeMessage"
+        confirm-label="Confirmar"
+        danger
+        :busy="geometryApply.busy"
+        :error="geometryApply.lastError"
+        @confirm="confirmPendingResize"
+        @cancel="cancelPendingResize"
+      />
+    </Transition>
 
     <!-- Ticket 069: drawer compartido del Asistente IA -- mismo GDrawer en las dos tabs, contenido embebido según activeTab. -->
     <GDrawer

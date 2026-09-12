@@ -95,6 +95,9 @@ describe('MobEditor.vue', () => {
       'fetch',
       vi.fn<typeof fetch>(async (url) => {
         const u = String(url)
+        if (u.match(/\/api\/projects\/p1$/)) {
+          return jsonResponse({ id: 'p1', name: 'Proyecto de prueba', mobCount: 1, createdAt: '', updatedAt: '' })
+        }
         if (u.endsWith('/api/mobs/mob-1') || u.match(/\/api\/mobs\/mob-1$/)) {
           return jsonResponse({ id: 'mob-1', name: 'Carcomido', baseType: 'humanoid', status: 'draft', thumbnailKey: null, updatedAt: '' })
         }
@@ -120,6 +123,9 @@ describe('MobEditor.vue', () => {
       'fetch',
       vi.fn<typeof fetch>(async (url) => {
         const u = String(url)
+        if (u.match(/\/api\/projects\/p1$/)) {
+          return jsonResponse({ id: 'p1', name: 'Proyecto de prueba', mobCount: 1, createdAt: '', updatedAt: '' })
+        }
         if (u.match(/\/api\/mobs\/mob-1$/)) {
           return jsonResponse({ id: 'mob-1', name: 'Carcomido Nuevo', baseType: 'arachnid', status: 'draft', thumbnailKey: null, updatedAt: '' })
         }
@@ -190,6 +196,9 @@ describe('MobEditor.vue', () => {
         'fetch',
         vi.fn<typeof fetch>(async (url) => {
           const u = String(url)
+          if (u.match(/\/api\/projects\/p1$/)) {
+            return jsonResponse({ id: 'p1', name: 'Proyecto de prueba', mobCount: 1, createdAt: '', updatedAt: '' })
+          }
           if (u.match(/\/api\/mobs\/mob-1$/)) {
             return jsonResponse({ id: 'mob-1', name: 'Carcomido', baseType: 'humanoid', status: 'draft', thumbnailKey: null, updatedAt: '' })
           }
@@ -208,7 +217,7 @@ describe('MobEditor.vue', () => {
       // 069: `GDrawer: false` hace lo mismo para poder alcanzar el
       // `AiEditPanel` real que vive dentro de su slot una vez abierto.
       const wrapper = shallowMount(MobEditor, {
-        global: { plugins: [await routerAt('p1', 'mob-1')], stubs: { GButton: false, GDrawer: false } },
+        global: { plugins: [await routerAt('p1', 'mob-1')], stubs: { GButton: false, GDrawer: false, GMenu: false } },
       })
       await flushPromises()
       return wrapper
@@ -229,11 +238,12 @@ describe('MobEditor.vue', () => {
       expect(wrapper.findComponent({ name: 'HierarchyPanel' }).exists()).toBe(true)
     })
 
-    it('el botón "Exportar" navega a la pantalla de exportación del mob (ticket 032)', async () => {
+    it('"Exportar" (dentro del menú "⋮") navega a la pantalla de exportación del mob (ticket 032)', async () => {
       const wrapper = await mountLoaded()
       const router = wrapper.vm.$router
 
-      await wrapper.findAll('button').find((b) => b.text() === 'Exportar')!.trigger('click')
+      await wrapper.find('[aria-label="Más acciones"]').trigger('click')
+      await wrapper.findAll('[role="menuitem"]').find((i) => i.text() === 'Exportar')!.trigger('click')
       await flushPromises()
 
       expect(router.currentRoute.value.path).toBe('/projects/p1/mobs/mob-1/export')
@@ -290,6 +300,9 @@ describe('MobEditor.vue', () => {
         'fetch',
         vi.fn<typeof fetch>(async (url) => {
           const u = String(url)
+          if (u.match(/\/api\/projects\/p1$/)) {
+            return jsonResponse({ id: 'p1', name: 'Proyecto de prueba', mobCount: 1, createdAt: '', updatedAt: '' })
+          }
           if (u.match(/\/api\/mobs\/mob-1$/)) {
             return jsonResponse({ id: 'mob-1', name: 'Carcomido', baseType: 'humanoid', status: 'draft', thumbnailKey: null, updatedAt: '' })
           }
@@ -339,7 +352,7 @@ describe('MobEditor.vue', () => {
     })
   })
 
-  describe('Ticket 068: fila superior homologada (Reset cámara/Asistente IA/Exportar/Guardar) en las dos tabs', () => {
+  describe('Ticket 068/075: fila superior homologada (Asistente IA + menú "⋮" de Reset cámara/Exportar/Guardar) en las dos tabs', () => {
     const draftModel = {
       mobId: 'mob-1',
       projectId: 'p1',
@@ -364,6 +377,9 @@ describe('MobEditor.vue', () => {
         'fetch',
         vi.fn<typeof fetch>(async (url) => {
           const u = String(url)
+          if (u.match(/\/api\/projects\/p1$/)) {
+            return jsonResponse({ id: 'p1', name: 'Proyecto de prueba', mobCount: 1, createdAt: '', updatedAt: '' })
+          }
           if (u.match(/\/api\/mobs\/mob-1$/)) {
             return jsonResponse({ id: 'mob-1', name: 'Carcomido', baseType: 'humanoid', status: 'draft', thumbnailKey: null, updatedAt: '' })
           }
@@ -376,9 +392,22 @@ describe('MobEditor.vue', () => {
           throw new Error(`fetch inesperado: ${u}`)
         }),
       )
-      // Ticket 069: `GDrawer: false` para alcanzar `TextureAiGeneratorPanel` real dentro de su slot.
+      // Ticket 069: `GDrawer: false` para alcanzar `TextureAiGeneratorPanel` real dentro de su slot. Post-075/076: `GMenu`/íconos: false` para alcanzar los ítems reales (con su ícono real) del menú "⋮".
       const wrapper = shallowMount(MobEditor, {
-        global: { plugins: [await routerAt('p1', 'mob-1')], stubs: { GButton: false, EditorToolbar: false, TextureCanvas: false, GDrawer: false } },
+        global: {
+          plugins: [await routerAt('p1', 'mob-1')],
+          stubs: {
+            GButton: false,
+            EditorToolbar: false,
+            TextureCanvas: false,
+            GDrawer: false,
+            GMenu: false,
+            IconCamera: false,
+            IconExport: false,
+            IconSave: false,
+            IconBase: false, // las 3 anteriores envuelven IconBase -- shallowMount stubea cualquier descendiente por default, sin importar la profundidad.
+          },
+        },
       })
       await flushPromises()
       return wrapper
@@ -389,14 +418,39 @@ describe('MobEditor.vue', () => {
       await flushPromises()
     }
 
+    /** Abre el menú "⋮", lee las etiquetas reales de sus ítems, y lo vuelve a cerrar -- deja el DOM en el mismo estado (cerrado) en el que lo encontró, para no interferir con el siguiente paso del test (ej. cambiar de tab). */
+    async function readTopMenuLabels(wrapper: ReturnType<typeof shallowMount>): Promise<string[]> {
+      const trigger = wrapper.find('[aria-label="Más acciones"]')
+      await trigger.trigger('click') // abre
+      const labels = wrapper.findAll('[role="menuitem"]').map((i) => i.text())
+      await trigger.trigger('click') // cierra
+      return labels
+    }
+
     it('se muestran en las dos tabs -- antes desaparecían por completo en Textura (v-if="activeTab === \'modelo\'")', async () => {
       const wrapper = await mountLoaded()
-      const topLabels = (): string[] => wrapper.findAll('button').map((b) => b.text()).filter(Boolean)
-      expect(topLabels()).toEqual(expect.arrayContaining(['Reset cámara', 'Asistente IA', 'Exportar', 'Guardar']))
+      const topButtonLabels = (): string[] => wrapper.findAll('button').map((b) => b.text()).filter(Boolean)
+
+      expect(topButtonLabels()).toEqual(expect.arrayContaining(['Asistente IA']))
+      expect(await readTopMenuLabels(wrapper)).toEqual(['Reset cámara', 'Exportar', 'Guardar'])
 
       await switchToTextura(wrapper)
 
-      expect(topLabels()).toEqual(expect.arrayContaining(['Reset cámara', 'Generar con IA', 'Exportar', 'Guardar']))
+      expect(topButtonLabels()).toEqual(expect.arrayContaining(['Generar con IA']))
+      expect(await readTopMenuLabels(wrapper)).toEqual(['Reset cámara', 'Exportar', 'Guardar'])
+    })
+
+    // Post-076 -- pedido explícito del PO: cada ítem del menú "⋮" lleva su ícono.
+    it('post-076: cada ítem del menú "⋮" muestra su ícono', async () => {
+      const wrapper = await mountLoaded()
+
+      await wrapper.find('[aria-label="Más acciones"]').trigger('click')
+      const items = wrapper.findAll('[role="menuitem"]')
+
+      expect(items).toHaveLength(3)
+      for (const item of items) {
+        expect(item.find('svg').exists()).toBe(true)
+      }
     })
 
     it('en Textura, el botón compartido de IA ("Generar con IA") abre el MISMO drawer compartido, con TextureAiGeneratorPanel dentro (ticket 069 -- antes navegaba a una ruta propia)', async () => {
@@ -425,22 +479,24 @@ describe('MobEditor.vue', () => {
       expect(wrapperTextura.find('.g-drawer__title').text()).toContain('Generador de textura (IA)')
     })
 
-    it('Guardar (fila superior) delega en EditorToolbar.handleSave cuando la tab activa es Modelo', async () => {
+    it('"Guardar" (dentro del menú "⋮") delega en EditorToolbar.handleSave cuando la tab activa es Modelo', async () => {
       const wrapper = await mountLoaded()
 
-      await wrapper.findAll('button').find((b) => b.text() === 'Guardar')!.trigger('click')
+      await wrapper.find('[aria-label="Más acciones"]').trigger('click')
+      await wrapper.findAll('[role="menuitem"]').find((i) => i.text() === 'Guardar')!.trigger('click')
       await flushPromises()
 
       expect(saveRevision).toHaveBeenCalledWith('mob-1', expect.objectContaining({ mobId: 'mob-1' }))
     })
 
-    it('Guardar (fila superior) delega en TextureCanvas.handleSave cuando la tab activa es Textura', async () => {
+    it('"Guardar" (dentro del menú "⋮") delega en TextureCanvas.handleSave cuando la tab activa es Textura', async () => {
       const wrapper = await mountLoaded()
       await switchToTextura(wrapper)
       vi.mocked(saveRevision).mockClear()
       vi.spyOn(threeViewportService, 'captureThumbnail').mockResolvedValue(new Blob(['png'], { type: 'image/png' }))
 
-      await wrapper.findAll('button').find((b) => b.text() === 'Guardar')!.trigger('click')
+      await wrapper.find('[aria-label="Más acciones"]').trigger('click')
+      await wrapper.findAll('[role="menuitem"]').find((i) => i.text() === 'Guardar')!.trigger('click')
       await flushPromises()
 
       expect(saveRevision).toHaveBeenCalledWith('mob-1', expect.objectContaining({ mobId: 'mob-1' }))
