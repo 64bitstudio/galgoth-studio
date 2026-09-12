@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -72,6 +73,17 @@ public class MobService {
 		return toSummary(mob);
 	}
 
+	/**
+	 * Ticket 071 -- "Continuar trabajando" (Inicio): los `limit` mobs
+	 * editados más recientemente, cruzando todos los proyectos no
+	 * eliminados. `limit` ya validado por el controller (positivo, con un
+	 * tope razonable) antes de llegar acá.
+	 */
+	@Transactional(readOnly = true)
+	public List<RecentMobSummary> listRecentAcrossProjects(int limit) {
+		return mobRepository.findRecentAcrossProjects(PageRequest.of(0, limit)).stream().map(this::toRecentSummary).toList();
+	}
+
 	/** Ticket 039 -- mismo criterio de validación que `create`. */
 	@Transactional
 	public MobSummary rename(UUID mobId, String newName) {
@@ -112,6 +124,17 @@ public class MobService {
 	private MobSummary toSummary(MobEntity mob) {
 		return new MobSummary(
 				mob.getId().toString(), mob.getName(), mob.getBaseType(), mob.getStatus(), mob.getThumbnailKey(), mob.getUpdatedAt());
+	}
+
+	private RecentMobSummary toRecentSummary(MobEntity mob) {
+		return new RecentMobSummary(
+				mob.getId().toString(),
+				mob.getProjectId().toString(),
+				mob.getName(),
+				mob.getBaseType(),
+				mob.getStatus(),
+				mob.getThumbnailKey(),
+				mob.getUpdatedAt());
 	}
 
 }

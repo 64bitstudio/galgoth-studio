@@ -18,6 +18,10 @@ public class ProjectEntity {
 	@Column(nullable = false)
 	private String name;
 
+	/** Ticket 073 -- opcional, texto libre. `null` es el estado normal de un proyecto recién creado (la creación no la pide todavía). */
+	@Column(name = "description")
+	private String description;
+
 	@Column(name = "owner_ref")
 	private String ownerRef;
 
@@ -52,6 +56,14 @@ public class ProjectEntity {
 
 	public void setName(String name) {
 		this.name = name;
+	}
+
+	public String getDescription() {
+		return description;
+	}
+
+	public void setDescription(String description) {
+		this.description = description;
 	}
 
 	public String getOwnerRef() {

@@ -16,10 +16,11 @@ const props = withDefaults(
   {},
 )
 
+/** Ticket 071 -- labels traducidos a español (antes Ready/In progress/Draft), fidelidad al rediseño de Inicio; decisión del Product Owner de traducirlos GLOBALMENTE (este componente es compartido con ProjectDetail.vue/MobCard.vue, no solo Inicio). "Draft" se deja igual -- ya es el término que usa el resto de la UI (ver AddMobModal.vue). */
 const STATUS_META = {
-  ready: { label: 'Ready', icon: IconCheck, tone: 'accent' as const },
+  ready: { label: 'Listo', icon: IconCheck, tone: 'accent' as const },
   'in-progress': {
-    label: 'In progress',
+    label: 'En progreso',
     icon: IconInProgress,
     tone: 'warning' as const,
   },

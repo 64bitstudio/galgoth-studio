@@ -38,6 +38,29 @@
  * reproduciendo los mismos eventos por el mismo `handleProgressEvent` de
  * siempre -- nunca arranca visualmente desde 0% si el job ya había
  * avanzado de verdad.
+ *
+ * Post-074 (rediseño del wizard, VoBo del PO sobre el preview interactivo):
+ * - Cada etapa de la lista ahora muestra un tiempo transcurrido (ej.
+ *   "23s") además de su descripción -- derivado 100% de los timestamps
+ *   REALES de llegada de cada evento SSE (`stageStartedAt`/`lastEventAt`,
+ *   ambos en memoria del componente), nunca un `setInterval` ticking: se
+ *   recalcula cada vez que llega un evento nuevo, no cada segundo. Esto
+ *   evita el riesgo de temporizadores colgados en los tests (ninguno usa
+ *   fake timers acá) y es igual de real -- el SSE emite con frecuencia
+ *   suficiente para que se sienta "en vivo".
+ * - "Registro en tiempo real": acumula el `message` de cada evento NUEVO
+ *   (no duplicado, mismo filtro por `seq` que ya existía) con la hora
+ *   local de recepción -- dato 100% real, no inventado; tope de 50 líneas
+ *   para no crecer sin límite en una generación muy larga.
+ * - Badges "Polígonos (cuboides)"/"Huesos (rig)" sobre el preview:
+ *   derivados de `previewModel.cuboids.length`/`previewModel.bones.length`,
+ *   el mismo modelo que ya se construye incrementalmente vía SSE -- ningún
+ *   dato nuevo, solo se muestra el que ya existía.
+ * - Hints de interacción del viewport ("Orbitar/Panorámica/Zoom"): texto
+ *   puramente informativo, verificado contra `ThreeViewportService`
+ *   (`OrbitControls` real de three.js -- rotar con drag izquierdo,
+ *   paneo con drag derecho, zoom con la rueda) para no prometer una
+ *   interacción que el viewport no soporta de verdad.
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { BaseType } from '../../projects/mobsApi'
@@ -46,7 +69,13 @@ import { cancelGeneration, eventsUrl, startGeneration } from '../../api/generati
 import { emptyPreviewModel, applyPreviewDelta, type GenerationEvent } from '../generationEvents'
 import { ApiError } from '../../api/ApiError'
 import GButton from '../../design-system/components/GButton.vue'
+import IconBoneJoint from '../../design-system/icons/IconBoneJoint.vue'
 import IconCheck from '../../design-system/icons/IconCheck.vue'
+import IconCuboid from '../../design-system/icons/IconCuboid.vue'
+import IconHand from '../../design-system/icons/IconHand.vue'
+import IconRotate from '../../design-system/icons/IconRotate.vue'
+import IconSearch from '../../design-system/icons/IconSearch.vue'
+import IconTrash from '../../design-system/icons/IconTrash.vue'
 import IconWarning from '../../design-system/icons/IconWarning.vue'
 import GenerationPreviewViewport from '../GenerationPreviewViewport.vue'
 import { STAGE_ORDER, outcomeForStage, findStageIndex, stageStatusFor, type GenerationOutcome } from '../generationStages'
@@ -111,10 +140,65 @@ function debugLog(message: string): void {
 const currentStageIndex = computed(() => findStageIndex(currentPipelineStage.value))
 const hasGeometry = computed(() => previewModel.value.cuboids.length > 0)
 const currentStageHint = computed(() => STAGE_ORDER[currentStageIndex.value]?.hint ?? null)
+const cuboidCount = computed(() => previewModel.value.cuboids.length)
+const boneCount = computed(() => previewModel.value.bones.length)
 
 function stageStatus(index: number): 'done' | 'current' | 'pending' {
   return stageStatusFor(index, currentStageIndex.value, outcome.value)
 }
+
+/**
+ * Post-074 -- tiempo transcurrido por etapa, derivado de los timestamps
+ * REALES de llegada de cada evento SSE (nunca un `setInterval`, ver
+ * docstring de cabecera). `stageStartedAt[i]` se fija la primera vez que
+ * se ve la etapa `i`; el fin de la etapa `i` es el inicio de la `i+1` (ya
+ * terminó), o `lastEventAt` mientras sigue siendo la etapa activa.
+ */
+const stageStartedAt = ref<Record<number, number>>({})
+const lastEventAt = ref(Date.now())
+
+function markStageStarted(index: number): void {
+  if (index < 0 || stageStartedAt.value[index] !== undefined) {
+    return
+  }
+  stageStartedAt.value = { ...stageStartedAt.value, [index]: Date.now() }
+}
+
+function stageElapsedLabel(index: number): string {
+  const start = stageStartedAt.value[index]
+  if (start === undefined) {
+    return '—'
+  }
+  const end = stageStartedAt.value[index + 1] ?? (index === currentStageIndex.value ? lastEventAt.value : undefined)
+  if (end === undefined) {
+    return '—'
+  }
+  return `${Math.max(0, Math.round((end - start) / 1000))}s`
+}
+
+/** Post-074 -- "Registro en tiempo real": un renglón por evento SSE nuevo (nunca duplicados, mismo filtro por `seq` de `handleProgressEvent`). Tope de 50 líneas -- una generación muy larga no debe crecer sin límite. */
+const MAX_LOG_LINES = 50
+interface LogLine {
+  time: string
+  message: string
+}
+const logLines = ref<LogLine[]>([])
+
+function pushLogLine(message: string | null): void {
+  if (!message) {
+    return
+  }
+  const time = new Date().toLocaleTimeString('es-MX', { hour12: false })
+  logLines.value = [...logLines.value, { time, message }].slice(-MAX_LOG_LINES)
+}
+
+const LOG_STATUS_LABEL: Record<Outcome, string> = {
+  running: 'En progreso',
+  completed: 'Completado',
+  failed: 'Error',
+  cancelled: 'Cancelado',
+}
+const logStatusLabel = computed(() => LOG_STATUS_LABEL[outcome.value])
 
 function handleProgressEvent(raw: MessageEvent): void {
   const event = JSON.parse(raw.data) as GenerationEvent
@@ -126,6 +210,8 @@ function handleProgressEvent(raw: MessageEvent): void {
   seenSeqs.add(event.seq)
 
   currentMessage.value = event.message
+  lastEventAt.value = Date.now()
+  pushLogLine(event.message)
   if (event.progressPct !== null) {
     progressPct.value = event.progressPct
   }
@@ -150,6 +236,7 @@ function handleProgressEvent(raw: MessageEvent): void {
     return
   }
   currentPipelineStage.value = event.stage
+  markStageStarted(findStageIndex(event.stage))
 }
 
 function closeStream(): void {
@@ -208,6 +295,9 @@ async function retryGeneration(): Promise<void> {
   outcome.value = 'running'
   failureMessage.value = null
   previewModel.value = emptyPreviewModel(props.mobId, props.projectId, props.mobName, props.baseType)
+  stageStartedAt.value = {}
+  lastEventAt.value = Date.now()
+  logLines.value = []
   await beginGeneration()
 }
 
@@ -254,6 +344,16 @@ onBeforeUnmount(closeStream)
 
     <div v-else class="generation-step__body">
       <div class="generation-step__panel generation-step__panel--stages">
+        <div class="generation-step__progress-block">
+          <div class="generation-step__progress-row">
+            <span>Progreso</span>
+            <span class="generation-step__progress-pct">{{ progressPct }}%</span>
+          </div>
+          <progress class="generation-step__progress" :value="progressPct" max="100">{{ progressPct }}%</progress>
+          <p v-if="currentMessage" class="generation-step__message">{{ currentMessage }}</p>
+          <p v-if="outcome === 'running' && currentStageHint" class="generation-step__hint">{{ currentStageHint }}</p>
+        </div>
+
         <ul class="generation-step__stages">
           <li
             v-for="(item, index) in STAGE_ORDER"
@@ -265,18 +365,25 @@ onBeforeUnmount(closeStream)
               <IconCheck v-if="stageStatus(index) === 'done'" :size="14" />
               <span v-else-if="stageStatus(index) === 'current'" class="generation-step__spinner" />
             </span>
-            {{ item.label }}
+            <span class="generation-step__stage-body">
+              <span class="generation-step__stage-text">
+                <span class="generation-step__stage-title">{{ item.label }}</span>
+                <span class="generation-step__stage-desc">{{ stageStatus(index) === 'done' ? item.doneHint : item.hint }}</span>
+              </span>
+              <span class="generation-step__stage-time">{{ stageElapsedLabel(index) }}</span>
+            </span>
           </li>
         </ul>
 
-        <div class="generation-step__progress-block">
-          <div class="generation-step__progress-row">
-            <span>Progreso</span>
-            <span class="generation-step__progress-pct">{{ progressPct }}%</span>
+        <div class="generation-step__log">
+          <div class="generation-step__log-head">
+            <span class="generation-step__log-title">Registro en tiempo real</span>
+            <span class="generation-step__log-status" :class="`generation-step__log-status--${outcome}`"><span class="generation-step__log-dot" />{{ logStatusLabel }}</span>
           </div>
-          <progress class="generation-step__progress" :value="progressPct" max="100">{{ progressPct }}%</progress>
-          <p v-if="currentMessage" class="generation-step__message">{{ currentMessage }}</p>
-          <p v-if="outcome === 'running' && currentStageHint" class="generation-step__hint">{{ currentStageHint }}</p>
+          <div class="generation-step__log-lines app-scroll">
+            <p v-if="logLines.length === 0" class="generation-step__log-empty">Esperando el primer evento…</p>
+            <div v-for="(line, index) in logLines" :key="index">[{{ line.time }}] {{ line.message }}</div>
+          </div>
         </div>
 
         <p v-if="outcome === 'running' && reconnecting" class="generation-step__notice">
@@ -297,7 +404,7 @@ onBeforeUnmount(closeStream)
         <p v-else-if="outcome === 'cancelled'" class="generation-step__notice">Generación cancelada -- no se guardó ningún resultado.</p>
 
         <div v-if="outcome === 'running' && !cancelRequested" class="generation-step__actions">
-          <GButton variant="danger" @click="requestCancel">Cancelar</GButton>
+          <GButton variant="danger" class="generation-step__cancel-btn" @click="requestCancel"><template #icon><IconTrash :size="16" /></template>Cancelar generación</GButton>
         </div>
         <div v-else-if="cancelRequested" class="generation-step__cancel-confirm">
           <p>¿Cancelar la generación en curso? El progreso hecho hasta ahora se descarta.</p>
@@ -311,10 +418,22 @@ onBeforeUnmount(closeStream)
       </div>
 
       <div class="generation-step__panel generation-step__panel--preview">
+        <div class="generation-step__preview-topbar">
+          <span class="generation-step__pill generation-step__pill--live"><span class="generation-step__log-dot" />Vista previa en tiempo real</span>
+          <div class="generation-step__stat-pills">
+            <span class="generation-step__stat-pill"><IconCuboid :size="12" />Polígonos (cuboides)<b>{{ cuboidCount }}</b></span>
+            <span class="generation-step__stat-pill"><IconBoneJoint :size="12" />Huesos (rig)<b>{{ boneCount }}</b></span>
+          </div>
+        </div>
         <GenerationPreviewViewport :model="previewModel" class="generation-step__viewport" />
         <div v-if="!hasGeometry && outcome === 'running'" class="generation-step__preview-overlay">
           <span class="generation-step__spinner generation-step__spinner--lg" />
           <p>Esperando la primera geometría…</p>
+        </div>
+        <div class="generation-step__viewport-hints">
+          <span><IconRotate :size="12" />Orbitar</span>
+          <span><IconHand :size="12" />Panorámica</span>
+          <span><IconSearch :size="12" />Zoom</span>
         </div>
       </div>
     </div>
@@ -423,9 +542,10 @@ onBeforeUnmount(closeStream)
 
 .generation-step__stage {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
   min-height: 32px;
+  padding: var(--space-1) 0;
   color: var(--muted);
   font-size: var(--text-sm);
 }
@@ -446,8 +566,48 @@ onBeforeUnmount(closeStream)
   width: 20px;
   height: 20px;
   flex-shrink: 0;
+  margin-top: 1px;
   border-radius: 999px;
   border: var(--border-width) solid var(--border);
+}
+
+.generation-step__stage-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.generation-step__stage-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.generation-step__stage-title {
+  color: inherit;
+  font-weight: inherit;
+}
+
+.generation-step__stage-desc {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 1px;
+}
+
+.generation-step__stage--done .generation-step__stage-desc {
+  color: var(--muted);
+}
+
+.generation-step__stage-time {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .generation-step__stage--done .generation-step__stage-marker {
@@ -598,5 +758,148 @@ onBeforeUnmount(closeStream)
 .generation-step__cancel-confirm-actions {
   display: flex;
   gap: var(--space-2);
+}
+
+.generation-step__cancel-btn {
+  width: 100%;
+}
+
+/* ---- Post-074: registro en tiempo real ---- */
+.generation-step__log {
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.generation-step__log-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2);
+}
+
+.generation-step__log-title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.generation-step__log-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.generation-step__log-status--failed {
+  color: var(--danger);
+}
+
+.generation-step__log-status--cancelled,
+.generation-step__log-status--completed {
+  color: var(--muted);
+}
+
+.generation-step__log-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 20%, transparent);
+  flex-shrink: 0;
+}
+
+.generation-step__log-lines {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 110px;
+  overflow-y: auto;
+}
+
+.generation-step__log-empty {
+  margin: 0;
+  font-style: italic;
+}
+
+/* ---- Post-074: badges y hints sobre el preview ---- */
+.generation-step__preview-topbar {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  right: var(--space-3);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  z-index: 2;
+}
+
+.generation-step__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px var(--space-3);
+  border-radius: 999px;
+  background: rgba(17, 24, 32, 0.85);
+  border: var(--border-width) solid var(--border);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  backdrop-filter: blur(4px);
+}
+
+.generation-step__pill--live {
+  color: var(--accent);
+}
+
+.generation-step__stat-pills {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.generation-step__stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(17, 24, 32, 0.85);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 6px var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--muted);
+  backdrop-filter: blur(4px);
+}
+
+.generation-step__stat-pill b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.generation-step__viewport-hints {
+  position: absolute;
+  bottom: var(--space-3);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  gap: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--muted);
+  background: rgba(17, 24, 32, 0.85);
+  border: var(--border-width) solid var(--border);
+  border-radius: 999px;
+  padding: 6px var(--space-4);
+  backdrop-filter: blur(4px);
+}
+
+.generation-step__viewport-hints span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 </style>

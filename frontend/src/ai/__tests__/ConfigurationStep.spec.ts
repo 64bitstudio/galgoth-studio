@@ -55,4 +55,46 @@ describe('ConfigurationStep.vue', () => {
     expect(wrapper.text()).toContain('No se pudo crear el mob.')
     expect(wrapper.find('button.g-button--primary').attributes('disabled')).toBeDefined()
   })
+
+  // Post-074 -- rediseño del wizard.
+  describe('rediseño post-074', () => {
+    it('el contador de caracteres del nombre refleja lo escrito, hasta el máximo de 32', async () => {
+      const wrapper = mountStep()
+
+      expect(wrapper.get('.configuration-step__count').text()).toBe('0/32')
+
+      await wrapper.find('input[aria-label="Nombre del mob"]').setValue('Carcomido')
+
+      expect(wrapper.get('.configuration-step__count').text()).toBe('9/32')
+      expect(wrapper.find('input[aria-label="Nombre del mob"]').attributes('maxlength')).toBe('32')
+    })
+
+    it('"Rig estimado" cambia según el tipo de entidad elegido (decisión del PO)', async () => {
+      const wrapper = mountStep()
+
+      expect(wrapper.text()).toContain('Estándar (bipedal)') // humanoid, default
+
+      const arachnidButton = wrapper.findAll('.configuration-step__base-type').find((b) => b.text() === 'Arácnido')!
+      await arachnidButton.trigger('click')
+      expect(wrapper.text()).toContain('Radial (8 patas)')
+
+      const flyingButton = wrapper.findAll('.configuration-step__base-type').find((b) => b.text() === 'Volador')!
+      await flyingButton.trigger('click')
+      expect(wrapper.text()).toContain('Alado (par de alas)')
+    })
+
+    it('la resolución de textura usa GSelect, nunca un <select> nativo', () => {
+      const wrapper = mountStep()
+
+      expect(wrapper.find('select').exists()).toBe(false)
+      expect(wrapper.findComponent({ name: 'GSelect' }).exists()).toBe(true)
+    })
+
+    it('muestra la fila informativa fija (Vista previa / Formato de salida)', () => {
+      const wrapper = mountStep()
+
+      expect(wrapper.text()).toContain('Modelo 3D interactivo')
+      expect(wrapper.text()).toContain('.bbmodel (Galgoth)')
+    })
+  })
 })

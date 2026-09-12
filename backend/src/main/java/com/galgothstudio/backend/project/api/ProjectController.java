@@ -46,7 +46,7 @@ public class ProjectController {
 
 	@PatchMapping("/{projectId}")
 	public ProjectDetail rename(@PathVariable UUID projectId, @RequestBody RenameProjectRequest request) {
-		return projectService.rename(projectId, request.name());
+		return projectService.rename(projectId, request.name(), request.description());
 	}
 
 	@DeleteMapping("/{projectId}")

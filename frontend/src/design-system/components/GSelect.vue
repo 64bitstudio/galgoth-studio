@@ -26,6 +26,12 @@
  * genéricos de TypeScript sobre `<script setup>` (limitación real de Vue
  * SFC con `defineProps` genérico + `withDefaults`).
  *
+ * Slot `#icon` opcional (rediseño del wizard "Crear con IA", post-074):
+ * ícono decorativo a la izquierda del valor elegido, DENTRO del trigger
+ * (ej. el ícono de resolución en "Resolución de textura" de
+ * `ConfigurationStep.vue`) -- vacío por defecto, sin ningún efecto en los
+ * consumidores existentes que no lo usan.
+ *
  * Corrección visual post-058 -- `.g-select__list` usa `app-scroll` (misma
  * utilidad del design system del ticket 039) para que su scroll interno
  * (listas largas, ej. todas las caras UV) use la scrollbar delgada/oscura
@@ -58,6 +64,9 @@ const rootRef = ref<HTMLElement>()
 const listRef = ref<HTMLElement>()
 const isOpen = ref(false)
 const focusedIndex = ref(-1)
+/** Ticket 071 -- `position: fixed` + coordenadas medidas en vez de `absolute` (ver `computePlacement`): un `GSelect` dentro de un contenedor con `overflow` (ej. `.app-dialog__body`) se recortaba/generaba scroll interno en vez de desbordar por encima, como corresponde a un popover real. */
+const listStyle = ref<{ top: string; left: string; width: string }>({ top: '0px', left: '0px', width: '0px' })
+const openUpward = ref(false)
 
 const selectedOption = computed(() => props.options.find((o) => o.value === props.modelValue) ?? null)
 const triggerText = computed(() => selectedOption.value?.label ?? props.placeholder ?? '')
@@ -67,10 +76,29 @@ function close(): void {
   focusedIndex.value = -1
 }
 
+/** Mismo criterio que `GMenu.vue` (ticket 071): decide arriba/abajo según el espacio real contra el viewport -- nunca debe desbordar la ventana. */
+function computePlacement(): void {
+  const trigger = rootRef.value?.querySelector<HTMLButtonElement>('.g-select__trigger')
+  if (!trigger || !listRef.value) {
+    return
+  }
+  const triggerRect = trigger.getBoundingClientRect()
+  const listHeight = listRef.value.getBoundingClientRect().height
+  const spaceBelow = window.innerHeight - triggerRect.bottom
+  const spaceAbove = triggerRect.top
+  openUpward.value = spaceBelow < listHeight && spaceAbove > spaceBelow
+  listStyle.value = {
+    left: `${triggerRect.left}px`,
+    width: `${triggerRect.width}px`,
+    top: openUpward.value ? `${triggerRect.top - listHeight - 6}px` : `${triggerRect.bottom + 6}px`,
+  }
+}
+
 function open(): void {
   focusedIndex.value = props.options.findIndex((o) => o.value === props.modelValue)
   isOpen.value = true
   nextTick(() => {
+    computePlacement()
     const target = Math.max(focusedIndex.value, 0)
     const buttons = listRef.value?.querySelectorAll<HTMLButtonElement>('.g-select__option')
     buttons?.[target]?.focus()
@@ -146,12 +174,21 @@ onBeforeUnmount(() => document.removeEventListener('click', handleDocumentClick)
       @click="toggle"
       @keydown="handleTriggerKeydown"
     >
+      <span v-if="$slots.icon" class="g-select__icon"><slot name="icon" /></span>
       <span class="g-select__value">{{ triggerText }}</span>
       <svg class="g-select__chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true">
         <path d="M5 7.5l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
     </button>
-    <div v-if="isOpen" ref="listRef" class="g-select__list app-scroll" role="listbox" :aria-label="label" @keydown="handleListKeydown">
+    <div
+      v-if="isOpen"
+      ref="listRef"
+      class="g-select__list app-scroll"
+      :style="listStyle"
+      role="listbox"
+      :aria-label="label"
+      @keydown="handleListKeydown"
+    >
       <button
         v-for="(option, index) in options"
         :key="option.value"
@@ -219,9 +256,18 @@ onBeforeUnmount(() => document.removeEventListener('click', handleDocumentClick)
 }
 
 .g-select__value {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
+}
+
+/* Slot `#icon` opcional (ver docstring arriba) -- mismo tono que el chevron, nunca se encoge. */
+.g-select__icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--muted);
 }
 
 .g-select__chevron {
@@ -237,12 +283,10 @@ onBeforeUnmount(() => document.removeEventListener('click', handleDocumentClick)
   color: var(--accent);
 }
 
+/* `position: fixed` + `top`/`left`/`width` inline (ver `computePlacement`, ticket 071) en vez de `absolute` -- así el popover desborda por encima de CUALQUIER ancestro con `overflow` (ej. `.app-dialog__body`) en vez de recortarse/generar scroll interno ahí. */
 .g-select__list {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
+  position: fixed;
   z-index: 50;
-  min-width: 100%;
   background: var(--surface);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-md);

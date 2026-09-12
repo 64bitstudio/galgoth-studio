@@ -46,6 +46,14 @@ describe('generationStages', () => {
         expect(stage.hint.trim().length).toBeGreaterThan(0)
       }
     })
+
+    // Post-074 -- `doneHint` es la descripción mostrada una vez que ESA etapa ya se completó (distinta de `hint`, en progreso).
+    it('cada etapa trae también un doneHint no vacío, distinto del hint en progreso', () => {
+      for (const stage of STAGE_ORDER) {
+        expect(stage.doneHint.trim().length).toBeGreaterThan(0)
+        expect(stage.doneHint).not.toBe(stage.hint)
+      }
+    })
   })
 
   describe('findStageIndex', () => {

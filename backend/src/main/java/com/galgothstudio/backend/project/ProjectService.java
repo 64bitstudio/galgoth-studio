@@ -71,10 +71,12 @@ public class ProjectService {
 		return toDetail(project, (int) mobRepository.countByProjectIdAndDeletedAtIsNull(projectId));
 	}
 
+	/** Ticket 073 -- `description` siempre explícita (nunca ambigua entre "ausente" y "null"), ver docstring de `RenameProjectRequest`. */
 	@Transactional
-	public ProjectDetail rename(UUID projectId, String newName) {
+	public ProjectDetail rename(UUID projectId, String newName, String description) {
 		ProjectEntity project = requireProject(projectId);
 		project.setName(requireValidName(newName));
+		project.setDescription(normalizeDescription(description));
 		project.setUpdatedAt(Instant.now());
 		projectRepository.save(project);
 		return toDetail(project, (int) mobRepository.countByProjectIdAndDeletedAtIsNull(projectId));
@@ -92,6 +94,7 @@ public class ProjectService {
 		ProjectEntity original = requireProject(projectId);
 		Instant now = Instant.now();
 		ProjectEntity copy = new ProjectEntity(UUID.randomUUID(), original.getName() + COPY_SUFFIX, original.getOwnerRef(), now, now);
+		copy.setDescription(original.getDescription()); // ticket 073 -- copia profunda: la descripción también se copia.
 		projectRepository.save(copy);
 
 		List<MobEntity> mobs = mobRepository.findByProjectIdAndDeletedAtIsNullOrderByUpdatedAtDesc(projectId);
@@ -140,8 +143,17 @@ public class ProjectService {
 		return name.strip();
 	}
 
+	/** Ticket 073 -- opcional: `null`/blank se guarda como `null` (nunca una cadena vacía), sin validación de contenido (a diferencia del nombre). */
+	private String normalizeDescription(String description) {
+		if (description == null || description.isBlank()) {
+			return null;
+		}
+		return description.strip();
+	}
+
 	private ProjectDetail toDetail(ProjectEntity project, int mobCount) {
-		return new ProjectDetail(project.getId().toString(), project.getName(), mobCount, project.getCreatedAt(), project.getUpdatedAt());
+		return new ProjectDetail(
+				project.getId().toString(), project.getName(), project.getDescription(), mobCount, project.getCreatedAt(), project.getUpdatedAt());
 	}
 
 	private ProjectSummary toSummary(ProjectEntity project) {
@@ -149,7 +161,25 @@ public class ProjectService {
 		List<MobThumbnail> thumbnails =
 				mobs.stream().limit(3).map(m -> new MobThumbnail(m.getId().toString(), m.getThumbnailKey())).toList();
 		return new ProjectSummary(
-				project.getId().toString(), project.getName(), mobs.size(), thumbnails, project.getCreatedAt(), project.getUpdatedAt());
+				project.getId().toString(),
+				project.getName(),
+				project.getDescription(),
+				mobs.size(),
+				thumbnails,
+				deriveStatus(mobs),
+				project.getCreatedAt(),
+				project.getUpdatedAt());
+	}
+
+	/**
+	 * Ticket 072 -- "active" si ALGÚN mob del proyecto ya salió de draft
+	 * (`in_progress`/`ready`); "draft" si todos siguen en draft o el
+	 * proyecto no tiene ningún mob todavía. Reutiliza la lista de mobs ya
+	 * cargada para las miniaturas -- sin query adicional.
+	 */
+	private String deriveStatus(List<MobEntity> mobs) {
+		boolean hasNonDraftMob = mobs.stream().anyMatch(m -> !"draft".equals(m.getStatus()));
+		return hasNonDraftMob ? "active" : "draft";
 	}
 
 }

@@ -27,20 +27,51 @@ describe('ProjectNameModal.vue', () => {
     expect((wrapper.find('input').element as HTMLInputElement).value).toBe('')
   })
 
-  it('modo rename: título "Renombrar proyecto" y campo pre-llenado con initialName', () => {
+  it('modo rename: título "Editar proyecto" y campo pre-llenado con initialName', () => {
     const wrapper = mount(ProjectNameModal, { props: { mode: 'rename', initialName: 'Galgoth' } })
 
-    expect(wrapper.text()).toContain('Renombrar proyecto')
+    expect(wrapper.text()).toContain('Editar proyecto')
     expect((wrapper.find('input').element as HTMLInputElement).value).toBe('Galgoth')
   })
 
-  it('confirmar con un nombre válido emite confirm con el nombre recortado (trim)', async () => {
+  // Ticket 073 -- el campo de descripción solo existe en modo "rename" (create no lo pide, AC #3 de HU-01).
+  it('modo create: no muestra el campo de descripción', () => {
+    const wrapper = mount(ProjectNameModal, { props: { mode: 'create' } })
+
+    expect(wrapper.find('textarea').exists()).toBe(false)
+  })
+
+  it('modo rename: muestra el campo de descripción pre-llenado con initialDescription', () => {
+    const wrapper = mount(ProjectNameModal, { props: { mode: 'rename', initialName: 'Galgoth', initialDescription: 'Un bosque maldito.' } })
+
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('Un bosque maldito.')
+  })
+
+  it('confirmar con un nombre válido emite confirm con el nombre recortado (trim) y descripción null (modo create)', async () => {
     const wrapper = mount(ProjectNameModal, { props: { mode: 'create' } })
 
     await wrapper.find('input').setValue('  Carcomido  ')
     await wrapper.findAll('button').find((b) => b.text() === 'Crear proyecto')!.trigger('click')
 
-    expect(wrapper.emitted('confirm')).toEqual([['Carcomido']])
+    expect(wrapper.emitted('confirm')).toEqual([['Carcomido', null]])
+  })
+
+  it('modo rename: confirmar emite confirm con nombre y descripción recortados (trim)', async () => {
+    const wrapper = mount(ProjectNameModal, { props: { mode: 'rename', initialName: 'Galgoth' } })
+
+    await wrapper.find('input').setValue('Galgoth')
+    await wrapper.find('textarea').setValue('  Un bosque maldito.  ')
+    await wrapper.findAll('button').find((b) => b.text() === 'Guardar')!.trigger('click')
+
+    expect(wrapper.emitted('confirm')).toEqual([['Galgoth', 'Un bosque maldito.']])
+  })
+
+  it('modo rename: descripción vacía emite null, no una cadena vacía', async () => {
+    const wrapper = mount(ProjectNameModal, { props: { mode: 'rename', initialName: 'Galgoth' } })
+
+    await wrapper.findAll('button').find((b) => b.text() === 'Guardar')!.trigger('click')
+
+    expect(wrapper.emitted('confirm')).toEqual([['Galgoth', null]])
   })
 
   it('confirmar con el campo vacío muestra un error y NO emite confirm', async () => {
@@ -66,7 +97,7 @@ describe('ProjectNameModal.vue', () => {
     await wrapper.find('input').setValue('Tejedora')
     await wrapper.find('input').trigger('keyup.enter')
 
-    expect(wrapper.emitted('confirm')).toEqual([['Tejedora']])
+    expect(wrapper.emitted('confirm')).toEqual([['Tejedora', null]])
   })
 
   it('clic en el propio <dialog> (el ::backdrop nativo aterriza ahí) emite cancel', async () => {

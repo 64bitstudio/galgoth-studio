@@ -120,8 +120,11 @@ function backToEditor(): void {
   router.push(`/projects/${projectId}/mobs/${mobId}/edit`)
 }
 
+/** Ticket 071 -- "Inicio" ya NO es sinónimo de "Mis proyectos": navega a "/" (HomeView.vue), no a "/projects". */
 function handleSidebarSelect(key: GSidebarKey): void {
-  if (key === 'home' || key === 'projects') {
+  if (key === 'home') {
+    router.push('/')
+  } else if (key === 'projects') {
     router.push('/projects')
   }
 }

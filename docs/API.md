@@ -31,6 +31,16 @@ DELETE /api/mobs/{mobId}   -- Eliminar, soft-delete (ticket 039)
 - **`PATCH /api/mobs/{mobId}`** — body `{name}`. Mismo criterio de validación que crear (`400 Bad Request`, `error: "INVALID_MOB_REQUEST"` si el nombre está vacío). `404 Not Found` (`MOB_NOT_FOUND`) si no existe.
 - **`DELETE /api/mobs/{mobId}`** — `204 No Content`. Soft-delete (`mobs.deleted_at`, `V2__mobs_soft_delete.sql`) -- mismo mecanismo EXACTO que `projects.deleted_at` (021): ningún FK hacia `mobs` (`mob_revisions`/`mob_drafts`/`reference_images`/`ai_jobs`) tiene `ON DELETE CASCADE`, un hard-delete fallaría por violación de FK en cualquier mob con historial real. `404 Not Found` (`MOB_NOT_FOUND`) si no existe.
 
+### Mobs recientes cruzando proyectos (ticket `071`, rediseño de Inicio)
+
+Implementado en `backend/.../project/api/MobRecentController.java`. Ruta propia `/api/mobs/recent` (segmento literal, no colisiona con el path-variable `/api/mobs/{mobId}` de `MobDetailController` -- Spring resuelve literales antes que variables). Único endpoint del CRUD de mobs que NO requiere `projectId` conocido de antemano: "Continuar trabajando" (Inicio) necesita los mobs más recientes de CUALQUIER proyecto, algo que `GET /api/projects/{projectId}/mobs` no puede resolver sin N+1 requests -- decisión explícita del Product Owner (endpoint dedicado en vez de agregación client-side).
+
+```text
+GET    /api/mobs/recent?limit=N   -- los N mobs editados más recientemente, de todos los proyectos
+```
+
+- **`GET /api/mobs/recent`** — `RecentMobSummary[]` (id, projectId, name, baseType, status, thumbnailKey, updatedAt) -- mismo shape que `MobSummary` más `projectId` (el frontend lo necesita para navegar a `/projects/{projectId}/mobs/{mobId}/edit`, ya que el mob puede ser de cualquier proyecto). `limit` es opcional (default 3, tope 20) -- un valor ausente/inválido (`<1`, no numérico) cae al default en vez de `400 Bad Request`, es un detalle de presentación (cuántas cards caben en la fila), no un parámetro de negocio. Excluye mobs soft-deleted y mobs cuyo proyecto esté soft-deleted, ordenado por `updatedAt` descendente.
+
 ### CRUD de proyectos (ticket `021`, HU-01/HU-02)
 
 Implementados en `backend/.../project/api/ProjectController.java` + `ProjectService`.
@@ -45,9 +55,9 @@ POST   /api/projects/{id}/duplicate -- Duplicate (copia PROFUNDA: proyecto + tod
 ```
 
 - **`POST /api/projects`** — body `{name}`. `201 Created` con el `ProjectDetail` si el nombre es válido; `400 Bad Request` (`error: "INVALID_PROJECT_NAME"`) si está vacío/en blanco (AC #2) -- ningún proyecto se crea.
-- **`GET /api/projects`** — devuelve `ProjectSummary[]` (id, name, mobCount, mobThumbnails ≤3, createdAt, updatedAt), sin los soft-deleted, ordenados por `updatedAt` descendente. `mobThumbnails[].thumbnailKey` es `null` mientras no exista pipeline de thumbnails (ticket futuro) -- el frontend renderiza un placeholder genérico, nunca bloquea el listado (AC #5). El frontend calcula el indicador "+N" como `mobCount - 3` cuando `mobCount > 3` (AC #3).
-- **`GET /api/projects/{id}`** — `ProjectDetail` (sin el grid completo de mobs, eso es HU-04/ticket 022); `404 Not Found` (`PROJECT_NOT_FOUND`) si no existe o está soft-deleted.
-- **`PATCH /api/projects/{id}`** — body `{name}`. Mismo criterio de validación que crear.
+- **`GET /api/projects`** — devuelve `ProjectSummary[]` (id, name, description, mobCount, mobThumbnails ≤3, status, createdAt, updatedAt), sin los soft-deleted, ordenados por `updatedAt` descendente. `mobThumbnails[].thumbnailKey` es `null` mientras no exista pipeline de thumbnails (ticket futuro) -- el frontend renderiza un placeholder genérico, nunca bloquea el listado (AC #5). El frontend calcula el indicador "+N" como `mobCount - 3` cuando `mobCount > 3` (AC #3). `status` (ticket 072, `"active"`/`"draft"`) es DERIVADO, no una columna real de `projects` -- `"active"` si el proyecto tiene al menos un mob fuera de `draft` (`in_progress`/`ready`), `"draft"` si todos sus mobs están en draft o no tiene ninguno.
+- **`GET /api/projects/{id}`** — `ProjectDetail` (id, name, description, mobCount, createdAt, updatedAt; sin el grid completo de mobs, eso es HU-04/ticket 022); `404 Not Found` (`PROJECT_NOT_FOUND`) si no existe o está soft-deleted. `description` (ticket 073) es opcional, `null` si el proyecto no tiene.
+- **`PATCH /api/projects/{id}`** — body `{name, description}`. Mismo criterio de validación de `name` que crear. `description` (ticket 073) SIEMPRE explícita en el body -- el contrato espera que todo caller la reenvíe tal cual si no la está cambiando (viaja tanto en `ProjectSummary` como en `ProjectDetail` para que cualquier pantalla pueda reenviarla sin conocerla de antemano). Un body que la omita la deja en `null` -- comportamiento intencional y documentado, no una ambigüedad oculta.
 - **`DELETE /api/projects/{id}`** — `204 No Content`. Soft-delete -- el proyecto deja de aparecer en cualquier consulta, tratado como "no existe" en adelante.
 - **`POST /api/projects/{id}/duplicate`** — `201 Created` con el `ProjectDetail` de la copia (`name` = original + `" (copia)"`). Copia profunda real: cada mob del original se recrea con nuevo id, y se copian TODAS sus `mob_revisions` (mismo `revision_number`, mismo `model_jsonb`) más su `mob_drafts` actual si existe -- decisión explícita del Product Owner (ticket 021).
 - **"Export"** del menú de acciones del dashboard (mockup 01) está deshabilitado en el frontend -- no existe ningún endpoint de exportación de proyecto expuesto todavía (decisión del Product Owner, ticket 021; el export de un MOB individual vía `BBModelExporterV5`/V4 es un servicio de dominio interno sin controlador REST, épica futura).

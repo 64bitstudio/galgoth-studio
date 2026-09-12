@@ -2,11 +2,16 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 /**
  * Ticket 021: primeras rutas productivas reales -- "/" y "/projects"
- * apuntan al mismo dashboard "Mis proyectos" (simplificación consciente,
- * ver el comentario de cabecera de `ProjectsDashboard.vue`: el mockup
- * separa "Inicio" de "Mis proyectos", el AC de este ticket solo describe
- * el listado completo). "/projects/:id" apunta a `ProjectDetail.vue`
- * (ticket 022, HU-04) -- reemplaza el placeholder mínimo del 021.
+ * apuntaban al mismo dashboard "Mis proyectos" (simplificación
+ * consciente, documentada entonces en la cabecera de
+ * `ProjectsDashboard.vue`: el mockup separaba "Inicio" de "Mis
+ * proyectos", el AC de ese ticket solo describía el listado completo).
+ *
+ * Ticket 071 (rediseño de Inicio, fidelidad visual estricta a
+ * `rediseno.png`): "/" pasa a apuntar a `HomeView.vue` (saludo + CTAs +
+ * "Continuar trabajando" + "Proyectos recientes") -- ya no es un alias de
+ * "/projects". `ProjectsDashboard.vue` ("Mis proyectos", listado
+ * completo) sigue en "/projects", sin cambios.
  */
 const router = createRouter({
   history: createWebHistory(),
@@ -14,7 +19,7 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: () => import('../projects/ProjectsDashboard.vue'),
+      component: () => import('../projects/HomeView.vue'),
     },
     {
       path: '/projects',

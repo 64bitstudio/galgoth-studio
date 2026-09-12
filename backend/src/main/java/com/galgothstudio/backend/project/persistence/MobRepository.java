@@ -3,7 +3,9 @@ package com.galgothstudio.backend.project.persistence;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
 public interface MobRepository extends JpaRepository<MobEntity, UUID> {
 
@@ -24,5 +26,20 @@ public interface MobRepository extends JpaRepository<MobEntity, UUID> {
 	long countByProjectIdAndDeletedAtIsNull(UUID projectId);
 
 	Optional<MobEntity> findByIdAndDeletedAtIsNull(UUID id);
+
+	/**
+	 * Ticket 071 -- "Continuar trabajando" (Inicio) necesita los mobs más
+	 * recientes CRUZANDO todos los proyectos, algo que ningún método
+	 * existente cubre (todos requieren `projectId`). Sin relación JPA
+	 * entre `MobEntity`/`ProjectEntity` (solo el FK crudo `project_id`),
+	 * así que el filtro "proyecto no eliminado" se expresa como subquery
+	 * en JPQL -- excluye tanto mobs soft-deleted como mobs cuyo proyecto
+	 * esté soft-deleted (un proyecto eliminado no debe "seguir apareciendo"
+	 * indirectamente vía sus mobs en Inicio).
+	 */
+	@Query("SELECT m FROM MobEntity m WHERE m.deletedAt IS NULL "
+			+ "AND m.projectId IN (SELECT p.id FROM ProjectEntity p WHERE p.deletedAt IS NULL) "
+			+ "ORDER BY m.updatedAt DESC")
+	List<MobEntity> findRecentAcrossProjects(Pageable pageable);
 
 }

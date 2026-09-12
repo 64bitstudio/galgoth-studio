@@ -18,6 +18,17 @@ export interface MobSummary {
   updatedAt: string
 }
 
+/**
+ * Ticket 071 -- "Continuar trabajando" (Inicio) necesita mobs recientes
+ * CRUZANDO todos los proyectos; a diferencia de `MobSummary` (siempre
+ * dentro de un proyecto ya conocido por la URL), acá el mob puede ser de
+ * cualquier proyecto, así que el resumen incluye `projectId` para poder
+ * navegar a `/projects/{projectId}/mobs/{mobId}/edit`.
+ */
+export interface RecentMobSummary extends MobSummary {
+  projectId: string
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -59,4 +70,10 @@ export function renameMob(mobId: string, name: string): Promise<MobSummary> {
 /** Ticket 039 -- Eliminar (soft-delete, mismo criterio que `deleteProject`). */
 export function deleteMob(mobId: string): Promise<void> {
   return request<void>(`/api/mobs/${mobId}`, { method: 'DELETE' })
+}
+
+/** Ticket 071 -- "Continuar trabajando" (Inicio). `limit` opcional, mismo default (3) que el backend. */
+export function listRecentMobs(limit?: number): Promise<RecentMobSummary[]> {
+  const query = limit !== undefined ? `?limit=${limit}` : ''
+  return request<RecentMobSummary[]>(`/api/mobs/recent${query}`)
 }

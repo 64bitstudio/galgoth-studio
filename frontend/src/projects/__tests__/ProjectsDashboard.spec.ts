@@ -24,7 +24,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function summary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
-  return { id: 'p1', name: 'Galgoth', mobCount: 0, mobThumbnails: [], createdAt: '', updatedAt: '', ...overrides }
+  return { id: 'p1', name: 'Galgoth', description: null, mobCount: 0, mobThumbnails: [], status: 'draft', createdAt: '', updatedAt: '', ...overrides }
 }
 
 function testRouter(): Router {
@@ -32,8 +32,8 @@ function testRouter(): Router {
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: { template: '<div />' } },
+      { path: '/projects', component: { template: '<div />' } },
       { path: '/projects/:id', component: { template: '<div />' } },
-      { path: '/projects/:projectId/mobs/new-ai', component: { template: '<div />' } },
     ],
   })
 }
@@ -51,12 +51,27 @@ describe('ProjectsDashboard.vue', () => {
     expect(wrapper.text()).toContain('Carcomido')
   })
 
-  it('sin proyectos, muestra el estado vacío', async () => {
+  // Post-073 -- mismo breadcrumb que ProjectDetail.vue, pedido explícito del PO tras revisar el detalle en vivo.
+  it('muestra el breadcrumb "Galgoth Studio > Mis proyectos"', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
     const wrapper = mount(ProjectsDashboard, { global: { plugins: [testRouter()] } })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Todavía no tienes proyectos')
+    const breadcrumb = wrapper.get('.projects-dashboard__breadcrumb')
+    expect(breadcrumb.text()).toContain('Galgoth Studio')
+    expect(breadcrumb.text()).toContain('Mis proyectos')
+    expect(breadcrumb.get('a').attributes('href')).toBe('/')
+  })
+
+  // Ticket 072 -- sin proyectos, la card punteada "Nuevo proyecto" ES el estado vacío (sin mensaje aparte).
+  it('sin proyectos, muestra solo la card "Nuevo proyecto"', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
+    const wrapper = mount(ProjectsDashboard, { global: { plugins: [testRouter()] } })
+    await flushPromises()
+
+    expect(wrapper.find('.project-card').exists()).toBe(false)
+    expect(wrapper.find('.projects-dashboard__new-card').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Crea un nuevo mundo de mobs desde cero')
   })
 
   it('si la carga falla, muestra un mensaje de error explícito', async () => {
@@ -67,62 +82,35 @@ describe('ProjectsDashboard.vue', () => {
     expect(wrapper.text()).toContain('Servidor caído')
   })
 
-  describe('ticket 039 -- "Crear un mob con IA" es la CTA principal', () => {
-    it('está habilitado y ya no muestra "Disponible en una fase futura"', async () => {
-      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
+  // Ticket 072 -- buscador (nuevo en este rediseño), client-side, mismo criterio que el buscador de mobs de ProjectDetail.vue.
+  describe('buscador de proyectos', () => {
+    it('filtra la grilla por nombre', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([summary({ id: 'p1', name: 'Galgoth' }), summary({ id: 'p2', name: 'Bosque Lúgubre' })])))
       const wrapper = mount(ProjectsDashboard, { global: { plugins: [testRouter()] } })
       await flushPromises()
 
-      const aiCta = wrapper.findAll('button').find((b) => b.text().includes('Crear un mob con IA'))!
-      expect(aiCta.attributes('disabled')).toBeUndefined()
-      expect(aiCta.classes()).toContain('projects-dashboard__cta--primary')
-      expect(wrapper.text()).not.toContain('Disponible en una fase futura')
+      await wrapper.get('.projects-dashboard__search-input').setValue('bosque')
+
+      const gridText = wrapper.get('.projects-dashboard__grid').text()
+      expect(gridText).toContain('Bosque Lúgubre')
+      expect(gridText).not.toContain('Galgoth')
     })
 
-    it('sin proyectos todavía, pide el nombre del proyecto nuevo y navega al wizard tras crearlo', async () => {
-      const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-        if (init?.method === 'POST') {
-          return jsonResponse({ id: 'new-id', name: 'Carcomido', mobCount: 0, createdAt: '', updatedAt: '' }, 201)
-        }
-        return jsonResponse([])
-      })
-      vi.stubGlobal('fetch', fetchMock)
-      const router = testRouter()
-      const pushSpy = vi.spyOn(router, 'push')
-      const wrapper = mount(ProjectsDashboard, { global: { plugins: [router] } })
+    it('sin coincidencias, muestra un mensaje explícito (la card "Nuevo proyecto" sigue disponible)', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([summary({ name: 'Galgoth' })])))
+      const wrapper = mount(ProjectsDashboard, { global: { plugins: [testRouter()] } })
       await flushPromises()
 
-      await wrapper.findAll('button').find((b) => b.text().includes('Crear un mob con IA'))!.trigger('click')
-      await wrapper.find('input').setValue('Carcomido')
-      await wrapper.findAll('button').find((b) => b.text() === 'Continuar')!.trigger('click')
-      await flushPromises()
+      await wrapper.get('.projects-dashboard__search-input').setValue('no existe')
 
-      expect(pushSpy).toHaveBeenCalledWith('/projects/new-id/mobs/new-ai')
-    })
-
-    it('con proyectos existentes, permite elegir uno y navega al wizard sin crear ninguno nuevo', async () => {
-      const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-        if (init?.method === 'POST') {
-          throw new Error('no debería crear ningún proyecto -- se eligió uno existente')
-        }
-        return jsonResponse([summary({ id: 'p1', name: 'Galgoth' })])
-      })
-      vi.stubGlobal('fetch', fetchMock)
-      const router = testRouter()
-      const pushSpy = vi.spyOn(router, 'push')
-      const wrapper = mount(ProjectsDashboard, { global: { plugins: [router] } })
-      await flushPromises()
-
-      await wrapper.findAll('button').find((b) => b.text().includes('Crear un mob con IA'))!.trigger('click')
-      await wrapper.findAll('button').find((b) => b.text() === 'Continuar')!.trigger('click')
-      await flushPromises()
-
-      expect(pushSpy).toHaveBeenCalledWith('/projects/p1/mobs/new-ai')
+      expect(wrapper.text()).toContain('Ningún proyecto coincide con "no existe"')
+      expect(wrapper.find('.project-card').exists()).toBe(false)
+      expect(wrapper.find('.projects-dashboard__new-card').exists()).toBe(true)
     })
   })
 
   describe('crear proyecto (HU-01)', () => {
-    it('abre el modal, crea el proyecto y redirige a su detalle, AC #1', async () => {
+    it('el botón "+ Nuevo proyecto" del encabezado abre el modal, crea el proyecto y redirige a su detalle, AC #1', async () => {
       const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
         if (init?.method === 'POST') {
           return jsonResponse({ id: 'new-id', name: 'Tejedora', mobCount: 0, createdAt: '', updatedAt: '' }, 201)
@@ -135,12 +123,22 @@ describe('ProjectsDashboard.vue', () => {
       const wrapper = mount(ProjectsDashboard, { global: { plugins: [router] } })
       await flushPromises()
 
-      await wrapper.findAll('button').find((b) => b.text().includes('Crear nuevo proyecto'))!.trigger('click')
-      await wrapper.find('input').setValue('Tejedora')
-      await wrapper.findAll('button').find((b) => b.text() === 'Crear proyecto')!.trigger('click')
+      await wrapper.get('.projects-dashboard__new-btn').trigger('click')
+      await wrapper.get('.app-dialog').get('input').setValue('Tejedora')
+      await wrapper.get('.app-dialog').findAll('button').find((b) => b.text() === 'Crear proyecto')!.trigger('click')
       await flushPromises()
 
       expect(pushSpy).toHaveBeenCalledWith('/projects/new-id')
+    })
+
+    it('la card punteada "Nuevo proyecto" de la grilla abre el mismo modal', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
+      const wrapper = mount(ProjectsDashboard, { global: { plugins: [testRouter()] } })
+      await flushPromises()
+
+      await wrapper.get('.projects-dashboard__new-card').trigger('click')
+
+      expect(wrapper.find('.app-dialog').exists()).toBe(true)
     })
 
     it('un nombre rechazado por el backend muestra el error sin cerrar el flujo', async () => {
@@ -154,9 +152,9 @@ describe('ProjectsDashboard.vue', () => {
       const wrapper = mount(ProjectsDashboard, { global: { plugins: [testRouter()] } })
       await flushPromises()
 
-      await wrapper.findAll('button').find((b) => b.text().includes('Crear nuevo proyecto'))!.trigger('click')
-      await wrapper.find('input').setValue('x') // el frontend valida vacío; forzamos el rechazo del backend igual
-      await wrapper.findAll('button').find((b) => b.text() === 'Crear proyecto')!.trigger('click')
+      await wrapper.get('.projects-dashboard__new-btn').trigger('click')
+      await wrapper.get('.app-dialog').get('input').setValue('x') // el frontend valida vacío; forzamos el rechazo del backend igual
+      await wrapper.get('.app-dialog').findAll('button').find((b) => b.text() === 'Crear proyecto')!.trigger('click')
       await flushPromises()
 
       expect(wrapper.text()).toContain('El nombre no puede estar vacío.')
@@ -185,14 +183,40 @@ describe('ProjectsDashboard.vue', () => {
       const renameItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Renombrar'))!
       await renameItem.trigger('click')
 
-      expect((wrapper.find('input').element as HTMLInputElement).value).toBe('Galgoth')
+      expect((wrapper.get('.app-dialog').get('input').element as HTMLInputElement).value).toBe('Galgoth')
 
-      await wrapper.find('input').setValue('Nuevo nombre')
+      await wrapper.get('.app-dialog').get('input').setValue('Nuevo nombre')
       await wrapper.findAll('button').find((b) => b.text() === 'Guardar')!.trigger('click')
       await flushPromises()
 
       const patchCall = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === 'PATCH')!;
       expect(String(patchCall[0])).toContain('/api/projects/p1')
+      expect(JSON.parse((patchCall[1] as RequestInit).body as string)).toEqual({ name: 'Nuevo nombre', description: null })
+    })
+
+    // Ticket 073 -- la descripción existente se precarga en el modal y viaja intacta en el PATCH si no se toca.
+    it('Rename precarga la descripción existente y la reenvía sin cambios', async () => {
+      const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'PATCH') {
+          return jsonResponse({ id: 'p1', name: 'Galgoth', description: 'Un bosque maldito.', mobCount: 0, createdAt: '', updatedAt: '' })
+        }
+        return jsonResponse([summary({ description: 'Un bosque maldito.' })])
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const wrapper = mount(ProjectsDashboard, { global: { plugins: [testRouter()] } })
+      await flushPromises()
+
+      await wrapper.find('.g-menu__trigger').trigger('click')
+      const renameItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Renombrar'))!
+      await renameItem.trigger('click')
+
+      expect((wrapper.get('.app-dialog').get('textarea').element as HTMLTextAreaElement).value).toBe('Un bosque maldito.')
+
+      await wrapper.findAll('button').find((b) => b.text() === 'Guardar')!.trigger('click')
+      await flushPromises()
+
+      const patchCall = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === 'PATCH')!;
+      expect(JSON.parse((patchCall[1] as RequestInit).body as string)).toEqual({ name: 'Galgoth', description: 'Un bosque maldito.' })
     })
 
     it('Duplicate llama al endpoint y refresca la lista', async () => {
@@ -245,7 +269,8 @@ describe('ProjectsDashboard.vue', () => {
       await wrapper.find('.g-menu__trigger').trigger('click')
       const deleteItem = wrapper.findAll('[role="menuitem"]').find((i) => i.text().includes('Eliminar'))!
       await deleteItem.trigger('click')
-      await wrapper.findAll('button').find((b) => b.text() === 'Eliminar')!.trigger('click')
+      // Escopado a `.app-dialog` -- ticket 071: el ítem "Eliminar" del menú ⋮ sigue montado animando su salida (mismo texto que este botón).
+      await wrapper.get('.app-dialog').findAll('button').find((b) => b.text() === 'Eliminar')!.trigger('click')
       await flushPromises()
 
       expect(fetchMock.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === 'DELETE')).toBe(true)
@@ -264,7 +289,7 @@ describe('ProjectsDashboard.vue', () => {
     expect(pushSpy).toHaveBeenCalledWith('/projects/p9')
   })
 
-  it('elegir "Inicio" o "Mis proyectos" en el sidebar navega a /projects (ambos apuntan al mismo dashboard)', async () => {
+  it('ticket 071 -- "Inicio" en el sidebar navega a "/" (ya no es sinónimo de "Mis proyectos"), "Mis proyectos" navega a /projects', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
     const router = testRouter()
     const pushSpy = vi.spyOn(router, 'push')
@@ -275,7 +300,8 @@ describe('ProjectsDashboard.vue', () => {
     await items[0]!.trigger('click') // Inicio
     await items[1]!.trigger('click') // Mis proyectos
 
-    expect(pushSpy).toHaveBeenCalledWith('/projects')
+    expect(pushSpy).toHaveBeenNthCalledWith(1, '/')
+    expect(pushSpy).toHaveBeenNthCalledWith(2, '/projects')
     expect(pushSpy).toHaveBeenCalledTimes(2)
   })
 })

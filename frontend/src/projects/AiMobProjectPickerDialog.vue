@@ -11,9 +11,10 @@
  * Sin proyectos todavía: arranca directo en modo "nuevo proyecto" (no
  * tiene sentido ofrecer un selector vacío).
  */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import AppDialog from '../design-system/components/AppDialog.vue'
 import GButton from '../design-system/components/GButton.vue'
+import GSelect, { type GSelectOption } from '../design-system/components/GSelect.vue'
 import type { ProjectSummary } from './projectsApi'
 
 const props = defineProps<{
@@ -28,6 +29,12 @@ const NEW_PROJECT_VALUE = '__new__'
 const selectedProjectId = ref(props.projects.length > 0 ? props.projects[0]!.id : NEW_PROJECT_VALUE)
 const newProjectName = ref('')
 const validationError = ref<string | null>(null)
+
+/** Ticket 071 -- reemplaza el `<select>` nativo (visualmente inconsistente entre navegadores/SO) por `GSelect.vue`, ya establecido para esto desde el ticket 058. */
+const projectOptions = computed<GSelectOption[]>(() => [
+  ...props.projects.map((project) => ({ value: project.id, label: project.name })),
+  { value: NEW_PROJECT_VALUE, label: '+ Nuevo proyecto' },
+])
 
 function confirm(): void {
   if (props.busy) {
@@ -50,13 +57,10 @@ function confirm(): void {
 
 <template>
   <AppDialog title="¿En qué proyecto?" @cancel="emit('cancel')">
-    <label v-if="projects.length > 0" class="ai-project-picker__label">
-      Proyecto
-      <select v-model="selectedProjectId" class="ai-project-picker__select" aria-label="Proyecto" :disabled="busy">
-        <option v-for="project in projects" :key="project.id" :value="project.id">{{ project.name }}</option>
-        <option :value="NEW_PROJECT_VALUE">+ Nuevo proyecto</option>
-      </select>
-    </label>
+    <div v-if="projects.length > 0" class="ai-project-picker__field">
+      <p class="ai-project-picker__label">Proyecto</p>
+      <GSelect v-model="selectedProjectId" :options="projectOptions" label="Proyecto" :disabled="busy" />
+    </div>
     <label v-if="selectedProjectId === NEW_PROJECT_VALUE" class="ai-project-picker__label">
       Nombre del proyecto nuevo
       <input v-model="newProjectName" type="text" class="ai-project-picker__input" aria-label="Nombre del proyecto nuevo" :disabled="busy" @keyup.enter="confirm" />
@@ -71,6 +75,7 @@ function confirm(): void {
 </template>
 
 <style scoped>
+.ai-project-picker__field,
 .ai-project-picker__label {
   display: flex;
   flex-direction: column;
@@ -79,7 +84,6 @@ function confirm(): void {
   color: var(--muted);
 }
 
-.ai-project-picker__select,
 .ai-project-picker__input {
   min-height: var(--hit-target-min);
   padding: 0 var(--space-3);

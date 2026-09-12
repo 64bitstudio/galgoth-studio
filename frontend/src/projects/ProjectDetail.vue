@@ -18,24 +18,88 @@
  * `rename`) y el menú ⋮ real de cada `MobCard` (Renombrar/Exportar/
  * Eliminar), con diálogos del design system y loading/bloqueo de doble
  * submit reales -- mismo criterio que `ProjectsDashboard.vue`.
+ *
+ * Ticket 073 (rediseño del detalle de proyecto, VoBo del PO sobre el
+ * preview interactivo -- condición explícita, sin componentes nativos,
+ * usando los componentes personalizados ya construidos, y CADA diálogo
+ * con transiciones de entrada/salida sin excepción -- cita completa en
+ * `in-process/073-rediseno-detalle-proyecto.md`):
+ * - Breadcrumb "Galgoth Studio > Mis proyectos > {nombre}".
+ * - Header: descripción (campo nuevo real y editable, mismo lápiz que
+ *   el nombre -- ver `ProjectNameModal.vue`) debajo de la meta-línea.
+ * - Menú ⋮ de acciones DEL PROYECTO (Duplicar/Eliminar -- decisión del
+ *   PO vía AskUserQuestion; Renombrar no está en el menú porque ya
+ *   tiene su propio lápiz junto al título), mismo `GMenu.vue` que ya
+ *   usa `ProjectCard.vue`/`MobCard.vue` -- ninguna lógica nueva de
+ *   dropdown, reusa el componente existente.
+ * - Toolbar con filtros de Tipo/Estado/Ordenar via `GSelect.vue`
+ *   (NUNCA `<select>` nativo -- instrucción explícita del PO), mismos 5
+ *   valores de `AddMobModal.vue` para tipo y los 3 estados reales de
+ *   `MobStatus` para estado.
+ * - `MobCard.vue` rediseñada (ver ese archivo) con el pill de estado
+ *   superpuesto a la miniatura y el tipo de base en el footer.
+ * - TODOS los diálogos (existentes y nuevos) envueltos en
+ *   `<Transition name="app-dialog">` -- ninguno se salta la regla.
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '../design-system/components/ConfirmDialog.vue'
 import GPanel from '../design-system/components/GPanel.vue'
 import GButton from '../design-system/components/GButton.vue'
+import GMenu, { type GMenuItem } from '../design-system/components/GMenu.vue'
+import GSelect, { type GSelectOption } from '../design-system/components/GSelect.vue'
 import GSidebar, { type GSidebarKey } from '../design-system/components/GSidebar.vue'
 import IconButton from '../design-system/components/IconButton.vue'
+import IconChevron from '../design-system/icons/IconChevron.vue'
 import IconEdit from '../design-system/icons/IconEdit.vue'
 import IconSearch from '../design-system/icons/IconSearch.vue'
 import IconPlus from '../design-system/icons/IconPlus.vue'
 import IconSparkle from '../design-system/icons/IconSparkle.vue'
+import { formatRelativeDate } from '../domain/relativeDate'
 import AddMobModal from './AddMobModal.vue'
 import MobCard from './MobCard.vue'
 import MobRenameDialog from './MobRenameDialog.vue'
 import ProjectNameModal from './ProjectNameModal.vue'
-import { ApiError, getProject, renameProject, type ProjectDetail as ProjectDetailDto } from './projectsApi'
-import { createMob, deleteMob, listMobs, renameMob, type BaseType, type MobSummary } from './mobsApi'
+import {
+  ApiError,
+  deleteProject,
+  duplicateProject,
+  getProject,
+  renameProject,
+  type ProjectDetail as ProjectDetailDto,
+} from './projectsApi'
+import { createMob, deleteMob, listMobs, renameMob, type BaseType, type MobStatus, type MobSummary } from './mobsApi'
+
+type TypeFilter = BaseType | 'all'
+type StatusFilter = MobStatus | 'all'
+type SortOption = 'recent' | 'name-asc' | 'name-desc'
+
+const TYPE_OPTIONS: GSelectOption[] = [
+  { value: 'all', label: 'Tipo' },
+  { value: 'humanoid', label: 'Humanoide' },
+  { value: 'arachnid', label: 'Arácnido' },
+  { value: 'quadruped', label: 'Cuadrúpedo' },
+  { value: 'flying', label: 'Volador' },
+  { value: 'custom', label: 'Personalizado' },
+]
+
+const STATUS_OPTIONS: GSelectOption[] = [
+  { value: 'all', label: 'Estado' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'in_progress', label: 'En progreso' },
+  { value: 'ready', label: 'Listo' },
+]
+
+const SORT_OPTIONS: GSelectOption[] = [
+  { value: 'recent', label: 'Más recientes' },
+  { value: 'name-asc', label: 'Nombre A-Z' },
+  { value: 'name-desc', label: 'Nombre Z-A' },
+]
+
+const PROJECT_MENU_ITEMS: GMenuItem[] = [
+  { key: 'duplicate', label: 'Duplicar' },
+  { key: 'delete', label: 'Eliminar', danger: true },
+]
 
 const route = useRoute()
 const router = useRouter()
@@ -46,6 +110,9 @@ const mobs = ref<MobSummary[]>([])
 const loadError = ref<string | null>(null)
 const actionError = ref<string | null>(null)
 const searchQuery = ref('')
+const typeFilter = ref<TypeFilter>('all')
+const statusFilter = ref<StatusFilter>('all')
+const sortBy = ref<SortOption>('recent')
 const showAddMobModal = ref(false)
 
 const showRenameProject = ref(false)
@@ -60,12 +127,51 @@ const pendingDeleteMob = ref<MobSummary | null>(null)
 const deleteMobBusy = ref(false)
 const deleteMobError = ref<string | null>(null)
 
+const duplicatingProject = ref(false)
+const pendingDeleteProject = ref(false)
+const deleteProjectBusy = ref(false)
+const deleteProjectError = ref<string | null>(null)
+
+function mobCountLabel(count: number): string {
+  return count === 1 ? '1 criatura' : `${count} criaturas`
+}
+
+function sortMobs(list: MobSummary[], sort: SortOption): MobSummary[] {
+  const copy = [...list]
+  if (sort === 'name-asc') {
+    copy.sort((a, b) => a.name.localeCompare(b.name))
+  } else if (sort === 'name-desc') {
+    copy.sort((a, b) => b.name.localeCompare(a.name))
+  } else {
+    copy.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  }
+  return copy
+}
+
 const filteredMobs = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
-  if (!query) {
-    return mobs.value
+  let result = mobs.value
+  if (query) {
+    result = result.filter((mob) => mob.name.toLowerCase().includes(query))
   }
-  return mobs.value.filter((mob) => mob.name.toLowerCase().includes(query))
+  if (typeFilter.value !== 'all') {
+    result = result.filter((mob) => mob.baseType === typeFilter.value)
+  }
+  if (statusFilter.value !== 'all') {
+    result = result.filter((mob) => mob.status === statusFilter.value)
+  }
+  return sortMobs(result, sortBy.value)
+})
+
+/** Distingue "sin resultados por el buscador" (mensaje cita el término) de "sin resultados por los filtros" -- mismo dato (`filteredMobs` vacío), redacción distinta según qué lo causó. */
+const noMatchesMessage = computed(() => {
+  if (mobs.value.length === 0 || filteredMobs.value.length > 0) {
+    return null
+  }
+  if (searchQuery.value.trim()) {
+    return `Ningún mob coincide con "${searchQuery.value.trim()}".`
+  }
+  return 'Ningún mob coincide con los filtros aplicados.'
 })
 
 async function load(): Promise<void> {
@@ -92,14 +198,14 @@ async function confirmAddMob(name: string, baseType: BaseType): Promise<void> {
   }
 }
 
-async function confirmRenameProject(name: string): Promise<void> {
+async function confirmRenameProject(name: string, description: string | null): Promise<void> {
   if (renameProjectBusy.value) {
     return
   }
   renameProjectBusy.value = true
   renameProjectError.value = null
   try {
-    await renameProject(projectId, name)
+    await renameProject(projectId, name, description)
     showRenameProject.value = false
     await load()
   } catch (error) {
@@ -179,8 +285,61 @@ function cancelDeleteMob(): void {
   pendingDeleteMob.value = null
 }
 
+/** Ticket 073 -- menú ⋮ del PROYECTO (no de un mob): Duplicar/Eliminar, mismo criterio de responsabilidad que `ProjectsDashboard.vue`. */
+async function handleProjectAction(actionKey: string): Promise<void> {
+  if (actionKey === 'duplicate') {
+    await handleDuplicateProject()
+  } else if (actionKey === 'delete') {
+    deleteProjectError.value = null
+    pendingDeleteProject.value = true
+  }
+}
+
+async function handleDuplicateProject(): Promise<void> {
+  if (duplicatingProject.value) {
+    return // bloquea doble submit real -- un segundo clic mientras el primero todavía no respondió no dispara otra duplicación.
+  }
+  duplicatingProject.value = true
+  try {
+    const duplicated = await duplicateProject(projectId)
+    actionError.value = null
+    await router.push(`/projects/${duplicated.id}`)
+  } catch (error) {
+    actionError.value = error instanceof ApiError ? error.message : 'No se pudo duplicar el proyecto.'
+  } finally {
+    duplicatingProject.value = false
+  }
+}
+
+async function confirmDeleteProject(): Promise<void> {
+  if (!pendingDeleteProject.value || deleteProjectBusy.value) {
+    return
+  }
+  deleteProjectBusy.value = true
+  deleteProjectError.value = null
+  try {
+    await deleteProject(projectId)
+    pendingDeleteProject.value = false
+    await router.push('/projects') // se está eliminando el proyecto actualmente abierto -- no queda nada que mostrar acá.
+  } catch (error) {
+    deleteProjectError.value = error instanceof ApiError ? error.message : 'No se pudo eliminar el proyecto.'
+  } finally {
+    deleteProjectBusy.value = false
+  }
+}
+
+function cancelDeleteProject(): void {
+  if (deleteProjectBusy.value) {
+    return
+  }
+  pendingDeleteProject.value = false
+}
+
+/** Ticket 071 -- "Inicio" ya NO es sinónimo de "Mis proyectos": navega a "/" (HomeView.vue), no a este dashboard. */
 function handleSidebarSelect(key: GSidebarKey): void {
-  if (key === 'home' || key === 'projects') {
+  if (key === 'home') {
+    router.push('/')
+  } else if (key === 'projects') {
     router.push('/projects')
   }
 }
@@ -194,76 +353,135 @@ function handleSidebarSelect(key: GSidebarKey): void {
         <p class="project-detail__error">{{ loadError }}</p>
       </GPanel>
       <template v-else-if="project">
+        <nav class="project-detail__breadcrumb" aria-label="Ruta de navegación">
+          <router-link to="/">Galgoth Studio</router-link>
+          <IconChevron :size="12" />
+          <router-link to="/projects">Mis proyectos</router-link>
+          <IconChevron :size="12" />
+          <span>{{ project.name }}</span>
+        </nav>
+
         <div class="project-detail__header">
-          <div class="project-detail__title-row">
-            <h1 class="project-detail__title">{{ project.name }}</h1>
-            <IconButton label="Renombrar proyecto" size="sm" @click="showRenameProject = true"><IconEdit :size="16" /></IconButton>
+          <div class="project-detail__header-main">
+            <div class="project-detail__title-row">
+              <h1 class="project-detail__title">{{ project.name }}</h1>
+              <IconButton label="Editar proyecto" size="sm" @click="showRenameProject = true"><IconEdit :size="16" /></IconButton>
+            </div>
+            <p class="project-detail__meta">{{ mobCountLabel(project.mobCount) }} · {{ formatRelativeDate(project.updatedAt) }}</p>
+            <p v-if="project.description" class="project-detail__description">{{ project.description }}</p>
           </div>
-          <p class="project-detail__meta">{{ project.mobCount }} criaturas</p>
-        </div>
-        <div class="project-detail__header-actions">
-          <router-link :to="`/projects/${projectId}/mobs/new-ai`" class="project-detail__ai-mob">
-            <IconSparkle :size="16" />
-            Crear con IA
-          </router-link>
-          <GButton variant="secondary" @click="showAddMobModal = true"><template #icon><IconPlus :size="16" /></template>Agregar mob</GButton>
+          <div class="project-detail__header-actions">
+            <router-link :to="`/projects/${projectId}/mobs/new-ai`" class="project-detail__ai-mob">
+              <IconSparkle :size="16" />
+              Crear con IA
+            </router-link>
+            <GButton variant="secondary" @click="showAddMobModal = true"><template #icon><IconPlus :size="16" /></template>Agregar mob</GButton>
+            <span class="project-detail__project-menu">
+              <GMenu :items="PROJECT_MENU_ITEMS" label="Más acciones del proyecto" @select="handleProjectAction" />
+            </span>
+          </div>
         </div>
 
         <p v-if="actionError" class="project-detail__error">{{ actionError }}</p>
 
-        <div class="project-detail__search-wrap">
-          <IconSearch :size="16" class="project-detail__search-icon" />
-          <input v-model="searchQuery" type="search" class="project-detail__search" aria-label="Buscar mobs por nombre" placeholder="Buscar mobs..." />
+        <div class="project-detail__toolbar">
+          <div class="project-detail__search-wrap">
+            <IconSearch :size="16" class="project-detail__search-icon" />
+            <input v-model="searchQuery" type="search" class="project-detail__search" aria-label="Buscar criaturas" placeholder="Buscar criaturas..." />
+          </div>
+          <GSelect
+            class="project-detail__filter"
+            :model-value="typeFilter"
+            :options="TYPE_OPTIONS"
+            label="Filtrar por tipo"
+            @update:model-value="(v) => (typeFilter = v as TypeFilter)"
+          />
+          <GSelect
+            class="project-detail__filter"
+            :model-value="statusFilter"
+            :options="STATUS_OPTIONS"
+            label="Filtrar por estado"
+            @update:model-value="(v) => (statusFilter = v as StatusFilter)"
+          />
+          <GSelect
+            class="project-detail__filter"
+            :model-value="sortBy"
+            :options="SORT_OPTIONS"
+            label="Ordenar"
+            @update:model-value="(v) => (sortBy = v as SortOption)"
+          />
         </div>
 
         <div class="project-detail__grid">
           <MobCard v-for="mob in filteredMobs" :key="mob.id" :mob="mob" @open="openMob" @action="handleMobAction" />
           <button type="button" class="project-detail__new-mob-cta" @click="showAddMobModal = true">
-            <IconPlus :size="22" />
-            <span>Nuevo mob</span>
+            <span class="project-detail__new-mob-cta-icon"><IconPlus :size="20" /></span>
+            <span class="project-detail__new-mob-cta-title">Nuevo mob</span>
+            <span class="project-detail__new-mob-cta-desc">Agrega una nueva criatura a este proyecto</span>
           </button>
         </div>
-        <p v-if="mobs.length > 0 && filteredMobs.length === 0" class="project-detail__empty">
-          Ningún mob coincide con "{{ searchQuery }}".
-        </p>
+        <p v-if="noMatchesMessage" class="project-detail__empty">{{ noMatchesMessage }}</p>
       </template>
       <GPanel v-else>
         <p>Cargando…</p>
       </GPanel>
     </main>
 
-    <AddMobModal v-if="showAddMobModal" @confirm="confirmAddMob" @cancel="showAddMobModal = false" />
+    <Transition name="app-dialog">
+      <AddMobModal v-if="showAddMobModal" @confirm="confirmAddMob" @cancel="showAddMobModal = false" />
+    </Transition>
 
-    <ProjectNameModal
-      v-if="showRenameProject && project"
-      mode="rename"
-      :initial-name="project.name"
-      :busy="renameProjectBusy"
-      :error="renameProjectError"
-      @confirm="confirmRenameProject"
-      @cancel="showRenameProject = false"
-    />
+    <Transition name="app-dialog">
+      <ProjectNameModal
+        v-if="showRenameProject && project"
+        mode="rename"
+        :initial-name="project.name"
+        :initial-description="project.description"
+        :busy="renameProjectBusy"
+        :error="renameProjectError"
+        @confirm="confirmRenameProject"
+        @cancel="showRenameProject = false"
+      />
+    </Transition>
 
-    <MobRenameDialog
-      v-if="renamingMob"
-      :initial-name="renamingMob.name"
-      :busy="renameMobBusy"
-      :error="renameMobError"
-      @confirm="confirmRenameMob"
-      @cancel="cancelRenameMob"
-    />
+    <Transition name="app-dialog">
+      <MobRenameDialog
+        v-if="renamingMob"
+        :initial-name="renamingMob.name"
+        :busy="renameMobBusy"
+        :error="renameMobError"
+        @confirm="confirmRenameMob"
+        @cancel="cancelRenameMob"
+      />
+    </Transition>
 
-    <ConfirmDialog
-      v-if="pendingDeleteMob"
-      title="Eliminar mob"
-      :message="`¿Eliminar el mob &quot;${pendingDeleteMob.name}&quot;? Esta acción no se puede deshacer.`"
-      confirm-label="Eliminar"
-      danger
-      :busy="deleteMobBusy"
-      :error="deleteMobError"
-      @confirm="confirmDeleteMob"
-      @cancel="cancelDeleteMob"
-    />
+    <Transition name="app-dialog">
+      <ConfirmDialog
+        v-if="pendingDeleteMob"
+        title="Eliminar mob"
+        :message="`¿Eliminar el mob &quot;${pendingDeleteMob.name}&quot;? Esta acción no se puede deshacer.`"
+        confirm-label="Eliminar"
+        danger
+        :busy="deleteMobBusy"
+        :error="deleteMobError"
+        @confirm="confirmDeleteMob"
+        @cancel="cancelDeleteMob"
+      />
+    </Transition>
+
+    <Transition name="app-dialog">
+      <ConfirmDialog
+        v-if="pendingDeleteProject && project"
+        title="Eliminar proyecto"
+        :message="`¿Eliminar el proyecto &quot;${project.name}&quot;? Esta acción no se puede deshacer.`"
+        confirm-label="Eliminar"
+        danger
+        :busy="deleteProjectBusy"
+        :error="deleteProjectError"
+        @confirm="confirmDeleteProject"
+        @cancel="cancelDeleteProject"
+      />
+    </Transition>
   </div>
 </template>
 
@@ -275,15 +493,40 @@ function handleSidebarSelect(key: GSidebarKey): void {
 
 .project-detail {
   flex: 1;
-  padding: var(--space-6);
+  padding: var(--space-6) var(--space-8);
   overflow: auto;
+}
+
+.project-detail__breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  margin-bottom: var(--space-4);
+}
+
+.project-detail__breadcrumb a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.project-detail__breadcrumb a:hover {
+  color: var(--text);
+}
+
+.project-detail__breadcrumb span {
+  color: var(--text);
+  font-weight: 600;
 }
 
 .project-detail__header {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin-bottom: var(--space-4);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
 }
 
 .project-detail__title-row {
@@ -294,17 +537,32 @@ function handleSidebarSelect(key: GSidebarKey): void {
 
 .project-detail__title {
   margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
 .project-detail__meta {
-  margin: 0;
+  margin: 6px 0 0;
   color: var(--muted);
+  font-size: var(--text-md);
+}
+
+.project-detail__description {
+  margin: var(--space-2) 0 0;
+  color: var(--muted);
+  max-width: 640px;
 }
 
 .project-detail__header-actions {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
-  margin-bottom: var(--space-4);
+  flex-shrink: 0;
+}
+
+.project-detail__project-menu {
+  display: inline-flex;
 }
 
 .project-detail__ai-mob {
@@ -313,25 +571,33 @@ function handleSidebarSelect(key: GSidebarKey): void {
   gap: var(--space-2);
   min-height: var(--hit-target-min);
   padding: 0 var(--space-4);
-  background: var(--accent-soft);
-  color: var(--accent);
-  border: var(--border-width) solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: var(--border-width) solid transparent;
   border-radius: var(--radius-md);
-  font-weight: 600;
+  font-weight: 700;
   text-decoration: none;
   white-space: nowrap;
+  transition: background-color 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .project-detail__ai-mob:hover {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--accent-hover);
+}
+
+.project-detail__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+  flex-wrap: wrap;
 }
 
 .project-detail__search-wrap {
   position: relative;
-  width: 100%;
-  max-width: 320px;
-  margin-bottom: var(--space-4);
+  flex: 1;
+  min-width: 220px;
+  max-width: 380px;
 }
 
 .project-detail__search-icon {
@@ -352,6 +618,7 @@ function handleSidebarSelect(key: GSidebarKey): void {
   border-radius: var(--radius-md);
   color: var(--text);
   font-size: var(--text-base);
+  transition: border-color 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .project-detail__search:hover {
@@ -362,31 +629,60 @@ function handleSidebarSelect(key: GSidebarKey): void {
   border-color: var(--accent);
 }
 
+.project-detail__filter {
+  width: 168px;
+  flex-shrink: 0;
+}
+
 .project-detail__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 340px));
   gap: var(--space-4);
 }
 
 .project-detail__new-mob-cta {
-  aspect-ratio: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
+  text-align: center;
+  gap: var(--space-3);
+  min-height: 260px;
+  padding: var(--space-6);
   background: transparent;
   border: 2px dashed var(--border);
   border-radius: var(--radius-lg);
   color: var(--muted);
   cursor: pointer;
-  font-size: var(--text-sm);
-  font-weight: 600;
+  font: inherit;
+  transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1), border-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .project-detail__new-mob-cta:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.project-detail__new-mob-cta-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--border);
+  color: inherit;
+}
+
+.project-detail__new-mob-cta-title {
+  font-weight: 700;
+  font-size: var(--text-md);
+  color: var(--text);
+}
+
+.project-detail__new-mob-cta-desc {
+  font-size: var(--text-sm);
+  max-width: 220px;
 }
 
 .project-detail__empty {

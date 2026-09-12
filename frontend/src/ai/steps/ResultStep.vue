@@ -25,12 +25,39 @@
  * harness de desarrollo `/dev/viewport-harness` hasta ahora) -- el
  * orquestador navega de vuelta a `/projects/:projectId` en vez de abrir
  * un editor real. Cerrar esa ruta es alcance de un ticket futuro.
+ *
+ * Post-074 (rediseño del wizard, VoBo del PO sobre el preview interactivo):
+ * - Cada stat lleva su propio ícono (mismo dato que ya existía, solo
+ *   presentación).
+ * - Pill "Compatible con FMM"/"Con problemas" flotando sobre el preview,
+ *   ADEMÁS del que ya vive en el resumen -- mismo dato (`fmmCompatible`),
+ *   dos lugares.
+ * - Hints de interacción del viewport ("Arrastra para rotar/Usa la rueda
+ *   para hacer zoom/Clic derecho para mover"): texto puramente
+ *   informativo, verificado contra el `OrbitControls` real de
+ *   `ThreeViewportService` (no promete nada que el viewport no soporte).
+ * - Las 3 acciones pasan de una fila a una columna de ancho completo
+ *   (mismo comportamiento exacto -- confirmación antes de emitir, ningún
+ *   cambio de lógica, solo layout).
+ * - El link "Ver detalle técnico" del mockup de referencia SE QUITA
+ *   (decisión explícita del PO, AskUserQuestion): no existe ninguna
+ *   pantalla de detalle técnico de un job en el proyecto todavía, y los
+ *   mismos datos (cuboides/bones/textura/FMM) ya están en el resumen.
  */
 import { ref } from 'vue'
 import type { FmmIssue } from '../../api/generationResultApi'
 import type { MobProjectModel } from '../../domain/MobProjectModel'
 import GButton from '../../design-system/components/GButton.vue'
+import IconBoneJoint from '../../design-system/icons/IconBoneJoint.vue'
 import IconCheck from '../../design-system/icons/IconCheck.vue'
+import IconCuboid from '../../design-system/icons/IconCuboid.vue'
+import IconHand from '../../design-system/icons/IconHand.vue'
+import IconMosaic from '../../design-system/icons/IconMosaic.vue'
+import IconRedo from '../../design-system/icons/IconRedo.vue'
+import IconRotate from '../../design-system/icons/IconRotate.vue'
+import IconSearch from '../../design-system/icons/IconSearch.vue'
+import IconSparkle from '../../design-system/icons/IconSparkle.vue'
+import IconTrash from '../../design-system/icons/IconTrash.vue'
 import IconWarning from '../../design-system/icons/IconWarning.vue'
 import GenerationPreviewViewport from '../GenerationPreviewViewport.vue'
 
@@ -111,26 +138,37 @@ function confirmPendingAction(): void {
 
     <div class="result-step__body">
       <div class="result-step__panel result-step__panel--preview">
+        <span class="result-step__compat-pill" :class="{ 'result-step__compat-pill--error': !props.fmmCompatible }">
+          <IconCheck v-if="props.fmmCompatible" :size="12" />
+          <IconWarning v-else :size="12" />
+          {{ props.fmmCompatible ? 'Compatible con FMM' : 'Con problemas de compatibilidad' }}
+        </span>
         <GenerationPreviewViewport v-if="props.previewModel" :model="props.previewModel" class="result-step__viewport" />
         <div v-else class="result-step__viewport-placeholder">{{ props.mobName.charAt(0).toUpperCase() }}</div>
+        <div class="result-step__viewport-hints">
+          <span><IconRotate :size="12" />Arrastra para rotar</span>
+          <span><IconSearch :size="12" />Usa la rueda para hacer zoom</span>
+          <span><IconHand :size="12" />Clic derecho para mover</span>
+        </div>
       </div>
 
       <div class="result-step__panel result-step__panel--summary">
+        <div class="result-step__summary-head"><IconCuboid :size="16" /> Resumen del modelo</div>
         <dl class="result-step__stats">
           <div class="result-step__stat">
-            <dt>Cuboides</dt>
+            <dt><IconCuboid :size="13" /> Cuboides</dt>
             <dd>{{ props.cuboidCount }}</dd>
           </div>
           <div class="result-step__stat">
-            <dt>Bones</dt>
+            <dt><IconBoneJoint :size="13" /> Bones</dt>
             <dd>{{ props.boneCount }}</dd>
           </div>
           <div class="result-step__stat">
-            <dt>Textura</dt>
+            <dt><IconMosaic :size="13" /> Textura</dt>
             <dd>{{ props.textureWidth }}×{{ props.textureHeight }}</dd>
           </div>
           <div class="result-step__stat">
-            <dt>Compatibilidad FMM</dt>
+            <dt><IconCheck :size="13" /> Compatibilidad FMM</dt>
             <dd class="result-step__fmm" :class="{ 'result-step__fmm--ok': props.fmmCompatible, 'result-step__fmm--error': !props.fmmCompatible }">
               <IconCheck v-if="props.fmmCompatible" :size="14" />
               <IconWarning v-else :size="14" />
@@ -144,6 +182,8 @@ function confirmPendingAction(): void {
             <strong>{{ issue.severity === 'ERROR' ? 'Error' : 'Aviso' }}</strong> ({{ issue.element }}): {{ issue.message }}
           </li>
         </ul>
+
+        <p class="result-step__notice"><IconWarning :size="16" /> Revisa el resultado antes de incorporarlo a tu proyecto.</p>
 
         <p v-if="props.actionError" class="result-step__action-error">{{ props.actionError }}</p>
 
@@ -159,9 +199,9 @@ function confirmPendingAction(): void {
           </div>
         </template>
         <div v-else class="result-step__actions">
-          <GButton variant="danger" :disabled="props.busy" @click="requestAction('discard')">Descartar</GButton>
-          <GButton variant="secondary" :disabled="props.busy" @click="requestAction('regenerate')">Regenerar</GButton>
-          <GButton variant="primary" :disabled="props.busy" @click="requestAction('apply')">Usar este modelo</GButton>
+          <GButton variant="danger" :disabled="props.busy" @click="requestAction('discard')"><template #icon><IconTrash :size="16" /></template>Descartar</GButton>
+          <GButton variant="secondary" :disabled="props.busy" @click="requestAction('regenerate')"><template #icon><IconRedo :size="16" /></template>Regenerar</GButton>
+          <GButton variant="primary" :disabled="props.busy" @click="requestAction('apply')"><template #icon><IconSparkle :size="16" /></template>Usar este modelo</GButton>
         </div>
       </div>
     </div>
@@ -231,12 +271,58 @@ function confirmPendingAction(): void {
 }
 
 .result-step__panel--preview {
+  position: relative;
   flex: 1.2;
   min-width: 0;
   min-height: 360px;
   padding: 0;
   overflow: hidden;
   display: flex;
+}
+
+.result-step__compat-pill {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px var(--space-3);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.result-step__compat-pill--error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.result-step__viewport-hints {
+  position: absolute;
+  bottom: var(--space-3);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  gap: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--muted);
+  background: rgba(17, 24, 32, 0.85);
+  border: var(--border-width) solid var(--border);
+  border-radius: 999px;
+  padding: 6px var(--space-4);
+  backdrop-filter: blur(4px);
+}
+
+.result-step__viewport-hints span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 .result-step__viewport {
@@ -266,6 +352,14 @@ function confirmPendingAction(): void {
   padding: var(--space-5);
 }
 
+.result-step__summary-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 700;
+  color: var(--accent);
+}
+
 .result-step__stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -278,6 +372,9 @@ function confirmPendingAction(): void {
 }
 
 .result-step__stat dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--text-xs);
   color: var(--muted);
 }
@@ -316,6 +413,19 @@ function confirmPendingAction(): void {
   font-size: var(--text-sm);
 }
 
+.result-step__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
 .result-step__action-error {
   margin: 0;
   color: var(--danger);
@@ -349,5 +459,9 @@ function confirmPendingAction(): void {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.result-step__actions :deep(.g-button) {
+  width: 100%;
 }
 </style>
