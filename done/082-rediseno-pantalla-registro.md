@@ -49,3 +49,44 @@ cambia.
   tras el deploy, incluyendo un registro real de punta a punta.
 
 ## Hecho
+
+Implementado como se describe arriba, reusando el patrón ya corregido de
+`LoginView.vue` (fondo a pantalla completa vía `.auth-view`, vela pareja,
+tarjeta de vidrio con borde/resplandor en el acento). Nombre/Apellidos en
+fila de dos columnas; "Confirmar contraseña" con validación real de
+cliente (bloquea el submit, nunca llega a `session.register`); toggle de
+mostrar/ocultar en ambos campos de contraseña. Google/Facebook, términos
+y newsletter: visibles, `disabled`, "Próximamente" (decisión de Marco —
+ninguno tiene función real hoy).
+
+**Tests**: `RegisterView.spec.ts` actualizado (los 3 tests existentes
+ahora rellenan "Confirmar contraseña") + 1 test nuevo para el mismatch.
+Suite completa: **750/750 tests**, lint y `vue-tsc -b` limpios.
+
+**PR #108** mergeado a `dev`. El primer intento de merge falló en CI por
+`TextureGenerationServiceTest` — un test de **backend** no relacionado
+con este diff (100% frontend); el build anterior con el mismo backend
+había pasado sin problema, mismo patrón de flake de infra ya visto en
+esta sesión (Testcontainers/recursos compartidos de la VM). Confirmado
+con un commit vacío (**PR #109**) que pasó limpio en el reintento.
+
+**Verificación en vivo contra DEV real** (no simulada), tras el deploy
+automático (Jenkins build #108 de `dev`, SUCCESS):
+- Visual: layout split-screen completo, fondo continuo, tarjeta de
+  vidrio — coincide con la referencia.
+- Toggle de mostrar/ocultar contraseña y la validación de "las
+  contraseñas no coinciden" probados en vivo (dev local) antes de
+  desplegar.
+- **Registro real de punta a punta** contra
+  `https://studio-dev.galgoth.64bitstudio.com/register`: formulario
+  enviado con datos reales, `201` del backend, pantalla "Revisa tu
+  correo" mostrada correctamente con el email real de destino.
+
+## Pendiente (fuera de alcance de este ticket)
+- Extraer el shell split-screen (fondo/vela/tarjeta de vidrio) a un
+  componente compartido entre `LoginView.vue` y `RegisterView.vue` —
+  hoy están duplicados; el fix del ticket 081 (fondo "mochado") tuvo que
+  aplicarse dos veces por separado. No se hizo en este ticket para no
+  mezclar un refactor con una entrega visual, pero es una duplicación
+  real que conviene resolver antes de una tercera pantalla con este
+  mismo tratamiento.
