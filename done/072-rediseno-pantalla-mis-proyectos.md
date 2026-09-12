@@ -54,4 +54,4 @@ Implementado sobre el preview interactivo con VoBo del PO (`https://claude.ai/co
 
 **Estado final**: backend 100% de tests en verde (Testcontainers); frontend 668/668 tests en verde, `vue-tsc -b`/`eslint --max-warnings 0` sin hallazgos, `npm run build` sin errores.
 
-**Gate de autorización del requerimiento** (mismo criterio que ticket 071): implementación LOCAL únicamente -- sin commits, sin push, sin ramas, sin PR. Ticket queda en `in-process/` hasta que el PO revise el resultado en vivo y autorice el flujo git normal.
+**Cierre**: mismo criterio que ticket 071 -- PO autorizó el flujo git normal, consolidado en el PR #97 (`feat/071-076-rediseno-ui-inicio-editor-wizard`), mergeado a `dev` con CI verde y ambos Quality Gates de SonarQube (backend/frontend) verificados `OK` por SQL.
