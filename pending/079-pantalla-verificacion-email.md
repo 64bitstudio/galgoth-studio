@@ -1,9 +1,11 @@
-# 074 — Pantalla de verificación de email
+# 079 — Pantalla de verificación de email
+
+> Renumerado de 074 → 079: colisionó con el ticket real 074 ("rediseño de wizard crear con IA", ya en `done/`) — ver `fix/renumerar-tickets-auth-072-075`.
 
 ## Objetivo
-auth-core-mc ya envía un correo real de verificación al registrarse (ticket 073), pero galgoth-studio no tiene ninguna pantalla para confirmarlo ni para reenviarlo si expira o no llega. Decisión explícita de Marco (`PROP-GS-AUTH-01`, sección 08): pantalla completa en v1, no un mensaje mínimo.
+auth-core-mc ya envía un correo real de verificación al registrarse (ticket 078, pantalla de registro), pero galgoth-studio no tiene ninguna pantalla para confirmarlo ni para reenviarlo si expira o no llega. Decisión explícita de Marco (`PROP-GS-AUTH-01`, sección 08): pantalla completa en v1, no un mensaje mínimo.
 
-**Depende de:** 073 (el registro que dispara el correo).
+**Depende de:** 078 (el registro que dispara el correo).
 
 ## Alcance
 **Incluye:**

@@ -34,7 +34,7 @@ dependencies {
 	// simplemente no existe como bean y CUALQUIER `@SpringBootTest` (no solo
 	// los de IA) falla al arrancar el contexto completo.
 	implementation 'org.springframework.boot:spring-boot-starter-restclient'
-	// Ticket 072: Resource Server de auth-core-mc — sin este starter, agregar
+	// Ticket 077: Resource Server de auth-core-mc — sin este starter, agregar
 	// spring.security.oauth2.resourceserver.* no tiene efecto. Traído junto
 	// con spring-boot-starter-security (no estaba en el proyecto hasta este
 	// ticket) porque el DSL .oauth2ResourceServer(...) de HttpSecurity vive

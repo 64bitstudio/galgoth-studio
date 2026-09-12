@@ -8,7 +8,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Ticket 072: agrega el Resource Server de auth-core-mc (ver {@link
+ * Ticket 077: agrega el Resource Server de auth-core-mc (ver {@link
  * AuthCoreMcJwtDecoderConfig} para el validador de audiencia real) — pero
  * NO protege ninguna ruta todavía. Decisión explícita de Marco: las 14
  * APIs existentes estaban completamente abiertas (sin este starter de
