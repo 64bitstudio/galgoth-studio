@@ -32,6 +32,4 @@ class FakeResizeObserver implements ResizeObserver {
   }
 }
 
-if (globalThis.ResizeObserver === undefined) {
-  globalThis.ResizeObserver = FakeResizeObserver
-}
+globalThis.ResizeObserver ??= FakeResizeObserver
