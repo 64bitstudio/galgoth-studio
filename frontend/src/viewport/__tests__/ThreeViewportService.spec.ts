@@ -98,7 +98,7 @@ describe('ThreeViewportService', () => {
     rafSpy.mockRestore()
   })
 
-  describe('post-074 (hallazgo real del PO -- "si abro el sidebar se rompe todo"): ResizeObserver en attachTo/detach', () => {
+  describe('post-075 (hallazgo real del PO sobre la tab Textura -- el sidebar rompía el viewport, ver in-process/075-fix-resize-viewport-al-togglear-sidebar.md): ResizeObserver en attachTo/detach', () => {
     afterEach(() => {
       vi.unstubAllGlobals() // restaura el FakeResizeObserver global de test-setup.ts -- estos tests reemplazan `ResizeObserver` con un espía propio.
     })

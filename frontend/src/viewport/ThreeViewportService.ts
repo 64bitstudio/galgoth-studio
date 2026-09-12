@@ -97,8 +97,10 @@ export class ThreeViewportService {
   private animationHandle: number | null = null
   private readonly raycaster = new Raycaster()
   /**
-   * Post-074 (hallazgo real del PO -- "si abro el sidebar se rompe todo",
-   * reportado sobre la tab Textura): `resizeToContainer` solo se llamaba
+   * Post-075 (hallazgo real del PO sobre la tab Textura -- el sidebar
+   * rompía el viewport al expandirse/colapsarse, ver
+   * `in-process/075-fix-resize-viewport-al-togglear-sidebar.md` para la
+   * cita completa): `resizeToContainer` solo se llamaba
    * al montar (`attachTo`) o al arrastrar el splitter del preview 3D --
    * nunca cuando el CONTENEDOR cambiaba de tamaño por otra razón (ej.
    * `GSidebar.vue` expandiéndose/colapsando, que angosta/ensancha
@@ -159,7 +161,7 @@ export class ThreeViewportService {
 
   /**
    * Mueve el canvas compartido al contenedor dado (nunca crea uno nuevo).
-   * Post-074: además observa el tamaño de `container` (`ResizeObserver`)
+   * Post-075: además observa el tamaño de `container` (`ResizeObserver`)
    * mientras esté attacheado -- cualquier cambio de tamaño futuro (sidebar
    * expandiéndose/colapsando, splitter, resize de ventana) re-sincroniza
    * el renderer/cámara automáticamente, sin depender de que cada pantalla

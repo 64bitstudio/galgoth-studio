@@ -20,9 +20,10 @@
  * submit reales -- mismo criterio que `ProjectsDashboard.vue`.
  *
  * Ticket 073 (rediseño del detalle de proyecto, VoBo del PO sobre el
- * preview interactivo -- condición explícita: "NO uses componentes
- * nativos, utiliza componentes personalizados que hemos venido
- * trabajando, agrega transiciones... todo debe llevar transiciones"):
+ * preview interactivo -- condición explícita, sin componentes nativos,
+ * usando los componentes personalizados ya construidos, y CADA diálogo
+ * con transiciones de entrada/salida sin excepción -- cita completa en
+ * `in-process/073-rediseno-detalle-proyecto.md`):
  * - Breadcrumb "Galgoth Studio > Mis proyectos > {nombre}".
  * - Header: descripción (campo nuevo real y editable, mismo lápiz que
  *   el nombre -- ver `ProjectNameModal.vue`) debajo de la meta-línea.

@@ -136,13 +136,14 @@ function confirm(): void {
         <span class="configuration-step__field-hint">Define la estructura base del modelo para un mejor resultado.</span>
       </fieldset>
 
-      <label class="configuration-step__label">
+      <!-- Ticket 076 (hallazgo real de Sonar, S6853): un <label> nativo solo asocia implícitamente con un control NATIVO envuelto (como el input de "Nombre" arriba) -- GSelect no lo es, envolverlo en <label> es una asociación rota para lectores de pantalla. El nombre accesible real ya lo da el prop `label` de GSelect (aria-label en su propio trigger); este texto es solo visual. -->
+      <div class="configuration-step__label">
         Resolución de textura
         <GSelect v-model="textureResolution" :options="TEXTURE_RESOLUTION_OPTIONS" label="Resolución de textura">
           <template #icon><IconMosaic :size="16" /></template>
         </GSelect>
         <span class="configuration-step__field-hint">Mayor resolución ofrece más detalle, pero aumenta el tiempo de generación.</span>
-      </label>
+      </div>
 
       <dl class="configuration-step__info-row">
         <div class="configuration-step__info-item">
