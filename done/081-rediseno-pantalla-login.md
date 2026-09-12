@@ -89,6 +89,29 @@ lint (`eslint . --max-warnings 0`) y `vue-tsc -b` limpios.
    `/` mostrando el home autenticado (proyectos reales del usuario) — el
    rediseño no rompió el flujo de autenticación real.
 
+## Fix post-cierre: fondo a pantalla completa y mejor calidad de imagen
+Marco revisó el deploy real y reportó dos problemas: el fondo se veía de
+baja calidad, y solo cubría el panel izquierdo — se veía "mochado" donde
+empezaba la tarjeta, distinto a la referencia (misma imagen cubriendo
+toda la pantalla). Corregido:
+
+- `auth-hero-background.jpg` reexportado desde el PNG original a calidad
+  94 (antes 82).
+- El `background-image` pasó de `.auth-view__hero` (55% del ancho) a
+  `.auth-view` (el contenedor completo) — una sola imagen continua detrás
+  de todo, no una mitad con color sólido en la otra.
+- `.auth-view::before` agrega una vela pareja sobre toda la imagen (antes
+  solo el panel izquierdo tenía su propio degradado).
+- `.auth-view__card` ahora es un panel de vidrio (fondo semi-transparente
+  + `backdrop-filter`, mismo recurso que `GenerationStep.vue`/
+  `ResultStep.vue`) con borde y resplandor en el acento, en vez de un
+  rectángulo opaco.
+
+Verificado de nuevo contra `https://studio-dev.galgoth.64bitstudio.com/login`
+real tras el deploy (Jenkins build #105 de `dev`, SUCCESS): fondo continuo
+de borde a borde, tarjeta traslúcida con borde verde visible. Suite
+completa sigue en verde (749/749).
+
 ## Pendiente (fuera de alcance de este ticket)
 - Mismo rediseño para `RegisterView.vue`, si Marco lo pide — queda con el
   look anterior por ahora.
