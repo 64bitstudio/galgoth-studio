@@ -15,6 +15,7 @@ import com.galgothstudio.backend.domain.uv.PaintedRegionResizeConfirmationRequir
 import com.galgothstudio.backend.domain.uv.UvAtlasOverflowException;
 import com.galgothstudio.backend.project.InvalidProjectNameException;
 import com.galgothstudio.backend.project.ProjectNotFoundException;
+import com.galgothstudio.backend.project.UnauthenticatedRequestException;
 import com.galgothstudio.backend.project.draft.DanglingTextureReferenceException;
 import com.galgothstudio.backend.project.draft.DraftNotFoundException;
 import com.galgothstudio.backend.project.draft.InvalidDraftException;
@@ -54,6 +55,11 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(ProjectNotFoundException.class)
 	public ResponseEntity<ApiErrorResponse> handleProjectNotFound(ProjectNotFoundException ex) {
 		return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiErrorResponse("PROJECT_NOT_FOUND", ex.getMessage(), null));
+	}
+
+	@ExceptionHandler(UnauthenticatedRequestException.class)
+	public ResponseEntity<ApiErrorResponse> handleUnauthenticatedRequest(UnauthenticatedRequestException ex) {
+		return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ApiErrorResponse("UNAUTHENTICATED", ex.getMessage(), null));
 	}
 
 	@ExceptionHandler(InvalidProjectNameException.class)

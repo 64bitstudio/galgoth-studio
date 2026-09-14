@@ -78,10 +78,13 @@ public class MobService {
 	 * editados más recientemente, cruzando todos los proyectos no
 	 * eliminados. `limit` ya validado por el controller (positivo, con un
 	 * tope razonable) antes de llegar acá.
+	 *
+	 * <p>Ticket 084 -- {@code ownerId} filtra a los proyectos del dueño
+	 * autenticado (ya validado por el controller, nunca null).
 	 */
 	@Transactional(readOnly = true)
-	public List<RecentMobSummary> listRecentAcrossProjects(int limit) {
-		return mobRepository.findRecentAcrossProjects(PageRequest.of(0, limit)).stream().map(this::toRecentSummary).toList();
+	public List<RecentMobSummary> listRecentAcrossProjects(int limit, String ownerId) {
+		return mobRepository.findRecentAcrossProjects(ownerId, PageRequest.of(0, limit)).stream().map(this::toRecentSummary).toList();
 	}
 
 	/** Ticket 039 -- mismo criterio de validación que `create`. */

@@ -17,6 +17,9 @@ import java.util.List;
  * "Renombrar" desde `ProjectsDashboard.vue` pueda reenviarla sin cambios al
  * hacer `PATCH` (evita que un rename simple borre la descripción por no
  * conocerla -- ver `RenameProjectRequest`).
+ *
+ * Ticket 084 -- `visibility` ("PRIVATE"/"PUBLIC") viaja siempre; el
+ * control para cambiarla llega en el ticket 086.
  */
 public record ProjectSummary(
 		String id,
@@ -25,6 +28,7 @@ public record ProjectSummary(
 		int mobCount,
 		List<MobThumbnail> mobThumbnails,
 		String status,
+		String visibility,
 		Instant createdAt,
 		Instant updatedAt) {
 }

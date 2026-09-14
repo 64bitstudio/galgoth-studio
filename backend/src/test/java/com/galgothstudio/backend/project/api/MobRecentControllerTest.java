@@ -2,6 +2,7 @@ package com.galgothstudio.backend.project.api;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -19,6 +20,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -32,6 +34,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class MobRecentControllerTest {
 
+	/** Ticket 084 -- `sub` constante para el archivo completo, salvo el test que compara explícitamente dos dueños distintos. */
+	private static final String OWNER_ID = "4635300a-5049-4cd5-933d-a37b807c83b0";
+
 	@Autowired
 	private MockMvc mockMvc;
 
@@ -41,10 +46,23 @@ class MobRecentControllerTest {
 	@Autowired
 	private ObjectMapper objectMapper;
 
+	/** Ticket 084 -- mismo helper que `ProjectControllerTest`, cada proyecto de prueba queda del dueño por defecto salvo que se pida otro. */
 	private UUID aProject(String name) {
+		return aProject(name, OWNER_ID);
+	}
+
+	private UUID aProject(String name, String ownerId) {
 		UUID id = UUID.randomUUID();
-		jdbc.update("insert into projects (id, name) values (?, ?)", id, name);
+		jdbc.update("insert into projects (id, name, owner_ref) values (?, ?, ?)", id, name, ownerId);
 		return id;
+	}
+
+	private static RequestPostProcessor authenticated() {
+		return authenticated(OWNER_ID);
+	}
+
+	private static RequestPostProcessor authenticated(String ownerId) {
+		return jwt().jwt(builder -> builder.subject(ownerId));
 	}
 
 	private String createBody(String name, String baseType) {
@@ -74,7 +92,7 @@ class MobRecentControllerTest {
 		createMob(projectB, "Augur", "flying");
 		createMob(projectA, "Tejedora", "arachnid");
 
-		mockMvc.perform(get("/api/mobs/recent"))
+		mockMvc.perform(get("/api/mobs/recent").with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$", hasSize(3)))
 				.andExpect(jsonPath("$[0].name", is("Tejedora")))
@@ -90,7 +108,7 @@ class MobRecentControllerTest {
 		createMob(projectId, "Augur", "flying");
 		createMob(projectId, "Tejedora", "arachnid");
 
-		mockMvc.perform(get("/api/mobs/recent").param("limit", "2"))
+		mockMvc.perform(get("/api/mobs/recent").with(authenticated()).param("limit", "2"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$", hasSize(2)))
 				.andExpect(jsonPath("$[0].name", is("Tejedora")))
@@ -105,7 +123,7 @@ class MobRecentControllerTest {
 		createMob(projectId, "Tejedora", "arachnid");
 		createMob(projectId, "Áugur II", "flying");
 
-		mockMvc.perform(get("/api/mobs/recent"))
+		mockMvc.perform(get("/api/mobs/recent").with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$", hasSize(3)));
 	}
@@ -115,7 +133,7 @@ class MobRecentControllerTest {
 		UUID projectId = aProject("Galgoth");
 		createMob(projectId, "Carcomido", "humanoid");
 
-		mockMvc.perform(get("/api/mobs/recent").param("limit", "0"))
+		mockMvc.perform(get("/api/mobs/recent").with(authenticated()).param("limit", "0"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$", hasSize(1)));
 	}
@@ -131,10 +149,32 @@ class MobRecentControllerTest {
 		mockMvc.perform(delete("/api/mobs/{mobId}", deletedMobId));
 		jdbc.update("update projects set deleted_at = now() where id = ?", deletedProject);
 
-		mockMvc.perform(get("/api/mobs/recent"))
+		mockMvc.perform(get("/api/mobs/recent").with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$", hasSize(1)))
 				.andExpect(jsonPath("$[0].name", is("Tejedora")));
+	}
+
+	// -- Ticket 084: ownership real --------------------------------------------
+
+	@Test
+	void sin_autenticacion_responde_401() throws Exception {
+		mockMvc.perform(get("/api/mobs/recent")).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.error", is("UNAUTHENTICATED")));
+	}
+
+	/** Ticket 084 -- hallazgo real corregido por este ticket: hasta ahora cruzaba TODOS los proyectos de TODOS los usuarios. */
+	@Test
+	void solo_incluye_mobs_de_proyectos_del_dueno_autenticado() throws Exception {
+		String otroOwnerId = "9c3e3b1a-2222-4d3d-8888-0f1a2b3c4d5e";
+		UUID mioProject = aProject("Mío");
+		UUID ajenoProject = aProject("Ajeno", otroOwnerId);
+		createMob(mioProject, "Carcomido", "humanoid");
+		createMob(ajenoProject, "Intruso", "custom");
+
+		mockMvc.perform(get("/api/mobs/recent").with(authenticated()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$", hasSize(1)))
+				.andExpect(jsonPath("$[0].name", is("Carcomido")));
 	}
 
 }

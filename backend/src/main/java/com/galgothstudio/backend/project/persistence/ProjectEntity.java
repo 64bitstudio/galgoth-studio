@@ -25,6 +25,10 @@ public class ProjectEntity {
 	@Column(name = "owner_ref")
 	private String ownerRef;
 
+	/** Ticket 084 -- 'PRIVATE' o 'PUBLIC' (mismo criterio que `MobEntity.status`: String plano, no un enum JPA). Default 'PRIVATE' a nivel de columna (`V5`); el constructor lo exige explícito para que ningún caller nuevo lo olvide. */
+	@Column(name = "visibility", nullable = false)
+	private String visibility;
+
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
 
@@ -38,10 +42,11 @@ public class ProjectEntity {
 		// JPA
 	}
 
-	public ProjectEntity(UUID id, String name, String ownerRef, Instant createdAt, Instant updatedAt) {
+	public ProjectEntity(UUID id, String name, String ownerRef, String visibility, Instant createdAt, Instant updatedAt) {
 		this.id = id;
 		this.name = name;
 		this.ownerRef = ownerRef;
+		this.visibility = visibility;
 		this.createdAt = createdAt;
 		this.updatedAt = updatedAt;
 	}
@@ -68,6 +73,14 @@ public class ProjectEntity {
 
 	public String getOwnerRef() {
 		return ownerRef;
+	}
+
+	public String getVisibility() {
+		return visibility;
+	}
+
+	public void setVisibility(String visibility) {
+		this.visibility = visibility;
 	}
 
 	public Instant getCreatedAt() {

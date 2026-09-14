@@ -34,6 +34,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProjectService {
 
 	private static final String COPY_SUFFIX = " (copia)";
+	/** Ticket 084 -- cada proyecto nace privado (decisión de Marco); publicarlo es una acción explícita del dueño (ticket 086). */
+	private static final String PRIVATE = "PRIVATE";
 
 	private final ProjectRepository projectRepository;
 	private final MobRepository mobRepository;
@@ -51,18 +53,20 @@ public class ProjectService {
 		this.revisionRepository = revisionRepository;
 	}
 
+	/** Ticket 084 -- {@code ownerId} es el {@code sub} (user id) del JWT de auth-core-mc, ya validado por el controlador antes de llegar aquí (nunca null). */
 	@Transactional
-	public ProjectDetail create(String name) {
+	public ProjectDetail create(String name, String ownerId) {
 		String validName = requireValidName(name);
 		Instant now = Instant.now();
-		ProjectEntity project = new ProjectEntity(UUID.randomUUID(), validName, null, now, now);
+		ProjectEntity project = new ProjectEntity(UUID.randomUUID(), validName, ownerId, PRIVATE, now, now);
 		projectRepository.save(project);
 		return toDetail(project, 0);
 	}
 
+	/** Ticket 084 -- "Mis proyectos" (HU-02): solo los del dueño autenticado. */
 	@Transactional(readOnly = true)
-	public List<ProjectSummary> list() {
-		return projectRepository.findByDeletedAtIsNullOrderByUpdatedAtDesc().stream().map(this::toSummary).toList();
+	public List<ProjectSummary> list(String ownerId) {
+		return projectRepository.findByOwnerRefAndDeletedAtIsNullOrderByUpdatedAtDesc(ownerId).stream().map(this::toSummary).toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -93,7 +97,9 @@ public class ProjectService {
 	public ProjectDetail duplicate(UUID projectId) {
 		ProjectEntity original = requireProject(projectId);
 		Instant now = Instant.now();
-		ProjectEntity copy = new ProjectEntity(UUID.randomUUID(), original.getName() + COPY_SUFFIX, original.getOwnerRef(), now, now);
+		// Ticket 084 -- la copia nace PRIVATE sin importar la visibilidad del original: duplicar no debe publicar nada por accidente.
+		ProjectEntity copy =
+				new ProjectEntity(UUID.randomUUID(), original.getName() + COPY_SUFFIX, original.getOwnerRef(), PRIVATE, now, now);
 		copy.setDescription(original.getDescription()); // ticket 073 -- copia profunda: la descripción también se copia.
 		projectRepository.save(copy);
 
@@ -153,7 +159,13 @@ public class ProjectService {
 
 	private ProjectDetail toDetail(ProjectEntity project, int mobCount) {
 		return new ProjectDetail(
-				project.getId().toString(), project.getName(), project.getDescription(), mobCount, project.getCreatedAt(), project.getUpdatedAt());
+				project.getId().toString(),
+				project.getName(),
+				project.getDescription(),
+				mobCount,
+				project.getVisibility(),
+				project.getCreatedAt(),
+				project.getUpdatedAt());
 	}
 
 	private ProjectSummary toSummary(ProjectEntity project) {
@@ -167,6 +179,7 @@ public class ProjectService {
 				mobs.size(),
 				thumbnails,
 				deriveStatus(mobs),
+				project.getVisibility(),
 				project.getCreatedAt(),
 				project.getUpdatedAt());
 	}

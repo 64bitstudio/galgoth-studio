@@ -45,3 +45,34 @@ el ticket `077`.
   reales (no simulados).
 
 ## Hecho
+- Migración `V5`: `projects.visibility VARCHAR(10) NOT NULL DEFAULT 'PRIVATE'`
+  + `CHECK (visibility IN ('PRIVATE', 'PUBLIC'))`. `ProjectEntity.visibility`
+  nuevo campo; `ProjectDetail`/`ProjectSummary` lo exponen.
+- `ProjectController.create`/`list` y `MobRecentController.list` ahora
+  toman `@AuthenticationPrincipal Jwt jwt` y exigen `sub` real —
+  `UnauthenticatedRequestException` → `401 UNAUTHENTICATED` si falta
+  (chequeo puntual en el controlador, no un cambio de `SecurityConfig`
+  todavía — eso es el ticket `085`).
+- `ProjectService.create(name, ownerId)` graba `owner_ref`/`visibility =
+  PRIVATE` reales; `ProjectService.list(ownerId)` y
+  `MobService.listRecentAcrossProjects(limit, ownerId)` filtran por
+  dueño — reemplazan el listado global sin filtrar (hallazgo real: hasta
+  este ticket cualquiera veía los proyectos/mobs recientes de cualquiera).
+  El método de repositorio sin filtro (`findByDeletedAtIsNullOrderByUpdatedAtDesc`)
+  se retiró a propósito, mismo criterio que el ticket 039 aplicó en
+  `MobRepository`.
+- `ProjectService.duplicate()`: la copia siempre nace `PRIVATE`
+  (decisión de implementación: duplicar nunca debe publicar nada por
+  accidente), conserva el `ownerRef` del original — sin cambios de
+  comportamiento más allá de eso.
+- Tests: 451/451 en verde (suite completa). Nuevos: `401` sin auth en
+  create/list/recientes, un proyecto nuevo nace `PRIVATE`, "Mis
+  proyectos" y "mobs recientes" solo incluyen los del dueño autenticado
+  (dos dueños distintos, verificado explícitamente). `SchemaConstraintsTest`
+  gana 2 tests (`visibility` default y `CHECK`). `SchemaMigrationReversibilityTest`
+  actualizado a versión `5`. Se agregó `spring-security-test` (primer
+  test de controlador que simula un JWT real).
+- `docs/API.md`/`docs/BASE_DE_DATOS.md` actualizados con el nuevo
+  contrato y columna.
+- **Verificación en vivo contra DEV**: pendiente (se completa junto con
+  el deploy de este PR).
