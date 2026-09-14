@@ -32,3 +32,46 @@ no el del mockup literal, para no mostrar un requisito que no es real.
 - Verificación en vivo contra `studio-dev.galgoth.64bitstudio.com`: disparar un reset real, recibir el correo real, confirmar que el link `/password-reset/confirm?token=...` carga la pantalla y que el flujo completo (fijar contraseña nueva → iniciar sesión con ella) funciona de punta a punta.
 
 ## Hecho
+
+Implementado como se describe arriba: `authApi.ts` (`requestPasswordReset`,
+`confirmPasswordReset`), `ForgotPasswordView.vue` (/forgot-password),
+`ResetPasswordView.vue` (/password-reset/confirm, ruta fija), mismo
+tratamiento visual split-screen de 081/082 con los fondos aportados por
+Marco. `LoginView.vue`: "¿Olvidaste tu contraseña?" activado como link
+real.
+
+**Tests**: 9 tests nuevos (authApi +3, ForgotPasswordView +2,
+ResetPasswordView +4) + `LoginView.spec.ts` actualizado con la ruta
+nueva. Suite completa del frontend: **765/765 tests**, lint y
+`vue-tsc -b` limpios.
+
+**PR #111** (junto con el ticket 083 — el checkbox de términos de
+Register depende de que `/terms` exista) mergeado a `dev`, deploy
+automático confirmado (Jenkins build #110 de `dev`, SUCCESS).
+
+**Verificación en vivo de punta a punta contra DEV real** (no simulada):
+1. `/forgot-password` real con `marcocortes1234.mc@gmail.com` → "Revisa
+   tu correo" → correo real recibido, confirmado por Marco: el link es
+   `https://studio-dev.galgoth.64bitstudio.com/password-reset/confirm?token=...`
+   (ruta fija correcta).
+2. Token real leído directamente de Redis (`token:password-reset:...`,
+   dev) para completar la prueba sin pedirle a Marco que pegue el token
+   en el chat (el hook de secretos ya lo bloquea, con razón).
+3. Un primer intento con datos sin verificar dejó el token quemado sin
+   completar el reset (hallazgo real: `PasswordResetService.confirmReset`
+   consume el token ANTES de validar la contraseña — un intento fallido
+   igual invalida el token, por diseño de un solo uso). Se repitió todo
+   el flujo desde cero, verificando cada campo con zoom antes de enviar.
+4. Con el token fresco: "Nueva contraseña"/"Confirmar contraseña"
+   llenados y verificados → `Actualizar contraseña` → "Contraseña
+   actualizada" real.
+5. **Login real con la contraseña nueva** → navegó correctamente al home
+   autenticado. Flujo de punta a punta confirmado funcionando.
+
+## Hallazgo de proceso (no del código)
+El primer intento de verificación (paso 3 arriba) reveló que un token de
+reset se quema con cualquier intento de confirmación, exitoso o no — un
+comportamiento de seguridad correcto y ya documentado en el
+comportamiento de `PasswordResetService`, pero que exige verificar cada
+campo antes de enviar en cualquier prueba manual/automatizada de este
+flujo (no reintentar "a ciegas" con el mismo link).

@@ -47,3 +47,34 @@ página no existía) pasa a ser real y obligatorio.
 - Verificación visual en vivo contra `studio-dev.galgoth.64bitstudio.com`.
 
 ## Hecho
+
+Implementado como se describe arriba: `TermsView.vue` (/terms), 7
+secciones navegables (1 y 2.1 texto real de Marco; 2.2-7 borrador de
+Claude, marcado explícitamente en el código con comentarios). "Descargar
+PDF" deshabilitado con "Próximamente". `RegisterView.vue`: checkbox de
+términos activado como real y obligatorio (bloquea el submit con error
+explícito si no está marcado), link a `/terms` en pestaña nueva.
+
+**Tests**: 5 tests nuevos de `TermsView.spec.ts` + `RegisterView.spec.ts`
+actualizado (el helper `fillForm` ahora marca el checkbox por defecto,
+más un test nuevo para el caso "no aceptado"). Suite completa: 765/765,
+lint y type-check limpios.
+
+**PR #111** (junto con el ticket 080) mergeado a `dev`, deploy automático
+confirmado (Jenkins build #110, SUCCESS).
+
+**Verificación en vivo contra DEV real**: `/terms` carga correctamente en
+`https://studio-dev.galgoth.64bitstudio.com/terms` — navegación entre
+secciones, checkbox y botones funcionando. Verificado también que el
+link desde `RegisterView.vue` abre `/terms` en pestaña nueva sin perder
+el formulario ya llenado.
+
+## Pendiente (fuera de alcance de este ticket)
+- **Revisión de Marco del contenido borrador** (secciones 2.2 en
+  adelante, 3-7) antes de tratarlo como texto legal definitivo — nunca se
+  presentó como contenido revisado/aprobado, solo un punto de partida.
+- Mismo hallazgo ya señalado en 081/082: el shell split-screen sigue
+  duplicado entre `LoginView.vue`, `RegisterView.vue`,
+  `ForgotPasswordView.vue`, `ResetPasswordView.vue` y ahora
+  `TermsView.vue` (5 copias) — cada vez más urgente extraerlo a un
+  componente compartido antes de una sexta pantalla con este tratamiento.
