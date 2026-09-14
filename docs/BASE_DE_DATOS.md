@@ -6,7 +6,7 @@ Motor de migraciones: **Flyway** (community), archivos SQL versionados en `backe
 
 ## Tablas
 
-- **`projects`** — proyectos, cada uno con múltiples mobs. `owner_ref`/`deleted_at` nullable (soft delete).
+- **`projects`** — proyectos, cada uno con múltiples mobs. `deleted_at` nullable (soft delete). `owner_ref` nullable a nivel de columna (existía desde el ticket 003) pero **siempre poblado en la práctica desde el ticket 084** (el `sub`/user id del JWT de auth-core-mc) -- ningún caller nuevo debería dejarlo null. `visibility VARCHAR(10) NOT NULL DEFAULT 'PRIVATE'` (ticket 084, migración `V5`, `CHECK` a `'PRIVATE'`/`'PUBLIC'`, mismo criterio String-plano-con-CHECK que `mobs.status`/`base_type` -- no un enum nativo).
 - **`mobs`** — unidad editable independiente. `base_type` y `status` con `CHECK` (no ENUM nativo, más simple de evolucionar). `current_revision_number integer NOT NULL DEFAULT 0`; `thumbnail_key` nullable (asset derivado). **Sin columna `created_by`** — la autoría vive exclusivamente en `mob_revisions.created_by`. `deleted_at` nullable (soft delete, `V2__mobs_soft_delete.sql`, ticket 039) — mismo criterio que `projects.deleted_at`: ningún FK hacia `mobs` tiene `ON DELETE CASCADE`, así que un hard-delete fallaría por violación de FK en cualquier mob con historial real.
 - **`mob_revisions`** — historial append-only, inmutable. `UNIQUE(mob_id, revision_number)` (la numeración es por-mob, no global — y es el target de las FK compuestas de abajo). `created_by CHECK IN ('user','ai','system')`.
 - **`mob_drafts`** — `mob_id` es la PK (una fila mutable por mob); inexistente hasta el primer commit. `draft_version` sin default — la app siempre debe pasarlo explícito.

@@ -5,10 +5,13 @@ import com.galgothstudio.backend.project.ProjectDetail;
 import com.galgothstudio.backend.project.ProjectService;
 import com.galgothstudio.backend.project.ProjectSummary;
 import com.galgothstudio.backend.project.RenameProjectRequest;
+import com.galgothstudio.backend.project.UnauthenticatedRequestException;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,14 +32,28 @@ public class ProjectController {
 		this.projectService = projectService;
 	}
 
+	/**
+	 * Ticket 084 -- exige dueño real: sin `sub` en el JWT no hay a quién
+	 * ligar el proyecto. `SecurityConfig` sigue en `permitAll()` para esta
+	 * ruta hasta el ticket 085 (reglas explícitas por ruta) -- este chequeo
+	 * es la pieza mínima que HU-01 necesita ya.
+	 */
 	@PostMapping
-	public ResponseEntity<ProjectDetail> create(@RequestBody CreateProjectRequest request) {
-		return ResponseEntity.status(HttpStatus.CREATED).body(projectService.create(request.name()));
+	public ResponseEntity<ProjectDetail> create(@AuthenticationPrincipal Jwt jwt, @RequestBody CreateProjectRequest request) {
+		return ResponseEntity.status(HttpStatus.CREATED).body(projectService.create(request.name(), requireOwnerId(jwt)));
 	}
 
+	/** Ticket 084 -- "Mis proyectos" (HU-02): solo los del dueño autenticado. */
 	@GetMapping
-	public List<ProjectSummary> list() {
-		return projectService.list();
+	public List<ProjectSummary> list(@AuthenticationPrincipal Jwt jwt) {
+		return projectService.list(requireOwnerId(jwt));
+	}
+
+	private String requireOwnerId(Jwt jwt) {
+		if (jwt == null) {
+			throw new UnauthenticatedRequestException();
+		}
+		return jwt.getSubject();
 	}
 
 	@GetMapping("/{projectId}")

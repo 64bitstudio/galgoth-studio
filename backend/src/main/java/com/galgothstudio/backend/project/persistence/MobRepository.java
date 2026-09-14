@@ -6,6 +6,7 @@ import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface MobRepository extends JpaRepository<MobEntity, UUID> {
 
@@ -36,10 +37,14 @@ public interface MobRepository extends JpaRepository<MobEntity, UUID> {
 	 * en JPQL -- excluye tanto mobs soft-deleted como mobs cuyo proyecto
 	 * esté soft-deleted (un proyecto eliminado no debe "seguir apareciendo"
 	 * indirectamente vía sus mobs en Inicio).
+	 *
+	 * <p>Ticket 084 -- gana el filtro `ownerRef`: hasta este ticket cruzaba
+	 * TODOS los proyectos de TODOS los usuarios (mismo bug de fondo que
+	 * `ProjectRepository`, corregido igual).
 	 */
 	@Query("SELECT m FROM MobEntity m WHERE m.deletedAt IS NULL "
-			+ "AND m.projectId IN (SELECT p.id FROM ProjectEntity p WHERE p.deletedAt IS NULL) "
+			+ "AND m.projectId IN (SELECT p.id FROM ProjectEntity p WHERE p.deletedAt IS NULL AND p.ownerRef = :ownerId) "
 			+ "ORDER BY m.updatedAt DESC")
-	List<MobEntity> findRecentAcrossProjects(Pageable pageable);
+	List<MobEntity> findRecentAcrossProjects(@Param("ownerId") String ownerId, Pageable pageable);
 
 }

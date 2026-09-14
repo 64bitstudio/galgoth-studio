@@ -1,8 +1,11 @@
 package com.galgothstudio.backend.project.api;
 
+import com.galgothstudio.backend.project.UnauthenticatedRequestException;
 import com.galgothstudio.backend.project.mob.MobService;
 import com.galgothstudio.backend.project.mob.RecentMobSummary;
 import java.util.List;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -28,9 +31,13 @@ public class MobRecentController {
 		this.mobService = mobService;
 	}
 
+	/** Ticket 084 -- exige dueño real, mismo criterio que `ProjectController` (ver su Javadoc). */
 	@GetMapping
-	public List<RecentMobSummary> list(@RequestParam(required = false) Integer limit) {
-		return mobService.listRecentAcrossProjects(clamp(limit));
+	public List<RecentMobSummary> list(@AuthenticationPrincipal Jwt jwt, @RequestParam(required = false) Integer limit) {
+		if (jwt == null) {
+			throw new UnauthenticatedRequestException();
+		}
+		return mobService.listRecentAcrossProjects(clamp(limit), jwt.getSubject());
 	}
 
 	/** `limit` es un detalle de presentación (cuántas cards caben en la fila de Inicio), no un parámetro de negocio -- un valor inválido/ausente cae a un default sensato en vez de un 400. */

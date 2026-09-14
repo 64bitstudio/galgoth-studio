@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -25,6 +26,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -41,6 +43,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class ProjectControllerTest {
 
+	/** Ticket 084 -- `sub` fijo para todo el archivo salvo los tests que comparan explícitamente dos dueños distintos (ver "Ownership real"). */
+	private static final String OWNER_ID = "4635300a-5049-4cd5-933d-a37b807c83b0";
+
 	@Autowired
 	private MockMvc mockMvc;
 
@@ -55,6 +60,15 @@ class ProjectControllerTest {
 
 	private void flush() {
 		entityManager.flush();
+	}
+
+	/** Ticket 084 -- mismo mecanismo que valida `AuthCoreMcJwtDecoderConfig` (ticket 077), aquí simulado sin red vía `spring-security-test`. */
+	private static RequestPostProcessor authenticated() {
+		return authenticated(OWNER_ID);
+	}
+
+	private static RequestPostProcessor authenticated(String ownerId) {
+		return jwt().jwt(builder -> builder.subject(ownerId));
 	}
 
 	/** Ticket 073 -- body de `PATCH` con `description` explícita (ver docstring de `RenameProjectRequest`: el contrato espera que cualquier caller la reenvíe siempre, aunque no cambie). */
@@ -92,7 +106,7 @@ class ProjectControllerTest {
 
 	@Test
 	void crear_con_nombre_valido_devuelve_201_y_redirige_a_su_detalle_AC1() throws Exception {
-		MvcResult result = mockMvc.perform(post("/api/projects")
+		MvcResult result = mockMvc.perform(post("/api/projects").with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Galgoth")))
 				.andExpect(status().isCreated())
@@ -115,7 +129,7 @@ class ProjectControllerTest {
 		// construido a mano (ver JacksonConfig), un Instant serializa
 		// como epoch-seconds fraccionario (ej. 1788924939.428339) --
 		// un número, no un string ISO-8601 parseable por Date en el frontend.
-		MvcResult result = mockMvc.perform(post("/api/projects")
+		MvcResult result = mockMvc.perform(post("/api/projects").with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Fecha")))
 				.andReturn();
@@ -127,20 +141,59 @@ class ProjectControllerTest {
 
 	@Test
 	void crear_sin_nombre_es_rechazado_con_mensaje_claro_AC2() throws Exception {
-		mockMvc.perform(post("/api/projects").contentType(MediaType.APPLICATION_JSON).content(createBody("")))
+		mockMvc.perform(post("/api/projects").with(authenticated()).contentType(MediaType.APPLICATION_JSON).content(createBody("")))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.error", is("INVALID_PROJECT_NAME")));
 
-		mockMvc.perform(post("/api/projects").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"   \"}"))
+		mockMvc.perform(post("/api/projects").with(authenticated()).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"   \"}"))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.error", is("INVALID_PROJECT_NAME")));
+	}
+
+	// -- Ticket 084: ownership real -------------------------------------------
+
+	@Test
+	void crear_sin_autenticacion_responde_401() throws Exception {
+		mockMvc.perform(post("/api/projects").contentType(MediaType.APPLICATION_JSON).content(createBody("Sin sesión")))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.error", is("UNAUTHENTICATED")));
+	}
+
+	@Test
+	void un_proyecto_nuevo_nace_privado() throws Exception {
+		mockMvc.perform(post("/api/projects").with(authenticated()).contentType(MediaType.APPLICATION_JSON).content(createBody("Nuevo")))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.visibility", is("PRIVATE")));
 	}
 
 	// -- GET /api/projects (HU-02, dashboard) --------------------------------
 
 	@Test
+	void listar_sin_autenticacion_responde_401() throws Exception {
+		mockMvc.perform(get("/api/projects")).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.error", is("UNAUTHENTICATED")));
+	}
+
+	/** Ticket 084 -- HU-02: "Mis proyectos" deja de ser un listado global, hallazgo real corregido por este ticket. */
+	@Test
+	void listar_solo_incluye_los_proyectos_del_dueno_autenticado() throws Exception {
+		String otroOwnerId = "9c3e3b1a-2222-4d3d-8888-0f1a2b3c4d5e";
+		mockMvc.perform(post("/api/projects").with(authenticated()).contentType(MediaType.APPLICATION_JSON).content(createBody("Mío")))
+				.andExpect(status().isCreated());
+		mockMvc.perform(post("/api/projects")
+						.with(authenticated(otroOwnerId))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Ajeno")))
+				.andExpect(status().isCreated());
+
+		mockMvc.perform(get("/api/projects").with(authenticated()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$", hasSize(1)))
+				.andExpect(jsonPath("$[0].name", is("Mío")));
+	}
+
+	@Test
 	void listar_incluye_hasta_3_miniaturas_y_el_conteo_total_de_mobs_AC3() throws Exception {
-		MvcResult created = mockMvc.perform(post("/api/projects")
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Carcomido")))
 				.andReturn();
@@ -151,7 +204,7 @@ class ProjectControllerTest {
 		}
 		flush();
 
-		mockMvc.perform(get("/api/projects"))
+		mockMvc.perform(get("/api/projects").with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].mobCount", is(5)))
 				.andExpect(jsonPath("$[0].mobThumbnails", hasSize(3))); // AC "+N": el frontend calcula N = mobCount - 3
@@ -161,14 +214,14 @@ class ProjectControllerTest {
 
 	@Test
 	void un_proyecto_sin_mobs_es_draft() throws Exception {
-		mockMvc.perform(post("/api/projects").contentType(MediaType.APPLICATION_JSON).content(createBody("Vacío")));
+		mockMvc.perform(post("/api/projects").with(authenticated()).contentType(MediaType.APPLICATION_JSON).content(createBody("Vacío")));
 
-		mockMvc.perform(get("/api/projects")).andExpect(jsonPath("$[0].status", is("draft")));
+		mockMvc.perform(get("/api/projects").with(authenticated())).andExpect(jsonPath("$[0].status", is("draft")));
 	}
 
 	@Test
 	void un_proyecto_con_todos_sus_mobs_en_draft_es_draft() throws Exception {
-		MvcResult created = mockMvc.perform(post("/api/projects")
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Todo en draft")))
 				.andReturn();
@@ -178,12 +231,12 @@ class ProjectControllerTest {
 		aMobIn(projectId, "mob-2", "draft");
 		flush();
 
-		mockMvc.perform(get("/api/projects")).andExpect(jsonPath("$[0].status", is("draft")));
+		mockMvc.perform(get("/api/projects").with(authenticated())).andExpect(jsonPath("$[0].status", is("draft")));
 	}
 
 	@Test
 	void un_proyecto_con_al_menos_un_mob_fuera_de_draft_es_active() throws Exception {
-		MvcResult created = mockMvc.perform(post("/api/projects")
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Con progreso real")))
 				.andReturn();
@@ -193,12 +246,12 @@ class ProjectControllerTest {
 		aMobIn(projectId, "mob-en-progreso", "in_progress");
 		flush();
 
-		mockMvc.perform(get("/api/projects")).andExpect(jsonPath("$[0].status", is("active")));
+		mockMvc.perform(get("/api/projects").with(authenticated())).andExpect(jsonPath("$[0].status", is("active")));
 	}
 
 	@Test
 	void listar_excluye_mobs_eliminados_del_conteo_y_de_las_miniaturas_ticket_039() throws Exception {
-		MvcResult created = mockMvc.perform(post("/api/projects")
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Con mobs eliminados en el dashboard")))
 				.andReturn();
@@ -209,7 +262,7 @@ class ProjectControllerTest {
 		flush();
 		mockMvc.perform(delete("/api/mobs/{mobId}", mobEliminadoId)).andExpect(status().isNoContent());
 
-		mockMvc.perform(get("/api/projects"))
+		mockMvc.perform(get("/api/projects").with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].mobCount", is(1)))
 				.andExpect(jsonPath("$[0].mobThumbnails", hasSize(1)));
@@ -217,7 +270,7 @@ class ProjectControllerTest {
 
 	@Test
 	void listar_no_incluye_proyectos_eliminados() throws Exception {
-		MvcResult created = mockMvc.perform(post("/api/projects")
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Temporal")))
 				.andReturn();
@@ -233,7 +286,7 @@ class ProjectControllerTest {
 
 	@Test
 	void renombrar_actualiza_el_nombre() throws Exception {
-		MvcResult created = mockMvc.perform(post("/api/projects")
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Nombre viejo")))
 				.andReturn();
@@ -248,7 +301,7 @@ class ProjectControllerTest {
 
 	@Test
 	void editar_la_descripcion_la_actualiza_y_persiste() throws Exception {
-		MvcResult created = mockMvc.perform(post("/api/projects")
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Galgoth")))
 				.andReturn();
@@ -266,18 +319,18 @@ class ProjectControllerTest {
 
 	@Test
 	void un_proyecto_recien_creado_no_tiene_descripcion() throws Exception {
-		mockMvc.perform(post("/api/projects")
+		mockMvc.perform(post("/api/projects").with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Sin descripción todavía")))
 				.andExpect(status().isCreated());
 
-		mockMvc.perform(get("/api/projects"))
+		mockMvc.perform(get("/api/projects").with(authenticated()))
 				.andExpect(jsonPath("$[0].description", is(nullValue())));
 	}
 
 	@Test
 	void renombrar_sin_nombre_es_rechazado() throws Exception {
-		MvcResult created = mockMvc.perform(post("/api/projects")
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Nombre")))
 				.andReturn();
@@ -301,7 +354,7 @@ class ProjectControllerTest {
 
 	@Test
 	void duplicar_copia_el_proyecto_y_todos_sus_mobs_con_su_historial_de_revisiones() throws Exception {
-		MvcResult created = mockMvc.perform(post("/api/projects")
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Original")))
 				.andReturn();
@@ -346,7 +399,7 @@ class ProjectControllerTest {
 
 	@Test
 	void el_conteo_de_mobs_del_detalle_excluye_los_eliminados() throws Exception {
-		MvcResult created = mockMvc.perform(post("/api/projects")
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Con mob eliminado")))
 				.andReturn();
@@ -363,7 +416,7 @@ class ProjectControllerTest {
 
 	@Test
 	void duplicar_un_proyecto_no_copia_sus_mobs_eliminados() throws Exception {
-		MvcResult created = mockMvc.perform(post("/api/projects")
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Con mob eliminado para duplicar")))
 				.andReturn();
@@ -390,7 +443,7 @@ class ProjectControllerTest {
 
 	@Test
 	void habilita_cors_para_el_origen_local_de_desarrollo_del_frontend() throws Exception {
-		mockMvc.perform(get("/api/projects").header("Origin", "http://localhost:5173"))
+		mockMvc.perform(get("/api/projects").with(authenticated()).header("Origin", "http://localhost:5173"))
 				.andExpect(status().isOk())
 				.andExpect(result -> assertThat(result.getResponse().getHeader("Access-Control-Allow-Origin"))
 						.isEqualTo("http://localhost:5173"));

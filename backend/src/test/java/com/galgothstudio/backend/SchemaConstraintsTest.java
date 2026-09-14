@@ -55,6 +55,26 @@ class SchemaConstraintsTest {
 				UUID.randomUUID(), mobId, revisionNumber);
 	}
 
+	/** Ticket 084 -- todo proyecto nace privado si el caller no dice nada (decisión de Marco). */
+	@Test
+	void projects_visibility_toma_default_private_cuando_se_omite() {
+		UUID projectId = aProject();
+
+		String visibility = jdbc.queryForObject("select visibility from projects where id = ?", String.class, projectId);
+
+		assertThat(visibility).isEqualTo("PRIVATE");
+	}
+
+	/** Ticket 084 -- mismo criterio que `ai_jobs_rechaza_insercion_invalida_por_job_type_o_base_nulos`: el CHECK, no la capa de aplicación, es la última línea de defensa. */
+	@Test
+	void projects_visibility_rechaza_un_valor_fuera_de_private_public() {
+		UUID projectId = UUID.randomUUID();
+
+		assertThatThrownBy(() -> jdbc.update(
+						"insert into projects (id, name, visibility) values (?, ?, ?)", projectId, "Galgoth", "SECRET"))
+				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
 	@Test
 	void mobs_current_revision_number_toma_default_0_cuando_se_omite() {
 		UUID projectId = aProject();

@@ -39,7 +39,7 @@ Implementado en `backend/.../project/api/MobRecentController.java`. Ruta propia 
 GET    /api/mobs/recent?limit=N   -- los N mobs editados más recientemente, de todos los proyectos
 ```
 
-- **`GET /api/mobs/recent`** — `RecentMobSummary[]` (id, projectId, name, baseType, status, thumbnailKey, updatedAt) -- mismo shape que `MobSummary` más `projectId` (el frontend lo necesita para navegar a `/projects/{projectId}/mobs/{mobId}/edit`, ya que el mob puede ser de cualquier proyecto). `limit` es opcional (default 3, tope 20) -- un valor ausente/inválido (`<1`, no numérico) cae al default en vez de `400 Bad Request`, es un detalle de presentación (cuántas cards caben en la fila), no un parámetro de negocio. Excluye mobs soft-deleted y mobs cuyo proyecto esté soft-deleted, ordenado por `updatedAt` descendente.
+- **`GET /api/mobs/recent`** — requiere `Authorization: Bearer` (ticket 084, ver abajo); `401 Unauthorized` (`UNAUTHENTICATED`) sin él. `RecentMobSummary[]` (id, projectId, name, baseType, status, thumbnailKey, updatedAt) -- mismo shape que `MobSummary` más `projectId` (el frontend lo necesita para navegar a `/projects/{projectId}/mobs/{mobId}/edit`, ya que el mob puede ser de cualquier proyecto). `limit` es opcional (default 3, tope 20) -- un valor ausente/inválido (`<1`, no numérico) cae al default en vez de `400 Bad Request`, es un detalle de presentación (cuántas cards caben en la fila), no un parámetro de negocio. Excluye mobs soft-deleted y mobs cuyo proyecto esté soft-deleted, cruza SOLO los proyectos del dueño autenticado (ticket 084), ordenado por `updatedAt` descendente.
 
 ### CRUD de proyectos (ticket `021`, HU-01/HU-02)
 
@@ -54,13 +54,30 @@ DELETE /api/projects/{id}         -- soft-delete (projects.deleted_at)
 POST   /api/projects/{id}/duplicate -- Duplicate (copia PROFUNDA: proyecto + todos sus mobs + su historial completo de mob_revisions + su mob_drafts actual, si tiene)
 ```
 
-- **`POST /api/projects`** — body `{name}`. `201 Created` con el `ProjectDetail` si el nombre es válido; `400 Bad Request` (`error: "INVALID_PROJECT_NAME"`) si está vacío/en blanco (AC #2) -- ningún proyecto se crea.
-- **`GET /api/projects`** — devuelve `ProjectSummary[]` (id, name, description, mobCount, mobThumbnails ≤3, status, createdAt, updatedAt), sin los soft-deleted, ordenados por `updatedAt` descendente. `mobThumbnails[].thumbnailKey` es `null` mientras no exista pipeline de thumbnails (ticket futuro) -- el frontend renderiza un placeholder genérico, nunca bloquea el listado (AC #5). El frontend calcula el indicador "+N" como `mobCount - 3` cuando `mobCount > 3` (AC #3). `status` (ticket 072, `"active"`/`"draft"`) es DERIVADO, no una columna real de `projects` -- `"active"` si el proyecto tiene al menos un mob fuera de `draft` (`in_progress`/`ready`), `"draft"` si todos sus mobs están en draft o no tiene ninguno.
-- **`GET /api/projects/{id}`** — `ProjectDetail` (id, name, description, mobCount, createdAt, updatedAt; sin el grid completo de mobs, eso es HU-04/ticket 022); `404 Not Found` (`PROJECT_NOT_FOUND`) si no existe o está soft-deleted. `description` (ticket 073) es opcional, `null` si el proyecto no tiene.
+- **`POST /api/projects`** — requiere `Authorization: Bearer` (ticket 084, ver "Ownership real de proyectos" abajo); `401 Unauthorized` (`UNAUTHENTICATED`) sin él. body `{name}`. `201 Created` con el `ProjectDetail` si el nombre es válido; `400 Bad Request` (`error: "INVALID_PROJECT_NAME"`) si está vacío/en blanco (AC #2) -- ningún proyecto se crea. El proyecto queda ligado al `sub` del JWT (`owner_ref`) y nace `visibility = "PRIVATE"`.
+- **`GET /api/projects`** — requiere `Authorization: Bearer`; `401 Unauthorized` (`UNAUTHENTICATED`) sin él. Devuelve `ProjectSummary[]` **solo del dueño autenticado** (ticket 084 -- hasta entonces era un listado global sin filtrar, hallazgo real corregido por ese ticket), sin los soft-deleted, ordenados por `updatedAt` descendente. Campos: id, name, description, mobCount, mobThumbnails ≤3, status, visibility, createdAt, updatedAt. `mobThumbnails[].thumbnailKey` es `null` mientras no exista pipeline de thumbnails (ticket futuro) -- el frontend renderiza un placeholder genérico, nunca bloquea el listado (AC #5). El frontend calcula el indicador "+N" como `mobCount - 3` cuando `mobCount > 3` (AC #3). `status` (ticket 072, `"active"`/`"draft"`) es DERIVADO, no una columna real de `projects` -- `"active"` si el proyecto tiene al menos un mob fuera de `draft` (`in_progress`/`ready`), `"draft"` si todos sus mobs están en draft o no tiene ninguno.
+- **`GET /api/projects/{id}`** — sin cambios en el ticket 084 (sigue abierto, sin exigir `Authorization` -- el enforcement dueño/público/privado de esta ruta es el ticket 085). `ProjectDetail` (id, name, description, mobCount, visibility, createdAt, updatedAt; sin el grid completo de mobs, eso es HU-04/ticket 022); `404 Not Found` (`PROJECT_NOT_FOUND`) si no existe o está soft-deleted. `description` (ticket 073) es opcional, `null` si el proyecto no tiene.
 - **`PATCH /api/projects/{id}`** — body `{name, description}`. Mismo criterio de validación de `name` que crear. `description` (ticket 073) SIEMPRE explícita en el body -- el contrato espera que todo caller la reenvíe tal cual si no la está cambiando (viaja tanto en `ProjectSummary` como en `ProjectDetail` para que cualquier pantalla pueda reenviarla sin conocerla de antemano). Un body que la omita la deja en `null` -- comportamiento intencional y documentado, no una ambigüedad oculta.
 - **`DELETE /api/projects/{id}`** — `204 No Content`. Soft-delete -- el proyecto deja de aparecer en cualquier consulta, tratado como "no existe" en adelante.
 - **`POST /api/projects/{id}/duplicate`** — `201 Created` con el `ProjectDetail` de la copia (`name` = original + `" (copia)"`). Copia profunda real: cada mob del original se recrea con nuevo id, y se copian TODAS sus `mob_revisions` (mismo `revision_number`, mismo `model_jsonb`) más su `mob_drafts` actual si existe -- decisión explícita del Product Owner (ticket 021).
 - **"Export"** del menú de acciones del dashboard (mockup 01) está deshabilitado en el frontend -- no existe ningún endpoint de exportación de proyecto expuesto todavía (decisión del Product Owner, ticket 021; el export de un MOB individual vía `BBModelExporterV5`/V4 es un servicio de dominio interno sin controlador REST, épica futura).
+
+#### Ownership real de proyectos (ticket `084`)
+
+Ver `docs/definiciones/proyectos-por-usuario-y-explorar.md` (VoBo de Marco) --
+primera pieza de "cada usuario tiene sus propios proyectos, públicos o
+privados, con una sección Explorar". `owner_ref` existía en el esquema
+desde el ticket 003 pero nunca se llenaba; este ticket lo puebla de
+verdad con el `sub` (user id) del JWT de auth-core-mc (mismo mecanismo de
+validación del ticket 077) y agrega `visibility` (`"PRIVATE"`/`"PUBLIC"`,
+migración `V5`, default `"PRIVATE"`). **Solo** `POST/GET /api/projects` y
+`GET /api/mobs/recent` exigen autenticación en este ticket -- el resto de
+rutas (detalle, rename, delete, duplicate, y los 9 controladores
+anidados de mobs/drafts/texturas/export) siguen sin cambios, abiertas,
+hasta el ticket `085` (enforcement dueño/público/privado sobre TODAS las
+rutas, con `404` en vez de `403` para no revelar existencia). Un cambio
+de visibilidad (`PATCH .../visibility`) y la sección Explorar en sí
+llegan en el ticket `086`.
 
 ### Draft persistence + autosave + Guardar (ticket `020`)
 
