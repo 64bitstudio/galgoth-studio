@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../projectsApi'
 import { createMob, getMob, listMobs } from '../mobsApi'
 
@@ -7,6 +8,11 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('mobsApi', () => {
+  // Ticket 089 -- ver el mismo comentario en projectsApi.spec.ts.
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })

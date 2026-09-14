@@ -21,11 +21,11 @@ rutas propias) y `086` (para el toggle de visibilidad).
   - `ProjectDetail.vue`: control de visibilidad (toggle o menú "Hacer
     público"/"Hacer privado") sobre `PATCH /api/projects/{id}/visibility`
     del ticket `086`.
-  - `authenticatedFetch.ts`: confirmar que ya adjunta el `Authorization`
-    real a las llamadas de proyectos (hoy no hacía falta porque las
-    rutas estaban abiertas) — ajustar si algún call site de proyectos
-    seguía usando `fetch` plano.
-- **No incluye:** la sección Explorar en sí (ticket `088`).
+- **No incluye:** la sección Explorar en sí (ticket `088`); que
+  `projectsApi.ts`/`mobsApi.ts` adjunten `Authorization` — se adelantó
+  como hotfix (ticket `089`) al descubrirse como regresión visible en
+  vivo apenas se desplegó el ticket `084`, antes de que este ticket
+  arrancara.
 
 ## Criterios de aceptación (TDD)
 - Visitante sin sesión que navega a `/projects` es redirigido a
