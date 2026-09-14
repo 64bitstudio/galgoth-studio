@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import ProjectDetail from '../ProjectDetail.vue'
 import type { MobSummary } from '../mobsApi'
 
@@ -54,6 +55,11 @@ function stubProjectAndMobs(project: object, mobs: MobSummary[]): ReturnType<typ
 }
 
 describe('ProjectDetail.vue', () => {
+  // Ticket 089 -- ver el mismo comentario en HomeView.spec.ts.
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })

@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import HomeView from '../HomeView.vue'
 import type { ProjectSummary } from '../projectsApi'
 import type { RecentMobSummary } from '../mobsApi'
@@ -67,6 +68,12 @@ function stubRecentAndProjects(mobs: RecentMobSummary[], projects: ProjectSummar
 }
 
 describe('HomeView.vue', () => {
+  // Ticket 089 -- projectsApi/mobsApi ahora pasan por authenticatedFetch
+  // (ticket 078), que necesita un Pinia activo para leer la sesión.
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })

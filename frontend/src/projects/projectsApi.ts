@@ -4,7 +4,16 @@
  * proxy de Vite -- `docs/definiciones/galgoth-studio-mvp.md` §9 confirma
  * CORS habilitado como la estrategia elegida para el origen local de
  * desarrollo (ver `backend/.../config/WebConfig.java`), no un proxy.
+ *
+ * Ticket 089 (hotfix, regresión de auth-core-mc#084) -- `POST`/`GET
+ * /api/projects` ya exigen `Authorization: Bearer` en el backend; este
+ * cliente usaba `fetch` plano y nunca lo adjuntaba (nadie lo necesitó
+ * hasta ahora, ver Javadoc de `authenticatedFetch`). Pasa a usar
+ * `authenticatedFetch` (ticket 078), que ya maneja el refresh ante un
+ * 401 -- mismo mecanismo, ya construido y probado, solo sin cablear
+ * hasta este ticket.
  */
+import { authenticatedFetch } from '../auth/authenticatedFetch'
 import { API_BASE_URL } from '../api/apiConfig'
 import { ApiError } from '../api/ApiError'
 
@@ -50,7 +59,7 @@ interface ApiErrorBody {
 export { ApiError }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await authenticatedFetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, createProject, deleteProject, duplicateProject, listProjects, renameProject } from '../projectsApi'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -6,6 +7,13 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('projectsApi', () => {
+  // Ticket 089 -- request() ahora pasa por authenticatedFetch (ticket 078),
+  // que necesita un Pinia activo para leer la sesión (sin sesión, simplemente
+  // no adjunta Authorization -- ver authenticatedFetch.spec.ts).
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })

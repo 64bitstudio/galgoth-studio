@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -79,6 +80,9 @@ beforeAll(() => {
 
 describe('AiMobWizard.vue', () => {
   beforeEach(() => {
+    // Ticket 089 -- createMob (mobsApi) ahora pasa por authenticatedFetch
+    // (ticket 078), que necesita un Pinia activo para leer la sesión.
+    setActivePinia(createPinia())
     FakeEventSource.instances = []
     vi.stubGlobal('EventSource', FakeEventSource)
     sessionStorage.clear() // ticket 038 -- AiMobWizard/GenerationStep persisten estado de recuperación en sessionStorage; sin esto, un test "ve" lo que dejó el anterior.

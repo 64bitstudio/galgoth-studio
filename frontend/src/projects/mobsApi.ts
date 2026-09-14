@@ -2,7 +2,12 @@
  * Cliente HTTP del CRUD de mobs (ticket 022) -- mismo patrón que
  * `projectsApi.ts` (ticket 021): fetch directo, sin proxy de Vite (CORS
  * es la estrategia elegida, ver `docs/definiciones/galgoth-studio-mvp.md` §9).
+ *
+ * Ticket 089 (hotfix, regresión de auth-core-mc#084) -- `GET
+ * /api/mobs/recent` ya exige `Authorization: Bearer`; ver el mismo
+ * comentario en `projectsApi.ts`.
  */
+import { authenticatedFetch } from '../auth/authenticatedFetch'
 import { API_BASE_URL } from '../api/apiConfig'
 import { ApiError } from '../api/ApiError'
 
@@ -30,7 +35,7 @@ export interface RecentMobSummary extends MobSummary {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await authenticatedFetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
