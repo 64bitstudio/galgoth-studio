@@ -59,6 +59,21 @@ export function refreshAccessToken(refreshToken: string): Promise<TokenPair> {
   return requestJson<TokenPair>('/api/v1/token/refresh', { refreshToken }, false)
 }
 
+/**
+ * Ticket 080: siempre `202`, exista o no `identifier` como cuenta real --
+ * auth-core-mc nunca revela esa diferencia aquí (mismo criterio que
+ * `/verify-email/request` no sigue: ahí el llamador ya "posee" un
+ * userId). No hay nada que inspeccionar en la respuesta.
+ */
+export function requestPasswordReset(identifier: string): Promise<void> {
+  return requestJson<void>('/api/v1/password-reset/request', { identifier })
+}
+
+/** `/api/v1/password-reset/confirm` no exige `X-Client-Id` -- el token ya identifica de qué usuario es (mismo criterio que `token/refresh`). */
+export function confirmPasswordReset(token: string, newPassword: string): Promise<void> {
+  return requestJson<void>('/api/v1/password-reset/confirm', { token, newPassword }, false)
+}
+
 async function requestJson<T>(path: string, body: unknown, withClientId = true): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (withClientId) {

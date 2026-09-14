@@ -65,6 +65,30 @@ const router = createRouter({
       component: () => import('../auth/RegisterView.vue'),
     },
     {
+      // Ticket 080: pide el reset (email/teléfono) -- dispara
+      // POST /api/v1/password-reset/request, sin revelar si la cuenta existe.
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: () => import('../auth/ForgotPasswordView.vue'),
+    },
+    {
+      // Ticket 080: ruta FIJA -- auth-core-mc#056 ya construye los links
+      // reales de correo como `{origin}/password-reset/confirm?token=...`
+      // para clientes con hosts_own_login_ui=true (galgoth-studio lo es
+      // desde el ticket 055 de ese repo). Cambiar este path rompería los
+      // links que ya están saliendo en producción.
+      path: '/password-reset/confirm',
+      name: 'password-reset-confirm',
+      component: () => import('../auth/ResetPasswordView.vue'),
+    },
+    {
+      // Ticket 083: página estática de términos y condiciones -- también
+      // el destino real del link en el checkbox de RegisterView.vue.
+      path: '/terms',
+      name: 'terms',
+      component: () => import('../legal/TermsView.vue'),
+    },
+    {
       path: '/dev/design-system',
       name: 'design-system-showcase',
       component: () => import('../design-system/Showcase.vue'),
