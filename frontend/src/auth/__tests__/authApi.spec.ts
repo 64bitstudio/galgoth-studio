@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../api/ApiError'
-import { isTwoFactorRequired, login, refreshAccessToken, register } from '../authApi'
+import { confirmPasswordReset, isTwoFactorRequired, login, refreshAccessToken, register, requestPasswordReset } from '../authApi'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -78,5 +78,38 @@ describe('authApi', () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => jsonResponse({ error: 'invalid_token', message: 'Refresh token inválido' }, 401)))
 
     await expect(refreshAccessToken('expired')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('requestPasswordReset (ticket 080) hace POST a /api/v1/password-reset/request con X-Client-Id', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(null, 202))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await requestPasswordReset('ada@example.com')
+
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/v1/password-reset/request')
+    expect((init?.headers as Record<string, string>)['X-Client-Id']).toBe('galgoth-studio')
+    expect(JSON.parse(init?.body as string)).toEqual({ identifier: 'ada@example.com' })
+  })
+
+  it('confirmPasswordReset (ticket 080) hace POST a /api/v1/password-reset/confirm SIN X-Client-Id', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(null, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await confirmPasswordReset('the-token', 'newpass123')
+
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/v1/password-reset/confirm')
+    expect((init?.headers as Record<string, string>)['X-Client-Id']).toBeUndefined()
+    expect(JSON.parse(init?.body as string)).toEqual({ token: 'the-token', newPassword: 'newpass123' })
+  })
+
+  it('un token de reset inválido/expirado propaga un ApiError con el código real', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () => jsonResponse({ error: 'invalid_token', message: 'Password reset link is invalid or has expired' }, 400)),
+    )
+
+    await expect(confirmPasswordReset('bad-token', 'newpass123')).rejects.toMatchObject({ status: 400, code: 'invalid_token' })
   })
 })

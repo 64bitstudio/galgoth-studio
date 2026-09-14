@@ -10,12 +10,16 @@
  * mismo patrón split-screen ya corregido en `LoginView.vue`. El único
  * cambio de comportamiento real es "Confirmar contraseña" (validación de
  * cliente, nunca llega a `session.register`) -- el contrato con
- * `sessionStore`/`authApi` no cambia. Login social, el checkbox de
- * términos y el de newsletter se muestran fieles a la referencia pero
- * `disabled` con "Próximamente": ninguno tiene una función real hoy
- * (login social nunca se cableó aquí; no existe página de términos; el
- * backend no soporta preferencia de newsletter) -- nunca aparentar una
- * función que no existe.
+ * `sessionStore`/`authApi` no cambia. Login social y el checkbox de
+ * newsletter se muestran fieles a la referencia pero `disabled` con
+ * "Próximamente": ninguno tiene una función real hoy (login social nunca
+ * se cableó aquí; el backend no soporta preferencia de newsletter) --
+ * nunca aparentar una función que no existe.
+ *
+ * Ticket 083: el checkbox de términos pasa de "Próximamente" a real y
+ * obligatorio (validación de cliente, mismo patrón que "confirmar
+ * contraseña") ahora que `/terms` existe -- el link abre en pestaña
+ * nueva para no perder lo ya llenado del formulario.
  */
 import { ref } from 'vue'
 import { ApiError } from '../api/ApiError'
@@ -33,6 +37,7 @@ const password = ref('')
 const confirmPassword = ref('')
 const passwordVisible = ref(false)
 const confirmPasswordVisible = ref(false)
+const acceptedTerms = ref(false)
 const error = ref<string | null>(null)
 const busy = ref(false)
 const registered = ref(false)
@@ -44,6 +49,10 @@ async function submit(): Promise<void> {
   error.value = null
   if (password.value !== confirmPassword.value) {
     error.value = 'Las contraseñas no coinciden.'
+    return
+  }
+  if (!acceptedTerms.value) {
+    error.value = 'Debes aceptar los términos y condiciones para crear una cuenta.'
     return
   }
   busy.value = true
@@ -135,9 +144,9 @@ async function submit(): Promise<void> {
         </label>
 
         <div class="auth-view__checks">
-          <label class="auth-view__checkbox auth-view__checkbox--soon" title="Todavía no disponible en galgoth-studio">
-            <input type="checkbox" disabled />
-            Acepto <span class="auth-view__terms-link">términos y condiciones</span> <em>Próximamente</em>
+          <label class="auth-view__checkbox">
+            <input v-model="acceptedTerms" type="checkbox" required :disabled="busy" />
+            Acepto <RouterLink class="auth-view__terms-link" to="/terms" target="_blank" rel="noopener">términos y condiciones</RouterLink>
           </label>
           <label class="auth-view__checkbox auth-view__checkbox--soon" title="Todavía no disponible en galgoth-studio">
             <input type="checkbox" disabled />

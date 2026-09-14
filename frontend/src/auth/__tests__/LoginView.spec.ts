@@ -28,6 +28,7 @@ function testRouter(): Router {
       { path: '/', component: { template: '<div />' } },
       { path: '/login', component: LoginView },
       { path: '/register', component: { template: '<div />' } },
+      { path: '/forgot-password', component: { template: '<div />' } },
     ],
   })
 }

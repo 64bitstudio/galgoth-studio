@@ -17,6 +17,7 @@ function testRouter(): Router {
     routes: [
       { path: '/register', component: RegisterView },
       { path: '/login', component: { template: '<div />' } },
+      { path: '/terms', component: { template: '<div />' } },
     ],
   })
 }
@@ -27,16 +28,26 @@ async function mountAtRegister(): Promise<ReturnType<typeof mount>> {
   return mount(RegisterView, { global: { plugins: [router] } })
 }
 
-/** Rellena todos los campos con datos válidos, contraseñas coincidentes por defecto (ticket 082). */
+/**
+ * Rellena todos los campos con datos válidos, contraseñas coincidentes y
+ * términos aceptados por defecto (tickets 082/083).
+ */
 async function fillForm(
   wrapper: ReturnType<typeof mount>,
-  { password = 'abcd1234', confirmPassword = password }: { password?: string; confirmPassword?: string } = {},
+  {
+    password = 'abcd1234',
+    confirmPassword = password,
+    acceptTerms = true,
+  }: { password?: string; confirmPassword?: string; acceptTerms?: boolean } = {},
 ): Promise<void> {
   await wrapper.find('input[type="text"]').setValue('Ada')
   await wrapper.findAll('input[type="text"]')[1]!.setValue('Lovelace')
   await wrapper.find('input[type="email"]').setValue('ada@example.com')
   await wrapper.find('input[type="password"]').setValue(password)
   await wrapper.findAll('input[type="password"]')[1]!.setValue(confirmPassword)
+  if (acceptTerms) {
+    await wrapper.find('input[type="checkbox"]').setValue(true)
+  }
 }
 
 describe('RegisterView.vue', () => {
@@ -109,6 +120,17 @@ describe('RegisterView.vue', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Las contraseñas no coinciden')
+    expect(authApi.register).not.toHaveBeenCalled()
+  })
+
+  it('no aceptar los términos bloquea el envío con un error explícito (ticket 083)', async () => {
+    const wrapper = await mountAtRegister()
+
+    await fillForm(wrapper, { acceptTerms: false })
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Debes aceptar los términos y condiciones')
     expect(authApi.register).not.toHaveBeenCalled()
   })
 })

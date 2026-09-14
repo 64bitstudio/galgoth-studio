@@ -106,7 +106,7 @@ async function submit(): Promise<void> {
             <input type="checkbox" checked disabled />
             Recordarme
           </label>
-          <span class="auth-view__soon" title="Todavía no disponible en galgoth-studio">¿Olvidaste tu contraseña? <em>Próximamente</em></span>
+          <RouterLink class="auth-view__forgot-link" to="/forgot-password">¿Olvidaste tu contraseña?</RouterLink>
         </div>
 
         <p v-if="error" class="auth-view__error">{{ error }}</p>
@@ -358,12 +358,10 @@ async function submit(): Promise<void> {
   color: var(--muted);
 }
 
-.auth-view__soon {
-  color: var(--muted);
-  cursor: not-allowed;
+.auth-view__forgot-link {
+  color: var(--accent);
 }
 
-.auth-view__soon em,
 .auth-view__social-btn em {
   margin-left: var(--space-1);
   color: var(--warning);
