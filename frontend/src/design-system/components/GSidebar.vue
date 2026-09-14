@@ -27,6 +27,7 @@
  * navegación cambia, `active`/`select` siguen funcionando igual colapsado.
  */
 import { onMounted, ref } from 'vue'
+import galgothIconUrl from '../../assets/brand/galgoth-icon.png'
 import IconHome from '../icons/IconHome.vue'
 import IconProjects from '../icons/IconProjects.vue'
 import IconExplore from '../icons/IconExplore.vue'
@@ -83,7 +84,10 @@ function toggleCollapsed(): void {
 <template>
   <nav class="g-sidebar" :class="{ 'g-sidebar--collapsed': collapsed }" aria-label="Navegación principal">
     <div class="g-sidebar__head">
-      <span v-if="!collapsed" class="g-sidebar__brand">Galgoth Studio</span>
+      <span v-if="!collapsed" class="g-sidebar__brand">
+        <img :src="galgothIconUrl" alt="" class="g-sidebar__brand-icon" width="22" height="22" />
+        Galgoth Studio
+      </span>
       <button type="button" class="g-sidebar__toggle" :aria-expanded="!collapsed" :aria-label="collapsed ? 'Expandir menú de navegación' : 'Colapsar menú de navegación'" @click="toggleCollapsed"><IconSidebarToggle :size="16" /></button>
     </div>
 
@@ -129,11 +133,19 @@ function toggleCollapsed(): void {
 }
 
 .g-sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-weight: 700;
   font-size: var(--text-md);
   letter-spacing: 0.01em;
   white-space: nowrap;
   overflow: hidden;
+}
+
+.g-sidebar__brand-icon {
+  flex-shrink: 0;
+  display: block;
 }
 
 .g-sidebar__toggle {
