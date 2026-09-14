@@ -34,7 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProjectService {
 
 	private static final String COPY_SUFFIX = " (copia)";
-	/** Ticket 084 -- todo proyecto nace privado (decisión de Marco); publicarlo es una acción explícita del dueño (ticket 086). */
+	/** Ticket 084 -- cada proyecto nace privado (decisión de Marco); publicarlo es una acción explícita del dueño (ticket 086). */
 	private static final String PRIVATE = "PRIVATE";
 
 	private final ProjectRepository projectRepository;

@@ -43,7 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class ProjectControllerTest {
 
-	/** Ticket 084 -- `sub` fijo para todo el archivo salvo los tests que comparan explícitamente dos dueños distintos (ver "Ownership real"). */
+	/** Ticket 084 -- `sub` constante para el archivo completo, salvo los tests que comparan explícitamente dos dueños distintos (ver "Ownership real"). */
 	private static final String OWNER_ID = "4635300a-5049-4cd5-933d-a37b807c83b0";
 
 	@Autowired

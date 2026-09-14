@@ -55,7 +55,7 @@ class SchemaConstraintsTest {
 				UUID.randomUUID(), mobId, revisionNumber);
 	}
 
-	/** Ticket 084 -- todo proyecto nace privado si el caller no dice nada (decisión de Marco). */
+	/** Ticket 084 -- cada proyecto nace privado si el caller no dice nada (decisión de Marco). */
 	@Test
 	void projects_visibility_toma_default_private_cuando_se_omite() {
 		UUID projectId = aProject();

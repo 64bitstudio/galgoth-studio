@@ -34,7 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 class MobRecentControllerTest {
 
-	/** Ticket 084 -- `sub` fijo para todo el archivo salvo el test que compara explícitamente dos dueños distintos. */
+	/** Ticket 084 -- `sub` constante para el archivo completo, salvo el test que compara explícitamente dos dueños distintos. */
 	private static final String OWNER_ID = "4635300a-5049-4cd5-933d-a37b807c83b0";
 
 	@Autowired
@@ -46,7 +46,7 @@ class MobRecentControllerTest {
 	@Autowired
 	private ObjectMapper objectMapper;
 
-	/** Ticket 084 -- mismo helper que `ProjectControllerTest`, todo proyecto de prueba queda del dueño por defecto salvo que se pida otro. */
+	/** Ticket 084 -- mismo helper que `ProjectControllerTest`, cada proyecto de prueba queda del dueño por defecto salvo que se pida otro. */
 	private UUID aProject(String name) {
 		return aProject(name, OWNER_ID);
 	}
