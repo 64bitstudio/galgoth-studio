@@ -35,3 +35,11 @@ Javadoc de `GSidebar.vue`, no relacionado al de "Usuario").
 - Verificación en vivo contra DEV.
 
 ## Hecho
+- `favicon.png`/`apple-touch-icon.png` generados desde el arte real de
+  Marco, `favicon.svg` (placeholder) borrado, `index.html` actualizado.
+- `GSidebar.vue`: ícono agregado junto a "Galgoth Studio" en el estado
+  expandido.
+- Suite completa del frontend: 765/765 en verde.
+- **Verificación en vivo**: `favicon.png`/`apple-touch-icon.png`
+  confirmados accesibles (200 OK) en
+  `https://studio-dev.galgoth.64bitstudio.com/`.
