@@ -74,5 +74,26 @@ el ticket `077`.
   test de controlador que simula un JWT real).
 - `docs/API.md`/`docs/BASE_DE_DATOS.md` actualizados con el nuevo
   contrato y columna.
-- **Verificación en vivo contra DEV**: pendiente (se completa junto con
-  el deploy de este PR).
+- **Hallazgo real de CI, ya corregido**: el Quality Gate de SonarQube
+  rechazó el primer intento de este PR por 5 "new violations" (regla
+  S1135, "TODO comment") — diagnosticado leyendo directo la base de
+  SonarQube por SSH (tabla `issues` + `measures.quality_gate_details`),
+  sin necesitar el dashboard: la regla matcheaba la palabra española
+  "todo" dentro de comentarios nuevos ("todo proyecto nace privado",
+  "para todo el archivo"), no un TODO real. Reescritos sin cambiar el
+  significado. Segundo intento: Quality Gate `OK`.
+- **Verificación en vivo contra DEV**:
+  - `POST /api/projects` sin `Authorization` → `401 UNAUTHENTICATED`.
+  - Cuenta de prueba real registrada (`POST /api/v1/register` contra
+    auth-dev, cliente `galgoth-studio`), login real, `POST /api/projects`
+    autenticado → `201`, `visibility: "PRIVATE"`.
+  - Confirmado leyendo la fila directamente en Postgres: `owner_ref`
+    coincide exactamente con el `id` de la cuenta de prueba, `visibility
+    = PRIVATE`.
+  - `GET /api/projects` sin `Authorization` → `401`; con `Authorization`
+    → solo el proyecto de esa cuenta (ninguno ajeno).
+  - Datos de prueba limpiados al terminar: proyecto de verificación
+    soft-deleted, cuenta de prueba borrada de `auth_core_mc` (usuario +
+    refresh tokens + login events), y el proyecto huérfano de DEV
+    (`owner_ref NULL`, dato previo a este ticket) también soft-deleted
+    según lo acordado en el documento de definición.
