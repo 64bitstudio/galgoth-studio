@@ -121,9 +121,20 @@ export function listConnectedProviders(): Promise<ConnectedProviderSummary[]> {
  * el mismo mecanismo `/oauth2/authorization/{registrationId}` que ya usa
  * el login social. El caller vuelve a esta misma pantalla con
  * `?linked={provider}` o `?link_error={...}` en la query.
+ *
+ * Hallazgo real (ticket 093): a diferencia de toda otra función de este
+ * archivo, esta SÍ necesita `credentials: 'include'` -- el backend fija
+ * la cookie de sesión que correlaciona "qué usuario pidió vincular" al
+ * volver del consentimiento de Google/Facebook (`LinkIntentSession` de
+ * auth-core-mc), y sin esto el navegador descarta ese `Set-Cookie` por
+ * venir de una respuesta cross-origin (auth-core-mc CORS ya permite
+ * credenciales para el allowlist de orígenes, ver `CorsConfig`).
  */
 export async function linkProvider(provider: 'google' | 'facebook'): Promise<string> {
-  const result = await request<{ redirectUrl: string }>(`/api/v1/account/link-provider/${provider}`, { method: 'POST' })
+  const result = await request<{ redirectUrl: string }>(`/api/v1/account/link-provider/${provider}`, {
+    method: 'POST',
+    credentials: 'include',
+  })
   return result.redirectUrl
 }
 
