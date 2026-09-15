@@ -4,6 +4,8 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSessionStore } from '../../auth/sessionStore'
 import UserView from '../UserView.vue'
+import IconFacebook from '../../design-system/icons/IconFacebook.vue'
+import IconGoogle from '../../design-system/icons/IconGoogle.vue'
 
 beforeAll(() => {
   if (!HTMLDialogElement.prototype.showModal) {
@@ -224,13 +226,16 @@ describe('UserView.vue', () => {
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/v1/account/password') && (c[1] as RequestInit | undefined)?.method === 'PATCH')).toBe(true)
   })
 
-  it('muestra las cuentas conectadas reales (Google sin vincular, Facebook vinculada)', async () => {
+  it('muestra las cuentas conectadas reales (Google sin vincular, Facebook vinculada) con su logo real', async () => {
     const { wrapper } = await mountUserView(baseFetchMock())
 
     expect(wrapper.text()).toContain('Google')
     expect(wrapper.text()).toContain('Facebook')
     expect(wrapper.text()).toContain('Vinculada')
     expect(wrapper.findAll('button').some((b) => b.text() === 'Conectar')).toBe(true)
+    // Ticket 095 (hallazgo real reportado en vivo: faltaban los íconos de cada proveedor).
+    expect(wrapper.findComponent(IconGoogle).exists()).toBe(true)
+    expect(wrapper.findComponent(IconFacebook).exists()).toBe(true)
   })
 
   it('"Conectar" navega el navegador completo a la URL real devuelta por el backend', async () => {
