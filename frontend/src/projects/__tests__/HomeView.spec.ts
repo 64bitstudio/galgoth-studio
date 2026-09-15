@@ -40,7 +40,7 @@ function mob(overrides: Partial<RecentMobSummary> = {}): RecentMobSummary {
 }
 
 function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
-  return { id: 'p1', name: 'Galgoth', description: null, mobCount: 0, mobThumbnails: [], status: 'draft', createdAt: '', updatedAt: new Date().toISOString(), ...overrides }
+  return { id: 'p1', name: 'Galgoth', description: null, mobCount: 0, mobThumbnails: [], status: 'draft', ownerDisplayName: null, createdAt: '', updatedAt: new Date().toISOString(), ...overrides }
 }
 
 function testRouter(): Router {

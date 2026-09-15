@@ -17,7 +17,7 @@ beforeAll(() => {
 })
 
 function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
-  return {id: 'p1', name: 'Galgoth', description: null, mobCount: 0, mobThumbnails: [], status: 'draft', createdAt: '', updatedAt: '', ...overrides}
+  return {id: 'p1', name: 'Galgoth', description: null, mobCount: 0, mobThumbnails: [], status: 'draft', ownerDisplayName: null, createdAt: '', updatedAt: '', ...overrides}
 }
 
 describe('AiMobProjectPickerDialog.vue', () => {
