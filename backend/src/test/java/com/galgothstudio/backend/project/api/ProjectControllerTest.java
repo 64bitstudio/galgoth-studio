@@ -88,8 +88,9 @@ class ProjectControllerTest {
 	 * de la MISMA transacción de test devuelve el `ProjectEntity` ya
 	 * managed en el contexto de persistencia (caché de primer nivel de
 	 * Hibernate), no la fila real recién escrita -- un `entityManager.clear()`
-	 * no alcanza a evitarlo de forma confiable. Insertar todo de una vez
-	 * por JDBC, como ya hace `aMobIn`, evita el problema por completo.
+	 * no alcanza a evitarlo de forma confiable. Insertar la fila completa
+	 * de una sola vez por JDBC, como ya hace `aMobIn`, evita el problema
+	 * por completo.
 	 */
 	private UUID aProjectOf(String ownerId, String visibility) {
 		UUID id = UUID.randomUUID();

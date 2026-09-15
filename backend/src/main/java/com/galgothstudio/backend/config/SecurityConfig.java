@@ -87,8 +87,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, "/api/mobs/*/texture").authenticated()
                         // Thumbnail (023) -- subir.
                         .requestMatchers(HttpMethod.POST, "/api/mobs/*/thumbnail").authenticated()
-                        // Todo lo demás: lecturas (guard decide dueño/público), los 3 endpoints de
-                        // bytes crudos sin enforcement, y cualquier ruta fuera del alcance de este
+                        // El resto de las rutas: lecturas (guard decide dueño/público), los 3
+                        // endpoints de bytes crudos sin enforcement, y cualquier ruta fuera del alcance de este
                         // ticket (generación por IA, jobs, texture-previews).
                         .anyRequest().permitAll())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder)));
