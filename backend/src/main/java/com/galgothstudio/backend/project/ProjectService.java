@@ -37,6 +37,7 @@ public class ProjectService {
 	private static final String COPY_SUFFIX = " (copia)";
 	/** Ticket 084 -- cada proyecto nace privado (decisión de Marco); publicarlo es una acción explícita del dueño (ticket 086). */
 	private static final String PRIVATE = "PRIVATE";
+	private static final String PUBLIC = "PUBLIC";
 
 	private final ProjectRepository projectRepository;
 	private final MobRepository mobRepository;
@@ -103,7 +104,7 @@ public class ProjectService {
 	 */
 	@Transactional
 	public ProjectDetail changeVisibility(UUID projectId, String callerId, String visibility) {
-		if (!"PRIVATE".equals(visibility) && !"PUBLIC".equals(visibility)) {
+		if (!PRIVATE.equals(visibility) && !PUBLIC.equals(visibility)) {
 			throw new InvalidVisibilityException(visibility);
 		}
 		ProjectEntity project = projectAccessGuard.requireOwner(projectId, callerId);
@@ -116,7 +117,7 @@ public class ProjectService {
 	/** Ticket 086 (HU-5) -- Explorar: proyectos `PUBLIC` de cualquier dueño, `permitAll()` a nivel de Spring (ver `SecurityConfig`). */
 	@Transactional(readOnly = true)
 	public List<ProjectSummary> listPublic() {
-		return projectRepository.findByVisibilityAndDeletedAtIsNullOrderByUpdatedAtDesc("PUBLIC").stream()
+		return projectRepository.findByVisibilityAndDeletedAtIsNullOrderByUpdatedAtDesc(PUBLIC).stream()
 				.map(this::toSummary)
 				.toList();
 	}

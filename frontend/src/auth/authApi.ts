@@ -1,7 +1,7 @@
 /**
  * Cliente HTTP de la API DIRECTA de auth-core-mc (ticket 078,
  * `PROP-GS-AUTH-01` Fig. 02/03/06) — a diferencia de `src/api/*.ts`, que
- * llaman al backend PROPIO de galgoth-studio, todo lo de este archivo
+ * llaman al backend PROPIO de galgoth-studio, este archivo completo
  * llama a un origen distinto (`authCoreMcUrl()`) con el header
  * `X-Client-Id` que auth-core-mc exige para resolver el tenant.
  */
