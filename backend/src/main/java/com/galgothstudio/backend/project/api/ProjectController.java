@@ -1,5 +1,6 @@
 package com.galgothstudio.backend.project.api;
 
+import com.galgothstudio.backend.project.ChangeVisibilityRequest;
 import com.galgothstudio.backend.project.CreateProjectRequest;
 import com.galgothstudio.backend.project.ProjectDetail;
 import com.galgothstudio.backend.project.ProjectService;
@@ -40,7 +41,8 @@ public class ProjectController {
 	 */
 	@PostMapping
 	public ResponseEntity<ProjectDetail> create(@AuthenticationPrincipal Jwt jwt, @RequestBody CreateProjectRequest request) {
-		return ResponseEntity.status(HttpStatus.CREATED).body(projectService.create(request.name(), requireOwnerId(jwt)));
+		return ResponseEntity.status(HttpStatus.CREATED)
+				.body(projectService.create(request.name(), requireOwnerId(jwt), request.ownerDisplayName()));
 	}
 
 	/** Ticket 084 -- "Mis proyectos" (HU-02): solo los del dueño autenticado. */
@@ -77,6 +79,13 @@ public class ProjectController {
 	@PostMapping("/{projectId}/duplicate")
 	public ResponseEntity<ProjectDetail> duplicate(@PathVariable UUID projectId, @AuthenticationPrincipal Jwt jwt) {
 		return ResponseEntity.status(HttpStatus.CREATED).body(projectService.duplicate(projectId, callerId(jwt)));
+	}
+
+	/** Ticket 086 (HU-4) -- mutación, exige dueño real. */
+	@PatchMapping("/{projectId}/visibility")
+	public ProjectDetail changeVisibility(
+			@PathVariable UUID projectId, @AuthenticationPrincipal Jwt jwt, @RequestBody ChangeVisibilityRequest request) {
+		return projectService.changeVisibility(projectId, callerId(jwt), request.visibility());
 	}
 
 	/** Ticket 085 -- {@code null} = caller anónimo, válido solo para lecturas de un proyecto {@code PUBLIC}. */

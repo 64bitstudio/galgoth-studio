@@ -50,7 +50,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Nuevo proyecto\"\n}"
+              "raw": "{\n  \"name\": \"Nuevo proyecto\",\n  \"ownerDisplayName\": \"Ada Lovelace\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/projects",
@@ -62,7 +62,7 @@
                 "projects"
               ]
             },
-            "description": "201 con el ProjectDetail si el nombre es válido; 400 (INVALID_PROJECT_NAME) si está vacío -- ningún proyecto se crea."
+            "description": "201 con el ProjectDetail si el nombre es válido; 400 (INVALID_PROJECT_NAME) si está vacío -- ningún proyecto se crea. ownerDisplayName (ticket 086) es opcional -- se graba tal cual, null si se omite."
           }
         },
         {
@@ -166,6 +166,35 @@
               ]
             },
             "description": "201 con el ProjectDetail de la copia -- copia el proyecto y TODOS sus mobs con su historial completo de mob_revisions y su mob_drafts actual."
+          }
+        },
+        {
+          "name": "Cambiar visibilidad (ticket 086)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visibility\": \"PUBLIC\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{projectId}}/visibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{projectId}}",
+                "visibility"
+              ]
+            },
+            "description": "visibility debe ser exactamente \"PRIVATE\" o \"PUBLIC\" -- cualquier otro valor: 400 (INVALID_VISIBILITY). Requiere ser el dueño real (404 si no). 200 con el ProjectDetail actualizado."
           }
         }
       ]
@@ -1144,6 +1173,30 @@
               ]
             },
             "description": "Servidor-a-servidor (auth-core-mc, ticket 064, al eliminar una cuenta) -- NUNCA JWT de usuario, autenticado por X-Internal-Secret contra galgoth.internal.secret. Soft-deletea TODOS los proyectos del usuario (publicos y privados) y borra su fila de user_profile. 204 siempre que el secreto sea correcto (idempotente). 401 (INVALID_INTERNAL_SECRET) si falta o no coincide."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Explorar (ticket 086)",
+      "item": [
+        {
+          "name": "Listar proyectos públicos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/explore/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "explore",
+                "projects"
+              ]
+            },
+            "description": "Público, sin Authorization. ProjectSummary[] de todos los proyectos PUBLIC (cualquier dueño), ordenados por updatedAt descendente. Nunca incluye un proyecto PRIVATE."
           }
         }
       ]

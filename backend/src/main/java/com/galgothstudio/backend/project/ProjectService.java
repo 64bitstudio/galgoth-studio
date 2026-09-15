@@ -37,6 +37,7 @@ public class ProjectService {
 	private static final String COPY_SUFFIX = " (copia)";
 	/** Ticket 084 -- cada proyecto nace privado (decisión de Marco); publicarlo es una acción explícita del dueño (ticket 086). */
 	private static final String PRIVATE = "PRIVATE";
+	private static final String PUBLIC = "PUBLIC";
 
 	private final ProjectRepository projectRepository;
 	private final MobRepository mobRepository;
@@ -57,12 +58,18 @@ public class ProjectService {
 		this.projectAccessGuard = projectAccessGuard;
 	}
 
-	/** Ticket 084 -- {@code ownerId} es el {@code sub} (user id) del JWT de auth-core-mc, ya validado por el controlador antes de llegar aquí (nunca null). */
+	/**
+	 * Ticket 084 -- {@code ownerId} es el {@code sub} (user id) del JWT de
+	 * auth-core-mc, ya validado por el controlador antes de llegar aquí
+	 * (nunca null). Ticket 086 -- {@code ownerDisplayName} opcional
+	 * (`null` si el caller no lo envió).
+	 */
 	@Transactional
-	public ProjectDetail create(String name, String ownerId) {
+	public ProjectDetail create(String name, String ownerId, String ownerDisplayName) {
 		String validName = requireValidName(name);
 		Instant now = Instant.now();
 		ProjectEntity project = new ProjectEntity(UUID.randomUUID(), validName, ownerId, PRIVATE, now, now);
+		project.setOwnerDisplayName(blankToNull(ownerDisplayName));
 		projectRepository.save(project);
 		return toDetail(project, 0);
 	}
@@ -89,6 +96,30 @@ public class ProjectService {
 		project.setUpdatedAt(Instant.now());
 		projectRepository.save(project);
 		return toDetail(project, (int) mobRepository.countByProjectIdAndDeletedAtIsNull(projectId));
+	}
+
+	/**
+	 * Ticket 086 (HU-4) -- mutación, exige dueño real. `"PRIVATE"`/`"PUBLIC"`
+	 * son los únicos valores válidos (mismo `CHECK` de la columna, `V5`).
+	 */
+	@Transactional
+	public ProjectDetail changeVisibility(UUID projectId, String callerId, String visibility) {
+		if (!PRIVATE.equals(visibility) && !PUBLIC.equals(visibility)) {
+			throw new InvalidVisibilityException(visibility);
+		}
+		ProjectEntity project = projectAccessGuard.requireOwner(projectId, callerId);
+		project.setVisibility(visibility);
+		project.setUpdatedAt(Instant.now());
+		projectRepository.save(project);
+		return toDetail(project, (int) mobRepository.countByProjectIdAndDeletedAtIsNull(projectId));
+	}
+
+	/** Ticket 086 (HU-5) -- Explorar: proyectos `PUBLIC` de cualquier dueño, `permitAll()` a nivel de Spring (ver `SecurityConfig`). */
+	@Transactional(readOnly = true)
+	public List<ProjectSummary> listPublic() {
+		return projectRepository.findByVisibilityAndDeletedAtIsNullOrderByUpdatedAtDesc(PUBLIC).stream()
+				.map(this::toSummary)
+				.toList();
 	}
 
 	/** Ticket 085 -- mutación, exige dueño real. */
@@ -127,6 +158,7 @@ public class ProjectService {
 		ProjectEntity copy =
 				new ProjectEntity(UUID.randomUUID(), original.getName() + COPY_SUFFIX, original.getOwnerRef(), PRIVATE, now, now);
 		copy.setDescription(original.getDescription()); // ticket 073 -- copia profunda: la descripción también se copia.
+		copy.setOwnerDisplayName(original.getOwnerDisplayName()); // ticket 086 -- mismo dueño, mismo nombre a mostrar.
 		projectRepository.save(copy);
 
 		List<MobEntity> mobs = mobRepository.findByProjectIdAndDeletedAtIsNullOrderByUpdatedAtDesc(projectId);
@@ -173,10 +205,15 @@ public class ProjectService {
 
 	/** Ticket 073 -- opcional: `null`/blank se guarda como `null` (nunca una cadena vacía), sin validación de contenido (a diferencia del nombre). */
 	private String normalizeDescription(String description) {
-		if (description == null || description.isBlank()) {
+		return blankToNull(description);
+	}
+
+	/** Ticket 086 -- mismo criterio que {@link #normalizeDescription}, reutilizado para {@code ownerDisplayName}: `null`/blank nunca se guarda como cadena vacía. */
+	private static String blankToNull(String value) {
+		if (value == null || value.isBlank()) {
 			return null;
 		}
-		return description.strip();
+		return value.strip();
 	}
 
 	private ProjectDetail toDetail(ProjectEntity project, int mobCount) {
@@ -186,6 +223,7 @@ public class ProjectService {
 				project.getDescription(),
 				mobCount,
 				project.getVisibility(),
+				project.getOwnerDisplayName(),
 				project.getCreatedAt(),
 				project.getUpdatedAt());
 	}
@@ -202,6 +240,7 @@ public class ProjectService {
 				thumbnails,
 				deriveStatus(mobs),
 				project.getVisibility(),
+				project.getOwnerDisplayName(),
 				project.getCreatedAt(),
 				project.getUpdatedAt());
 	}

@@ -16,6 +16,7 @@ import com.galgothstudio.backend.domain.uv.PaintedRegionResizeConfirmationRequir
 import com.galgothstudio.backend.domain.uv.UvAtlasOverflowException;
 import com.galgothstudio.backend.internal.InvalidInternalSecretException;
 import com.galgothstudio.backend.project.InvalidProjectNameException;
+import com.galgothstudio.backend.project.InvalidVisibilityException;
 import com.galgothstudio.backend.project.ProjectNotFoundException;
 import com.galgothstudio.backend.project.UnauthenticatedRequestException;
 import com.galgothstudio.backend.project.draft.DanglingTextureReferenceException;
@@ -68,6 +69,12 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(InvalidInternalSecretException.class)
 	public ResponseEntity<ApiErrorResponse> handleInvalidInternalSecret(InvalidInternalSecretException ex) {
 		return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ApiErrorResponse("INVALID_INTERNAL_SECRET", ex.getMessage(), null));
+	}
+
+	/** Ticket 086 -- `visibility` fuera de `"PRIVATE"`/`"PUBLIC"`. */
+	@ExceptionHandler(InvalidVisibilityException.class)
+	public ResponseEntity<ApiErrorResponse> handleInvalidVisibility(InvalidVisibilityException ex) {
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("INVALID_VISIBILITY", ex.getMessage(), null));
 	}
 
 	@ExceptionHandler(InvalidProjectNameException.class)

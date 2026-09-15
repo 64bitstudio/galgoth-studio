@@ -13,7 +13,20 @@ import java.time.Instant;
  *
  * Ticket 084 -- `visibility` ("PRIVATE"/"PUBLIC") viaja siempre; el
  * control para cambiarla llega en el ticket 086.
+ *
+ * Ticket 086 -- `ownerDisplayName` (`null` si no se capturó al crear).
+ * El grid de mobs de un proyecto público ajeno se resuelve con el mismo
+ * `GET /api/projects/{id}/mobs` que ya usa "Mis proyectos" -- desde el
+ * ticket 085 ese endpoint ya es de lectura pública para un proyecto
+ * `PUBLIC`, así que no hace falta inlinear los mobs acá también.
  */
 public record ProjectDetail(
-		String id, String name, String description, int mobCount, String visibility, Instant createdAt, Instant updatedAt) {
+		String id,
+		String name,
+		String description,
+		int mobCount,
+		String visibility,
+		String ownerDisplayName,
+		Instant createdAt,
+		Instant updatedAt) {
 }

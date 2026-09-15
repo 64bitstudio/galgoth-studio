@@ -20,6 +20,10 @@ import java.util.List;
  *
  * Ticket 084 -- `visibility` ("PRIVATE"/"PUBLIC") viaja siempre; el
  * control para cambiarla llega en el ticket 086.
+ *
+ * Ticket 086 -- `ownerDisplayName` (`null` si no se capturó al crear).
+ * Este mismo record se reutiliza tal cual para `GET /api/explore/projects`
+ * (mismo shape que una tarjeta de "Mis proyectos") -- sin un DTO nuevo.
  */
 public record ProjectSummary(
 		String id,
@@ -29,6 +33,7 @@ public record ProjectSummary(
 		List<MobThumbnail> mobThumbnails,
 		String status,
 		String visibility,
+		String ownerDisplayName,
 		Instant createdAt,
 		Instant updatedAt) {
 }
