@@ -18,7 +18,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as accountApi from '../auth/accountApi'
-import { requestEmailChange } from '../auth/authApi'
+import { requestEmailChange, requestEmailVerification } from '../auth/authApi'
 import * as productProfileApi from '../account/productProfileApi'
 import type { RegisteredUser } from '../auth/authApi'
 import type { SessionSummary, ConnectedProviderSummary } from '../auth/accountApi'
@@ -206,6 +206,30 @@ async function confirmChangeEmail(newEmail: string): Promise<void> {
     changeEmailError.value = error instanceof ApiError ? error.message : 'No se pudo enviar el link de confirmación.'
   } finally {
     changeEmailBusy.value = false
+  }
+}
+
+// -- Reenviar verificación de correo (ticket 079) --------------------------
+// A diferencia del resto de esta pantalla, `emailVerified` viene ya
+// poblado en `authProfile` (RegisteredUser) -- no hace falta un fetch
+// aparte, solo mostrarlo y ofrecer reenviar si sigue en false.
+const resendVerificationBusy = ref(false)
+const resendVerificationSent = ref(false)
+const resendVerificationError = ref<string | null>(null)
+
+async function resendVerificationEmail(): Promise<void> {
+  if (!authProfile.value || resendVerificationBusy.value) {
+    return
+  }
+  resendVerificationBusy.value = true
+  resendVerificationError.value = null
+  try {
+    await requestEmailVerification(authProfile.value.id)
+    resendVerificationSent.value = true
+  } catch (error) {
+    resendVerificationError.value = error instanceof ApiError ? error.message : 'No se pudo reenviar el correo de verificación.'
+  } finally {
+    resendVerificationBusy.value = false
   }
 }
 
@@ -406,8 +430,27 @@ async function confirmDeleteAccount(): Promise<void> {
           <div class="user-view__field user-view__field--email">
             <span class="user-view__field-label">Correo</span>
             <div class="user-view__email-row">
-              <span>{{ authProfile.email ?? 'Sin correo' }}</span>
+              <span class="user-view__email-value">
+                <span>{{ authProfile.email ?? 'Sin correo' }}</span>
+                <span
+                  v-if="authProfile.email"
+                  class="user-view__badge"
+                  :class="authProfile.emailVerified ? 'user-view__badge--verified' : 'user-view__badge--unverified'"
+                >
+                  {{ authProfile.emailVerified ? 'Verificado' : 'Sin verificar' }}
+                </span>
+              </span>
               <GButton variant="ghost" @click="showChangeEmail = true">Cambiar</GButton>
+            </div>
+            <!-- Ticket 079: solo tiene sentido reenviar si hay un correo real y todavía no está verificado. -->
+            <div v-if="authProfile.email && !authProfile.emailVerified" class="user-view__verify-row">
+              <p v-if="resendVerificationSent" class="user-view__success">Te enviamos un correo nuevo de verificación.</p>
+              <template v-else>
+                <GButton variant="ghost" :disabled="resendVerificationBusy" @click="resendVerificationEmail">
+                  {{ resendVerificationBusy ? 'Enviando…' : 'Reenviar correo de verificación' }}
+                </GButton>
+                <p v-if="resendVerificationError" class="user-view__error">{{ resendVerificationError }}</p>
+              </template>
             </div>
           </div>
           <p v-if="personalError" class="user-view__error">{{ personalError }}</p>
@@ -738,6 +781,39 @@ async function confirmDeleteAccount(): Promise<void> {
   background: var(--surface);
   border-radius: var(--radius-md);
   color: var(--text);
+}
+
+.user-view__email-value {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Mismos tokens de tono que GStatusPill (accent/warning + su -soft), sin reutilizar el componente en sí -- ese es específico de estado de mob (Listo/En progreso/Draft), esto es verificación de cuenta. */
+.user-view__badge {
+  flex-shrink: 0;
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.user-view__badge--verified {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.user-view__badge--unverified {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.user-view__verify-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
 }
 
 .user-view__list {

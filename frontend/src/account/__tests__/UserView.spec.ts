@@ -142,6 +142,35 @@ describe('UserView.vue', () => {
     expect(wrapper.text()).toContain('nueva@example.com')
   })
 
+  // Ticket 079 -- badge de estado + reenvío, solo tiene sentido si hay correo y no está verificado ya.
+  it('con emailVerified=true muestra el badge "Verificado" y no el botón de reenviar', async () => {
+    const { wrapper } = await mountUserView(baseFetchMock())
+
+    expect(wrapper.text()).toContain('Verificado')
+    expect(wrapper.text()).not.toContain('Reenviar correo de verificación')
+  })
+
+  it('con emailVerified=false muestra "Sin verificar" y el botón de reenviar', async () => {
+    const { wrapper } = await mountUserView(baseFetchMock({ getProfile: () => jsonResponse({ ...authProfile, emailVerified: false }) }))
+
+    expect(wrapper.text()).toContain('Sin verificar')
+    expect(wrapper.text()).toContain('Reenviar correo de verificación')
+  })
+
+  it('reenviar correo de verificación llama a POST /verify-email/request con el userId real y confirma el envío', async () => {
+    const fetchMock = baseFetchMock({ getProfile: () => jsonResponse({ ...authProfile, emailVerified: false }) })
+    const { wrapper } = await mountUserView(fetchMock)
+
+    const resendButton = wrapper.findAll('button').find((b) => b.text().includes('Reenviar correo de verificación'))!
+    await resendButton.trigger('click')
+    await flushPromises()
+
+    const call = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/v1/verify-email/request'))
+    expect(call).toBeDefined()
+    expect(JSON.parse(call![1]!.body as string)).toEqual({ userId: 'u1' })
+    expect(wrapper.text()).toContain('Te enviamos un correo nuevo de verificación.')
+  })
+
   // Ticket 093 -- hasPassword: true -> "Cambiar contraseña" (pide la actual); hasPassword: false -> "Establecer contraseña" (no la pide).
   it('con hasPassword=false, muestra "Establecer contraseña" sin pedir la contraseña actual', async () => {
     const { wrapper } = await mountUserView(baseFetchMock({ getProfile: () => jsonResponse({ ...authProfile, hasPassword: false }) }))
