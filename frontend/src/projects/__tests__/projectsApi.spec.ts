@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSessionStore } from '../../auth/sessionStore'
-import { ApiError, changeProjectVisibility, createProject, deleteProject, duplicateProject, listProjects, renameProject } from '../projectsApi'
+import { ApiError, changeProjectVisibility, createProject, deleteProject, duplicateProject, listExploreProjects, listProjects, renameProject } from '../projectsApi'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -29,6 +29,20 @@ describe('projectsApi', () => {
     expect(result).toEqual(summaries)
     const [url, init] = fetchMock.mock.calls[0]!
     expect(String(url)).toContain('/api/projects')
+    expect(init?.method).toBeUndefined() // GET por defecto
+  })
+
+  // Ticket 088 -- Explorar, HU-5.
+  it('listExploreProjects hace GET /api/explore/projects y devuelve el array', async () => {
+    const summaries = [{ id: '1', name: 'Galgoth', mobCount: 0, mobThumbnails: [], visibility: 'PUBLIC', ownerDisplayName: 'Ada Lovelace', createdAt: '', updatedAt: '' }]
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(summaries))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await listExploreProjects()
+
+    expect(result).toEqual(summaries)
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/explore/projects')
     expect(init?.method).toBeUndefined() // GET por defecto
   })
 

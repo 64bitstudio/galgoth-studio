@@ -77,6 +77,8 @@ function handleSidebarSelect(key: GSidebarKey): void {
     router.push('/')
   } else if (key === 'projects') {
     router.push('/projects')
+  } else if (key === 'explore') {
+    router.push('/explore')
   }
 }
 
@@ -564,7 +566,7 @@ function cancelDeleteMob(): void {
   margin-bottom: var(--space-8);
 }
 
-/* `minmax` con un tope fijo (no `1fr`) a propósito: con pocas cards no deben estirarse a ocupar todo el ancho disponible -- crecen hasta el tope y el resto queda vacío, en vez de verse gigantes. */
+/* `minmax` con un tope fijo (no `1fr`) a propósito: con pocas cards no deben estirarse a ocupar el ancho completo disponible -- crecen hasta el tope y el resto queda vacío, en vez de verse gigantes. */
 .home__mob-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 360px));

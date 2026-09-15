@@ -36,6 +36,7 @@ async function routerAt(id: string): Promise<Router> {
     routes: [
       { path: '/', component: { template: '<div />' } },
       { path: '/login', name: 'login', component: { template: '<div />' } }, // ticket 087 -- destino real de `load()` cuando falla sin sesión.
+      { path: '/explore', component: { template: '<div />' } }, // ticket 088
       { path: '/projects/:id', component: ProjectDetail },
       { path: '/projects/:projectId/mobs/new-ai', component: { template: '<div />' } },
       { path: '/projects/:projectId/mobs/:mobId/edit', component: { template: '<div />' } },
@@ -236,6 +237,19 @@ describe('ProjectDetail.vue', () => {
     await wrapper.findAll('.g-sidebar__item')[1]!.trigger('click')
 
     expect(pushSpy).toHaveBeenCalledWith('/projects')
+  })
+
+  // Ticket 088 -- "Explorar" ya navega de verdad (antes era un no-op).
+  it('"Explorar" en el sidebar navega a /explore', async () => {
+    vi.stubGlobal('fetch', stubProjectAndMobs({ id: 'p1', name: 'Galgoth', mobCount: 0, createdAt: '', updatedAt: '' }, []))
+    const router = await routerAt('p1')
+    const pushSpy = vi.spyOn(router, 'push')
+    const wrapper = mount(ProjectDetail, { global: { plugins: [router] } })
+    await flushPromises()
+
+    await wrapper.findAll('.g-sidebar__item')[2]!.trigger('click')
+
+    expect(pushSpy).toHaveBeenCalledWith('/explore')
   })
 
   describe('ticket 039 -- edición del nombre del proyecto desde el detalle', () => {

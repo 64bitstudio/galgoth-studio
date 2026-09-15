@@ -42,4 +42,17 @@ describe('router (ticket 087 -- guard de rutas autenticadas)', () => {
 
     expect(router.currentRoute.value.path).toBe('/projects/p1')
   })
+
+  // Ticket 088 -- Explorar es pública por diseño (HU-5/HU-6): ninguna de las dos rutas exige sesión.
+  it('/explore NO exige sesión', async () => {
+    await router.push('/explore')
+
+    expect(router.currentRoute.value.path).toBe('/explore')
+  })
+
+  it('/explore/:id NO exige sesión', async () => {
+    await router.push('/explore/p1')
+
+    expect(router.currentRoute.value.path).toBe('/explore/p1')
+  })
 })
