@@ -29,6 +29,7 @@ function testRouter(): Router {
       { path: '/login', component: LoginView },
       { path: '/register', component: { template: '<div />' } },
       { path: '/forgot-password', component: { template: '<div />' } },
+      { path: '/projects', component: { template: '<div />' } }, // ticket 087 -- destino de `?redirect=` en los tests de abajo.
     ],
   })
 }
@@ -54,6 +55,42 @@ describe('LoginView.vue', () => {
     await flushPromises()
 
     expect(authApi.login).toHaveBeenCalledWith('ada@example.com', 'abcd1234')
+    expect(router.currentRoute.value.path).toBe('/')
+  })
+
+  // Ticket 087 -- vuelve a `?redirect=` (lo agrega el guard de rutas de `router.ts` al mandar para acá a un visitante sin sesión).
+  it('con ?redirect= presente, navega ahí en vez de a "/" tras loguearse', async () => {
+    vi.mocked(authApi.login).mockResolvedValue({
+      user,
+      tokens: { accessToken: 'a1', refreshToken: 'r1', tokenType: 'Bearer', expiresInSeconds: 900 },
+    })
+    const router = testRouter()
+    await router.push('/login?redirect=/projects')
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+
+    await wrapper.find('input[type="text"]').setValue('ada@example.com')
+    await wrapper.find('input[type="password"]').setValue('abcd1234')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/projects')
+  })
+
+  // Ticket 087 -- un `?redirect=` que no sea una ruta interna (URL absoluta o `//host` protocol-relative) se ignora -- nunca abre una redirección abierta.
+  it('con ?redirect= a un origen externo, lo ignora y navega a "/" (nunca una redirección abierta)', async () => {
+    vi.mocked(authApi.login).mockResolvedValue({
+      user,
+      tokens: { accessToken: 'a1', refreshToken: 'r1', tokenType: 'Bearer', expiresInSeconds: 900 },
+    })
+    const router = testRouter()
+    await router.push('/login?redirect=' + encodeURIComponent('//evil.example.com'))
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+
+    await wrapper.find('input[type="text"]').setValue('ada@example.com')
+    await wrapper.find('input[type="password"]').setValue('abcd1234')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
     expect(router.currentRoute.value.path).toBe('/')
   })
 

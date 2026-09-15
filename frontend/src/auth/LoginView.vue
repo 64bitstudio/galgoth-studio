@@ -18,9 +18,15 @@
  * nunca se implementó aquí -- ver hallazgo del ticket 052/053; reset de
  * password es el ticket 080, sin arrancar) -- nunca aparentar una función
  * que no existe.
+ *
+ * Ticket 087: tras loguearse, vuelve a `route.query.redirect` si viene
+ * presente (el guard de rutas de `router.ts` lo agrega al mandar para
+ * acá a un visitante sin sesión) -- si no, `/` como siempre. Solo acepta
+ * una ruta interna (empieza con `/`, nunca una URL absoluta) para no
+ * abrir una redirección abierta con un `?redirect=` manipulado.
  */
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ApiError } from '../api/ApiError'
 import GButton from '../design-system/components/GButton.vue'
 import backgroundUrl from '../assets/auth/auth-hero-background.jpg'
@@ -28,6 +34,7 @@ import logoUrl from '../assets/auth/galgoth-logo.png'
 import { useSessionStore } from './sessionStore'
 
 const router = useRouter()
+const route = useRoute()
 const session = useSessionStore()
 
 const identifier = ref('')
@@ -48,7 +55,9 @@ async function submit(): Promise<void> {
       error.value = 'Esta cuenta tiene verificación en dos pasos activa -- galgoth-studio todavía no soporta ese flujo.'
       return
     }
-    router.push('/')
+    const redirect = route.query.redirect
+    const isSafeInternalPath = typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
+    router.push(isSafeInternalPath ? redirect : '/')
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : 'No se pudo iniciar sesión. Intenta de nuevo.'
   } finally {

@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import ProjectDetail from '../ProjectDetail.vue'
 import type { MobSummary } from '../mobsApi'
+import { useSessionStore } from '../../auth/sessionStore'
 
 // jsdom no implementa HTMLDialogElement.showModal()/close() -- este
 // componente monta AddMobModal.vue, mismo motivo que en
@@ -34,6 +35,7 @@ async function routerAt(id: string): Promise<Router> {
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: { template: '<div />' } },
+      { path: '/login', name: 'login', component: { template: '<div />' } }, // ticket 087 -- destino real de `load()` cuando falla sin sesión.
       { path: '/projects/:id', component: ProjectDetail },
       { path: '/projects/:projectId/mobs/new-ai', component: { template: '<div />' } },
       { path: '/projects/:projectId/mobs/:mobId/edit', component: { template: '<div />' } },
@@ -45,12 +47,13 @@ async function routerAt(id: string): Promise<Router> {
 }
 
 /** GET /api/projects/{id} y GET /api/projects/{id}/mobs en cualquier orden -- Promise.all no garantiza cuál llega primero. */
+/** Ticket 087 -- `visibility` con default `'PRIVATE'` acá (no en cada llamada): el backend siempre la manda, y el template ahora la lee (`project.visibility.toLowerCase()`) -- un `object` de test sin ella rompería en render, no en tipo (`project` es `object` a propósito, sin tipar como `ProjectDetail`). */
 function stubProjectAndMobs(project: object, mobs: MobSummary[]): ReturnType<typeof vi.fn> {
   return vi.fn<typeof fetch>(async (url) => {
     if (String(url).includes('/mobs')) {
       return jsonResponse(mobs)
     }
-    return jsonResponse(project)
+    return jsonResponse({ visibility: 'PRIVATE', ...project })
   })
 }
 
@@ -115,7 +118,11 @@ describe('ProjectDetail.vue', () => {
     expect(wrapper.text()).toContain('Listo')
   })
 
-  it('un proyecto inexistente muestra un mensaje de error explícito', async () => {
+  // Ticket 087 -- con sesión activa, una carga fallida SÍ es un error real (nunca "quizá no estás logueado").
+  it('un proyecto inexistente muestra un mensaje de error explícito (con sesión activa)', async () => {
+    const session = useSessionStore()
+    session.accessToken = 'token'
+    session.refreshToken = 'refresh'
     vi.stubGlobal(
       'fetch',
       vi.fn<typeof fetch>(async () => jsonResponse({ error: 'PROJECT_NOT_FOUND', message: 'No existe ese proyecto.' }, 404)),
@@ -124,6 +131,20 @@ describe('ProjectDetail.vue', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('No existe ese proyecto.')
+  })
+
+  // Ticket 087 -- la ruta NO lleva `meta.requiresAuth` (un proyecto PUBLIC es visible sin sesión), así que una carga fallida SIN sesión es ambigua (puede ser el propio proyecto PRIVATE del visitante, sin loguearse todavía) -- redirige a login en vez de aceptar el "no existe" como definitivo.
+  it('sin sesión, una carga fallida redirige a login preservando la ruta de vuelta (nunca asume "no existe")', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () => jsonResponse({ error: 'PROJECT_NOT_FOUND', message: 'No existe ese proyecto.' }, 404)),
+    )
+    const router = await routerAt('privado-de-otro')
+    const wrapper = mount(ProjectDetail, { global: { plugins: [router] } })
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/login?redirect=/projects/privado-de-otro')
+    expect(wrapper.text()).not.toContain('No existe ese proyecto.')
   })
 
   describe('Agregar mob (HU-03)', () => {
@@ -369,6 +390,34 @@ describe('ProjectDetail.vue', () => {
 
         expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/duplicate'))).toBe(true)
         expect(pushSpy).toHaveBeenCalledWith('/projects/p2')
+      })
+
+      // Ticket 087 -- AC: "ve el cambio reflejado sin recargar" (sin volver a llamar GET /api/projects/{id}).
+      it('"Hacer público"/"Hacer privado" llama al PATCH de visibilidad y refleja el nuevo estado sin recargar', async () => {
+        const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+          if (init?.method === 'PATCH' && String(url).includes('/visibility')) {
+            return jsonResponse({ id: 'p1', name: 'Galgoth', mobCount: 0, visibility: 'PUBLIC', createdAt: '', updatedAt: '' })
+          }
+          if (String(url).includes('/mobs')) {
+            return jsonResponse([])
+          }
+          return jsonResponse({ id: 'p1', name: 'Galgoth', mobCount: 0, visibility: 'PRIVATE', createdAt: '', updatedAt: '' })
+        })
+        vi.stubGlobal('fetch', fetchMock)
+        const wrapper = mount(ProjectDetail, { global: { plugins: [await routerAt('p1')] } })
+        await flushPromises()
+
+        expect(wrapper.text()).toContain('Privado')
+
+        await wrapper.get('[aria-label="Más acciones del proyecto"]').trigger('click')
+        expect(wrapper.findAll('[role="menuitem"]').find((i) => i.text() === 'Hacer público')).toBeTruthy()
+        await wrapper.findAll('[role="menuitem"]').find((i) => i.text() === 'Hacer público')!.trigger('click')
+        await flushPromises()
+
+        expect(fetchMock.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === 'PATCH' && String(c[0]).includes('/visibility'))).toBe(true)
+        expect(wrapper.text()).toContain('Público')
+        // Sin recargar: solo la carga inicial (project+mobs) más el PATCH -- ningún GET adicional a /api/projects/p1.
+        expect(fetchMock.mock.calls.filter((c) => !String(c[0]).includes('/mobs') && !(c[1] as RequestInit | undefined)?.method).length).toBe(1)
       })
 
       it('Eliminar muestra una confirmación explícita, y confirmar llama a DELETE y navega a /projects', async () => {

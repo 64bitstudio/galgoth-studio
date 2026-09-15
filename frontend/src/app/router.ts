@@ -1,4 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useSessionStore } from '../auth/sessionStore'
+
+declare module 'vue-router' {
+  interface RouteMeta {
+    /** Ticket 087 -- ver `beforeEach` más abajo. Ausente/`false` = ruta pública. */
+    requiresAuth?: boolean
+  }
+}
 
 /**
  * Ticket 021: primeras rutas productivas reales -- "/" y "/projects"
@@ -12,6 +20,20 @@ import { createRouter, createWebHistory } from 'vue-router'
  * "Continuar trabajando" + "Proyectos recientes") -- ya no es un alias de
  * "/projects". `ProjectsDashboard.vue` ("Mis proyectos", listado
  * completo) sigue en "/projects", sin cambios.
+ *
+ * Ticket 087: `meta.requiresAuth` + `beforeEach` de abajo -- desde el
+ * ticket 085 el backend exige `authenticated()` para estas rutas
+ * (`home`/`projects-dashboard` llaman `GET /api/projects`, que exige
+ * dueño real; `mob-editor`/`export-screen`/`ai-mob-wizard` operan sobre
+ * mobs de un proyecto propio), pero el frontend nunca redirigía a nadie
+ * -- un visitante sin sesión solo veía errores `401` sin explicación.
+ * `project-detail` NO lleva `meta.requiresAuth` a propósito: desde el
+ * ticket 085 un proyecto `PUBLIC` es legítimamente visible sin sesión
+ * (y el ticket 088, "Explorar", depende de eso) -- el caso "proyecto
+ * PRIVATE sin sesión" se resuelve reactivamente dentro de
+ * `ProjectDetail.vue` (si la carga falla y no hay sesión, redirige a
+ * login en vez de asumir "no existe": el backend nunca distingue los
+ * dos casos, ver `ProjectAccessGuard`).
  */
 const router = createRouter({
   history: createWebHistory(),
@@ -20,11 +42,13 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: () => import('../projects/HomeView.vue'),
+      meta: { requiresAuth: true },
     },
     {
       path: '/projects',
       name: 'projects-dashboard',
       component: () => import('../projects/ProjectsDashboard.vue'),
+      meta: { requiresAuth: true },
     },
     {
       path: '/projects/:id',
@@ -37,6 +61,7 @@ const router = createRouter({
       path: '/projects/:projectId/mobs/new-ai',
       name: 'ai-mob-wizard',
       component: () => import('../ai/AiMobWizard.vue'),
+      meta: { requiresAuth: true },
     },
     {
       // Ticket 034: primera ruta productiva real del editor manual sobre
@@ -44,6 +69,7 @@ const router = createRouter({
       path: '/projects/:projectId/mobs/:mobId/edit',
       name: 'mob-editor',
       component: () => import('../editor/MobEditor.vue'),
+      meta: { requiresAuth: true },
     },
     {
       // Ticket 032, HU-19, mockup 11: pantalla de exportación (estado FMM
@@ -51,6 +77,7 @@ const router = createRouter({
       path: '/projects/:projectId/mobs/:mobId/export',
       name: 'export-screen',
       component: () => import('../editor/ExportScreen.vue'),
+      meta: { requiresAuth: true },
     },
     {
       // Ticket 078: login/registro reales contra la API directa de
@@ -106,6 +133,25 @@ const router = createRouter({
       component: () => import('../ai/steps/ResultStep.vue'),
     },
   ],
+})
+
+/**
+ * Ticket 087 -- `useSessionStore()` se llama DENTRO del callback (nunca
+ * en el scope del módulo): este archivo se importa antes de que
+ * `main.ts` cree e instale Pinia (`app.use(createPinia())`), así que
+ * evaluarlo en top-level rompería con "no active Pinia" -- para cuando
+ * el guard realmente se ejecuta (primera navegación real, tras
+ * `app.mount`), Pinia ya está activa.
+ */
+router.beforeEach((to) => {
+  if (!to.meta.requiresAuth) {
+    return true
+  }
+  const session = useSessionStore()
+  if (session.isAuthenticated) {
+    return true
+  }
+  return { name: 'login', query: { redirect: to.fullPath } }
 })
 
 export default router

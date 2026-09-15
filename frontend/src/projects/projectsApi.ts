@@ -26,6 +26,9 @@ export interface MobThumbnail {
 /** Ticket 072 -- derivado en el backend a partir de los mobs del proyecto, no una columna real: "active" si tiene algún mob fuera de draft, "draft" si todos son draft o no tiene ninguno. */
 export type ProjectStatus = 'active' | 'draft'
 
+/** Ticket 084 -- viaja desde entonces, pero el frontend nunca la necesitó hasta el toggle del ticket 087 (hallazgo real: faltaba en ambas interfaces de este archivo). */
+export type ProjectVisibility = 'PRIVATE' | 'PUBLIC'
+
 export interface ProjectSummary {
   id: string
   name: string
@@ -34,6 +37,7 @@ export interface ProjectSummary {
   mobCount: number
   mobThumbnails: MobThumbnail[]
   status: ProjectStatus
+  visibility: ProjectVisibility
   /** Ticket 086 -- nombre completo capturado al crear el proyecto (`sessionStore.user.nombre`/`apellidos` en ese momento), `null` si no se envió. Usado por Explorar (ticket 088) para mostrar "por Fulano Pérez"; puede quedar desactualizado si el usuario cambia su nombre después (tradeoff aceptado, documento de definición). */
   ownerDisplayName: string | null
   createdAt: string
@@ -45,6 +49,7 @@ export interface ProjectDetail {
   name: string
   description: string | null
   mobCount: number
+  visibility: ProjectVisibility
   /** Ticket 086 -- ver docstring de `ProjectSummary.ownerDisplayName`. */
   ownerDisplayName: string | null
   createdAt: string
@@ -114,4 +119,9 @@ export function deleteProject(id: string): Promise<void> {
 
 export function duplicateProject(id: string): Promise<ProjectDetail> {
   return request<ProjectDetail>(`/api/projects/${id}/duplicate`, { method: 'POST' })
+}
+
+/** Ticket 087 -- toggle de "Hacer público"/"Hacer privado" en `ProjectDetail.vue`, sobre el `PATCH` del ticket 086. */
+export function changeProjectVisibility(id: string, visibility: ProjectVisibility): Promise<ProjectDetail> {
+  return request<ProjectDetail>(`/api/projects/${id}/visibility`, { method: 'PATCH', body: JSON.stringify({ visibility }) })
 }
