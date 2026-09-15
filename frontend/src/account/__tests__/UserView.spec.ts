@@ -38,6 +38,8 @@ const authProfile = {
 
 const productProfile = { avatarUrl: null, notifyEmail: true, notifyProductNews: false, notifySaveReminders: true }
 
+const defaultSession = { id: 's1', browser: 'Chrome', os: 'macOS', city: null, country: null, createdAt: '2026-01-01T00:00:00Z', lastUsedAt: '2026-01-01T00:00:00Z', current: true }
+
 function baseFetchMock(overrides: Partial<Record<string, () => Response>> = {}): ReturnType<typeof vi.fn> {
   return vi.fn<typeof fetch>(async (url, init) => {
     const path = String(url)
@@ -57,7 +59,10 @@ function baseFetchMock(overrides: Partial<Record<string, () => Response>> = {}):
       return overrides.revokeAll?.() ?? new Response(null, { status: 204 })
     }
     if (path.includes('/api/v1/account/sessions')) {
-      return overrides.listSessions?.() ?? jsonResponse([{ id: 's1', browser: 'Chrome', os: 'macOS', createdAt: '2026-01-01T00:00:00Z', lastUsedAt: '2026-01-01T00:00:00Z', current: true }])
+      return overrides.listSessions?.() ?? jsonResponse([defaultSession])
+    }
+    if (path.includes('/api/v1/account/connected-providers') && method === 'DELETE') {
+      return overrides.unlinkProvider?.() ?? new Response(null, { status: 204 })
     }
     if (path.includes('/api/v1/account/connected-providers')) {
       return overrides.listProviders?.() ?? jsonResponse([{ provider: 'GOOGLE', linked: false }, { provider: 'FACEBOOK', linked: true }])
@@ -116,6 +121,23 @@ describe('UserView.vue', () => {
     expect(wrapper.text()).toContain('Sesión inválida.')
   })
 
+  it('"Editar perfil" lleva el foco al campo Nombre de Información personal', async () => {
+    // `document.activeElement` solo se actualiza para nodos realmente adjuntos al DOM -- a diferencia
+    // del resto de esta suite, este test necesita `attachTo` y desmontar al terminar.
+    vi.stubGlobal('fetch', baseFetchMock())
+    const router = testRouter()
+    await router.push('/usuario')
+    const wrapper = mount(UserView, { global: { plugins: [router] }, attachTo: document.body })
+    await flushPromises()
+
+    const editButton = wrapper.findAll('button').find((b) => b.text() === 'Editar perfil')!
+    await editButton.trigger('click')
+    await flushPromises()
+
+    expect(document.activeElement).toBe(wrapper.find('[aria-label="Nombre"]').element)
+    wrapper.unmount()
+  })
+
   it('guardar información personal llama a PATCH /account/profile y actualiza sessionStore.user', async () => {
     const { wrapper } = await mountUserView(baseFetchMock())
     const session = useSessionStore()
@@ -171,22 +193,31 @@ describe('UserView.vue', () => {
     expect(wrapper.text()).toContain('Te enviamos un correo nuevo de verificación.')
   })
 
-  // Ticket 093 -- hasPassword: true -> "Cambiar contraseña" (pide la actual); hasPassword: false -> "Establecer contraseña" (no la pide).
-  it('con hasPassword=false, muestra "Establecer contraseña" sin pedir la contraseña actual', async () => {
+  // Ticket 095 -- "Cambiar contraseña"/"Sesiones activas" ahora abren un modal aparte (mockup original) en vez del formulario/lista inline del 093.
+  it('con hasPassword=false, la fila dice "Establecer contraseña" y el modal no pide la contraseña actual', async () => {
     const { wrapper } = await mountUserView(baseFetchMock({ getProfile: () => jsonResponse({ ...authProfile, hasPassword: false }) }))
 
     expect(wrapper.text()).toContain('Establecer contraseña')
+    const row = wrapper.findAll('button').find((b) => b.text().includes('Establecer contraseña'))!
+    await row.trigger('click')
+    await flushPromises()
+
     expect(wrapper.find('[aria-label="Contraseña actual"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="Nueva contraseña"]').exists()).toBe(true)
   })
 
-  it('cambiar contraseña llama a PATCH /account/password con la actual y la nueva', async () => {
+  it('"Cambiar contraseña" abre el modal, confirmar llama a PATCH /account/password con la actual y la nueva', async () => {
     const fetchMock = baseFetchMock()
     const { wrapper } = await mountUserView(fetchMock)
 
+    const row = wrapper.findAll('button').find((b) => b.text().includes('Cambiar contraseña'))!
+    await row.trigger('click')
+    await flushPromises()
+
     await wrapper.find('[aria-label="Contraseña actual"]').setValue('vieja1234')
     await wrapper.find('[aria-label="Nueva contraseña"]').setValue('nueva12345')
-    const saveButton = wrapper.findAll('button').find((b) => b.text() === 'Actualizar contraseña')!
-    await saveButton.trigger('click')
+    const confirmButton = wrapper.findAll('button').find((b) => b.text() === 'Actualizar contraseña')!
+    await confirmButton.trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('Contraseña actualizada.')
@@ -198,7 +229,7 @@ describe('UserView.vue', () => {
 
     expect(wrapper.text()).toContain('Google')
     expect(wrapper.text()).toContain('Facebook')
-    expect(wrapper.text()).toContain('Conectada')
+    expect(wrapper.text()).toContain('Vinculada')
     expect(wrapper.findAll('button').some((b) => b.text() === 'Conectar')).toBe(true)
   })
 
@@ -238,23 +269,80 @@ describe('UserView.vue', () => {
     Object.defineProperty(window, 'location', { value: realLocation, writable: true, configurable: true })
   })
 
-  it('muestra las sesiones reales y permite cerrar una que no es la actual', async () => {
+  // Ticket 095 / auth-core-mc#069 -- menú "···" de cada proveedor vinculado, "Desvincular" llama al DELETE nuevo.
+  it('"Desvincular" en el menú de un proveedor vinculado llama a DELETE /connected-providers/{provider} y lo muestra como no vinculado', async () => {
+    const fetchMock = baseFetchMock()
+    const { wrapper } = await mountUserView(fetchMock)
+
+    const menuTrigger = wrapper.find('[aria-label="Acciones de Facebook"]')
+    await menuTrigger.trigger('click')
+    await flushPromises()
+    const unlinkItem = wrapper.findAll('button[role="menuitem"]').find((b) => b.text() === 'Desvincular')!
+    await unlinkItem.trigger('click')
+    await flushPromises()
+
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/connected-providers/facebook') && (c[1] as RequestInit | undefined)?.method === 'DELETE')).toBe(true)
+    expect(wrapper.findAll('button').some((b) => b.text() === 'Conectar')).toBe(true)
+  })
+
+  it('un 409 real al desvincular (único método de acceso) se muestra como mensaje explícito', async () => {
+    const fetchMock = baseFetchMock({
+      unlinkProvider: () => jsonResponse({ error: 'cannot_unlink_last_login_method', message: 'Cannot unlink your only way to sign in -- set a password first' }, 409),
+    })
+    const { wrapper } = await mountUserView(fetchMock)
+
+    const menuTrigger = wrapper.find('[aria-label="Acciones de Facebook"]')
+    await menuTrigger.trigger('click')
+    await flushPromises()
+    const unlinkItem = wrapper.findAll('button[role="menuitem"]').find((b) => b.text() === 'Desvincular')!
+    await unlinkItem.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Cannot unlink your only way to sign in')
+  })
+
+  it('"Sesiones activas" abre el modal con las sesiones reales y permite cerrar una que no es la actual', async () => {
     const fetchMock = baseFetchMock({
       listSessions: () =>
         jsonResponse([
-          { id: 's1', browser: 'Chrome', os: 'macOS', createdAt: '2026-01-01T00:00:00Z', lastUsedAt: '2026-01-01T00:00:00Z', current: true },
-          { id: 's2', browser: 'Safari', os: 'iOS', createdAt: '2026-01-01T00:00:00Z', lastUsedAt: '2026-01-01T00:00:00Z', current: false },
+          { id: 's1', browser: 'Chrome', os: 'macOS', city: 'Ciudad de México', country: 'México', createdAt: '2026-01-01T00:00:00Z', lastUsedAt: '2026-01-01T00:00:00Z', current: true },
+          { id: 's2', browser: 'Safari', os: 'iOS', city: null, country: null, createdAt: '2026-01-01T00:00:00Z', lastUsedAt: '2026-01-01T00:00:00Z', current: false },
         ]),
     })
     const { wrapper } = await mountUserView(fetchMock)
 
+    const row = wrapper.findAll('button').find((b) => b.text().includes('Sesiones activas'))!
+    await row.trigger('click')
+    await flushPromises()
+
     expect(wrapper.text()).toContain('Chrome')
     expect(wrapper.text()).toContain('Safari')
-    const revokeButton = wrapper.findAll('button').find((b) => b.text() === 'Cerrar sesión')!
-    await revokeButton.trigger('click')
+    expect(wrapper.text()).toContain('Ciudad de México')
+
+    const menuTrigger = wrapper.find('[aria-label="Acciones de la sesión en Safari"]')
+    await menuTrigger.trigger('click')
+    await flushPromises()
+    const revokeItem = wrapper.findAll('button[role="menuitem"]').find((b) => b.text() === 'Cerrar sesión')!
+    await revokeItem.trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('Safari')
+  })
+
+  it('la sesión actual no puede cerrarse desde su propio menú (ítem deshabilitado con razón visible)', async () => {
+    const { wrapper } = await mountUserView(baseFetchMock())
+
+    const row = wrapper.findAll('button').find((b) => b.text().includes('Sesiones activas'))!
+    await row.trigger('click')
+    await flushPromises()
+
+    const menuTrigger = wrapper.find('[aria-label="Acciones de la sesión en Chrome"]')
+    await menuTrigger.trigger('click')
+    await flushPromises()
+
+    const revokeItem = wrapper.findAll('button[role="menuitem"]').find((b) => b.text().includes('Cerrar sesión'))!
+    expect(revokeItem.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('No puedes cerrar la sesión que estás usando ahora.')
   })
 
   it('las 3 preferencias reales se muestran con su estado real, y "Tema oscuro" queda deshabilitado con indicación explícita', async () => {

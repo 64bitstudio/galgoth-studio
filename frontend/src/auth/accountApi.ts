@@ -16,6 +16,9 @@ export interface SessionSummary {
   id: string
   browser: string
   os: string
+  /** Ticket 070 de auth-core-mc -- `null` independientemente si GeoLite2 no resuelve la IP (privada, ausente, o base de datos no disponible). */
+  city: string | null
+  country: string | null
   createdAt: string
   lastUsedAt: string
   /** `true` solo si el caller mandó `X-Current-Refresh-Token` y coincide con esta fila -- ver `listSessions`. */
@@ -113,6 +116,17 @@ export function revokeAllSessions(): Promise<void> {
 
 export function listConnectedProviders(): Promise<ConnectedProviderSummary[]> {
   return request<ConnectedProviderSummary[]>('/api/v1/account/connected-providers')
+}
+
+/**
+ * Ticket 095 (rediseño de Mi Perfil) -- desvincula un proveedor ya
+ * conectado, backend de ticket 069 en auth-core-mc (PR #128). El backend
+ * responde 409 (`cannot_unlink_last_login_method`) si el usuario no tiene
+ * contraseña y este es su único proveedor vinculado -- el caller debe
+ * mostrar ese caso como un mensaje claro, nunca como error genérico.
+ */
+export function unlinkProvider(provider: string): Promise<void> {
+  return request<void>(`/api/v1/account/connected-providers/${provider.toLowerCase()}`, { method: 'DELETE' })
 }
 
 /**
