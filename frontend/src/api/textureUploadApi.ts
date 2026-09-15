@@ -26,13 +26,14 @@
  */
 import { API_BASE_URL } from './apiConfig'
 import { ApiError } from './ApiError'
+import { authenticatedFetch } from '../auth/authenticatedFetch'
 
 export interface TextureUploadResult {
   storageKey: string
 }
 
 export async function uploadTexture(mobId: string, png: Blob): Promise<TextureUploadResult> {
-  const response = await fetch(`${API_BASE_URL}/api/mobs/${mobId}/texture`, {
+  const response = await authenticatedFetch(`${API_BASE_URL}/api/mobs/${mobId}/texture`, {
     method: 'PUT',
     headers: { 'Content-Type': 'image/png' },
     body: png,

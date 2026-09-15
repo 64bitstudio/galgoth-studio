@@ -10,6 +10,7 @@ import com.galgothstudio.backend.domain.export.validation.ValidationResult;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.TextureDocument;
 import com.galgothstudio.backend.domain.uv.LegacyUvNormalizationService;
+import com.galgothstudio.backend.project.access.ProjectAccessGuard;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
 import com.galgothstudio.backend.project.persistence.MobDraftEntity;
 import com.galgothstudio.backend.project.persistence.MobDraftRepository;
@@ -62,6 +63,7 @@ public class MobExportService {
 	private final LegacyUvNormalizationService legacyUvNormalizationService;
 	private final AssetStorageService assetStorageService;
 	private final ObjectMapper objectMapper;
+	private final ProjectAccessGuard projectAccessGuard;
 
 	public MobExportService(
 			MobRepository mobRepository,
@@ -74,18 +76,22 @@ public class MobExportService {
 			// UvLayoutStrategy (ni lo necesita: nunca recomputa nada).
 			LegacyUvNormalizationService legacyUvNormalizationService,
 			AssetStorageService assetStorageService,
-			ObjectMapper objectMapper) {
+			ObjectMapper objectMapper,
+			ProjectAccessGuard projectAccessGuard) {
 		this.mobRepository = mobRepository;
 		this.revisionRepository = revisionRepository;
 		this.draftRepository = draftRepository;
 		this.legacyUvNormalizationService = legacyUvNormalizationService;
 		this.assetStorageService = assetStorageService;
 		this.objectMapper = objectMapper;
+		this.projectAccessGuard = projectAccessGuard;
 	}
 
+	/** Ticket 085 -- lectura: dueño real o proyecto {@code PUBLIC} (`callerId` nullable). */
 	@Transactional(readOnly = true)
-	public ExportStatusView getStatus(UUID mobId) {
+	public ExportStatusView getStatus(UUID mobId, String callerId) {
 		MobEntity mob = requireMob(mobId);
+		projectAccessGuard.requireViewable(mob.getProjectId(), callerId);
 		boolean hasSavedRevision = mob.getCurrentRevisionNumber() > 0;
 
 		Boolean fmmCompatible = null;
@@ -104,10 +110,11 @@ public class MobExportService {
 		return new ExportStatusView(mob.getId().toString(), mob.getName(), hasSavedRevision, hasUnsavedChanges, fmmCompatible, fmmIssues);
 	}
 
-	/** AC #1/#4 -- exporta la revisión GUARDADA actual, sin tocar `mob_drafts`. 404 (`NO_SAVED_REVISION`) si el mob nunca tuvo ninguna. */
+	/** AC #1/#4 -- exporta la revisión GUARDADA actual, sin tocar `mob_drafts`. 404 (`NO_SAVED_REVISION`) si el mob nunca tuvo ninguna. Ticket 085 -- lectura: dueño real o proyecto {@code PUBLIC} (`callerId` nullable). */
 	@Transactional(readOnly = true)
-	public ExportedFile exportBbmodel(UUID mobId) {
+	public ExportedFile exportBbmodel(UUID mobId, String callerId) {
 		MobEntity mob = requireMob(mobId);
+		projectAccessGuard.requireViewable(mob.getProjectId(), callerId);
 		if (mob.getCurrentRevisionNumber() == 0) {
 			throw new NoSavedRevisionException(mobId);
 		}

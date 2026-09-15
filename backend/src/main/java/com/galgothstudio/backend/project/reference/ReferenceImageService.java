@@ -1,7 +1,9 @@
 package com.galgothstudio.backend.project.reference;
 
 import com.galgothstudio.backend.asset.AssetStorageService;
+import com.galgothstudio.backend.project.access.ProjectAccessGuard;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
+import com.galgothstudio.backend.project.persistence.MobEntity;
 import com.galgothstudio.backend.project.persistence.MobRepository;
 import com.galgothstudio.backend.project.persistence.ReferenceImageEntity;
 import com.galgothstudio.backend.project.persistence.ReferenceImageRepository;
@@ -45,17 +47,24 @@ public class ReferenceImageService {
 	private final MobRepository mobRepository;
 	private final ReferenceImageRepository referenceImageRepository;
 	private final AssetStorageService assetStorageService;
+	private final ProjectAccessGuard projectAccessGuard;
 
 	public ReferenceImageService(
-			MobRepository mobRepository, ReferenceImageRepository referenceImageRepository, AssetStorageService assetStorageService) {
+			MobRepository mobRepository,
+			ReferenceImageRepository referenceImageRepository,
+			AssetStorageService assetStorageService,
+			ProjectAccessGuard projectAccessGuard) {
 		this.mobRepository = mobRepository;
 		this.referenceImageRepository = referenceImageRepository;
 		this.assetStorageService = assetStorageService;
+		this.projectAccessGuard = projectAccessGuard;
 	}
 
+	/** Ticket 085 -- mutación, exige dueño real. */
 	@Transactional
-	public ReferenceImageSummary upload(UUID mobId, String rawContentType, byte[] content) {
-		requireMobExists(mobId);
+	public ReferenceImageSummary upload(UUID mobId, String callerId, String rawContentType, byte[] content) {
+		MobEntity mob = requireMob(mobId);
+		projectAccessGuard.requireOwner(mob.getProjectId(), callerId);
 		String contentType = normalizedContentType(rawContentType);
 		String extension = requireSupportedContentType(contentType);
 		requireValidSize(content);
@@ -73,15 +82,25 @@ public class ReferenceImageService {
 		return toSummary(entity);
 	}
 
+	/** Ticket 085 -- lectura: dueño real o proyecto {@code PUBLIC} (`callerId` nullable). */
 	@Transactional(readOnly = true)
-	public List<ReferenceImageSummary> list(UUID mobId) {
-		requireMobExists(mobId);
+	public List<ReferenceImageSummary> list(UUID mobId, String callerId) {
+		MobEntity mob = requireMob(mobId);
+		projectAccessGuard.requireViewable(mob.getProjectId(), callerId);
 		return referenceImageRepository.findByMobIdOrderByCreatedAtAsc(mobId).stream().map(this::toSummary).toList();
 	}
 
+	/**
+	 * Ticket 085 -- deliberadamente SIN enforcement (mismo criterio que
+	 * {@code ThumbnailService#download}/{@code TextureService#download}):
+	 * el frontend renderiza esta imagen vía {@code <img>} directo (paso 1
+	 * del wizard de IA), que no puede mandar `Authorization: Bearer`. VoBo
+	 * explícito de Marco -- queda fuera de alcance hasta el ticket de
+	 * seguimiento que reescriba la carga de imágenes.
+	 */
 	@Transactional(readOnly = true)
 	public Optional<StoredReferenceImage> download(UUID mobId, UUID referenceId) {
-		requireMobExists(mobId);
+		requireMob(mobId);
 		Optional<ReferenceImageEntity> entity = referenceImageRepository.findByIdAndMobId(referenceId, mobId);
 		if (entity.isEmpty()) {
 			return Optional.empty();
@@ -91,10 +110,8 @@ public class ReferenceImageService {
 				.map(bytes -> new StoredReferenceImage(bytes, entity.get().getContentType()));
 	}
 
-	private void requireMobExists(UUID mobId) {
-		if (mobRepository.findById(mobId).isEmpty()) {
-			throw new MobNotFoundException(mobId);
-		}
+	private MobEntity requireMob(UUID mobId) {
+		return mobRepository.findById(mobId).orElseThrow(() -> new MobNotFoundException(mobId));
 	}
 
 	/**

@@ -16,6 +16,7 @@ GET    /api/projects/{projectId}/mobs   -- grid de mobs del detalle de proyecto 
 - **`POST /api/projects/{projectId}/mobs`** — body `{name, baseType}` (`baseType` es uno de `humanoid`/`arachnid`/`quadruped`/`flying`/`custom`, el `CHECK` de `mobs.base_type` del ticket 003). `201 Created` con el `MobSummary` -- el mob siempre arranca en `status="draft"`, `current_revision_number=0` (default de la columna) y **sin fila en `mob_drafts`** (AC #2, no existe hasta el primer autosave/Guardar, ticket 020). `400 Bad Request` (`error: "INVALID_MOB_REQUEST"`) si el nombre está vacío o `baseType` no es uno de los 5 valores válidos. `404 Not Found` (`PROJECT_NOT_FOUND`) si el proyecto no existe.
 - **`GET /api/projects/{projectId}/mobs`** — `MobSummary[]` (id, name, baseType, status, thumbnailKey, updatedAt) de TODOS los mobs del proyecto, ordenados por `updatedAt` descendente. El filtro por nombre del buscador (AC #3) es **client-side** sobre esta lista -- sin parámetro de búsqueda en el backend, mismo criterio de simplicidad que el dashboard de proyectos (021). `404 Not Found` (`PROJECT_NOT_FOUND`) si el proyecto no existe. Excluye mobs soft-deleted (ticket 039).
 - Duplicate a nivel de mob individual sigue sin pedirse -- no se inventa. Rename/Delete SÍ existen desde el ticket 039 (ver abajo).
+- **Ticket 085**: `POST` exige `Authorization: Bearer` y ser el dueño real del proyecto (`404` si no); `GET` queda lectura (dueño real o proyecto `PUBLIC`).
 
 ### Detalle de un mob (ticket `034`) + Renombrar/Eliminar (ticket `039`)
 
@@ -30,6 +31,7 @@ DELETE /api/mobs/{mobId}   -- Eliminar, soft-delete (ticket 039)
 - **`GET /api/mobs/{mobId}`** — `200 OK` — `MobSummary` (mismo shape que el listado de 022). `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe o está soft-deleted. Usado por `MobEditor.vue` (034) para conocer `name`/`baseType` reales cuando el mob todavía no tiene ningún draft con qué arrancar el editor.
 - **`PATCH /api/mobs/{mobId}`** — body `{name}`. Mismo criterio de validación que crear (`400 Bad Request`, `error: "INVALID_MOB_REQUEST"` si el nombre está vacío). `404 Not Found` (`MOB_NOT_FOUND`) si no existe.
 - **`DELETE /api/mobs/{mobId}`** — `204 No Content`. Soft-delete (`mobs.deleted_at`, `V2__mobs_soft_delete.sql`) -- mismo mecanismo EXACTO que `projects.deleted_at` (021): ningún FK hacia `mobs` (`mob_revisions`/`mob_drafts`/`reference_images`/`ai_jobs`) tiene `ON DELETE CASCADE`, un hard-delete fallaría por violación de FK en cualquier mob con historial real. `404 Not Found` (`MOB_NOT_FOUND`) si no existe.
+- **Ticket 085**: `PATCH`/`DELETE` exigen `Authorization: Bearer` y ser el dueño real del proyecto del mob (`404` si no, resuelto desde `mob.projectId`); `GET` queda lectura (dueño real o proyecto `PUBLIC`).
 
 ### Mobs recientes cruzando proyectos (ticket `071`, rediseño de Inicio)
 
@@ -56,10 +58,10 @@ POST   /api/projects/{id}/duplicate -- Duplicate (copia PROFUNDA: proyecto + tod
 
 - **`POST /api/projects`** — requiere `Authorization: Bearer` (ticket 084, ver "Ownership real de proyectos" abajo); `401 Unauthorized` (`UNAUTHENTICATED`) sin él. body `{name}`. `201 Created` con el `ProjectDetail` si el nombre es válido; `400 Bad Request` (`error: "INVALID_PROJECT_NAME"`) si está vacío/en blanco (AC #2) -- ningún proyecto se crea. El proyecto queda ligado al `sub` del JWT (`owner_ref`) y nace `visibility = "PRIVATE"`.
 - **`GET /api/projects`** — requiere `Authorization: Bearer`; `401 Unauthorized` (`UNAUTHENTICATED`) sin él. Devuelve `ProjectSummary[]` **solo del dueño autenticado** (ticket 084 -- hasta entonces era un listado global sin filtrar, hallazgo real corregido por ese ticket), sin los soft-deleted, ordenados por `updatedAt` descendente. Campos: id, name, description, mobCount, mobThumbnails ≤3, status, visibility, createdAt, updatedAt. `mobThumbnails[].thumbnailKey` es `null` mientras no exista pipeline de thumbnails (ticket futuro) -- el frontend renderiza un placeholder genérico, nunca bloquea el listado (AC #5). El frontend calcula el indicador "+N" como `mobCount - 3` cuando `mobCount > 3` (AC #3). `status` (ticket 072, `"active"`/`"draft"`) es DERIVADO, no una columna real de `projects` -- `"active"` si el proyecto tiene al menos un mob fuera de `draft` (`in_progress`/`ready`), `"draft"` si todos sus mobs están en draft o no tiene ninguno.
-- **`GET /api/projects/{id}`** — sin cambios en el ticket 084 (sigue abierto, sin exigir `Authorization` -- el enforcement dueño/público/privado de esta ruta es el ticket 085). `ProjectDetail` (id, name, description, mobCount, visibility, createdAt, updatedAt; sin el grid completo de mobs, eso es HU-04/ticket 022); `404 Not Found` (`PROJECT_NOT_FOUND`) si no existe o está soft-deleted. `description` (ticket 073) es opcional, `null` si el proyecto no tiene.
-- **`PATCH /api/projects/{id}`** — body `{name, description}`. Mismo criterio de validación de `name` que crear. `description` (ticket 073) SIEMPRE explícita en el body -- el contrato espera que todo caller la reenvíe tal cual si no la está cambiando (viaja tanto en `ProjectSummary` como en `ProjectDetail` para que cualquier pantalla pueda reenviarla sin conocerla de antemano). Un body que la omita la deja en `null` -- comportamiento intencional y documentado, no una ambigüedad oculta.
-- **`DELETE /api/projects/{id}`** — `204 No Content`. Soft-delete -- el proyecto deja de aparecer en cualquier consulta, tratado como "no existe" en adelante.
-- **`POST /api/projects/{id}/duplicate`** — `201 Created` con el `ProjectDetail` de la copia (`name` = original + `" (copia)"`). Copia profunda real: cada mob del original se recrea con nuevo id, y se copian TODAS sus `mob_revisions` (mismo `revision_number`, mismo `model_jsonb`) más su `mob_drafts` actual si existe -- decisión explícita del Product Owner (ticket 021).
+- **`GET /api/projects/{id}`** — lectura: dueño real o proyecto `PUBLIC` (ticket 085, ver abajo); `401`/`403` nunca -- siempre `404` cuando el caller no puede verlo. `ProjectDetail` (id, name, description, mobCount, visibility, createdAt, updatedAt; sin el grid completo de mobs, eso es HU-04/ticket 022); `404 Not Found` (`PROJECT_NOT_FOUND`) si no existe, está soft-deleted, o el caller no tiene acceso. `description` (ticket 073) es opcional, `null` si el proyecto no tiene.
+- **`PATCH /api/projects/{id}`** — requiere `Authorization: Bearer` y ser el dueño real (ticket 085) -- `404 Not Found` (`PROJECT_NOT_FOUND`) si no, nunca revela que el proyecto existe. body `{name, description}`. Mismo criterio de validación de `name` que crear. `description` (ticket 073) SIEMPRE explícita en el body -- el contrato espera que todo caller la reenvíe tal cual si no la está cambiando (viaja tanto en `ProjectSummary` como en `ProjectDetail` para que cualquier pantalla pueda reenviarla sin conocerla de antemano). Un body que la omita la deja en `null` -- comportamiento intencional y documentado, no una ambigüedad oculta.
+- **`DELETE /api/projects/{id}`** — requiere ser el dueño real (ticket 085). `204 No Content`. Soft-delete -- el proyecto deja de aparecer en cualquier consulta, tratado como "no existe" en adelante.
+- **`POST /api/projects/{id}/duplicate`** — requiere ser el dueño real (ticket 085). `201 Created` con el `ProjectDetail` de la copia (`name` = original + `" (copia)"`). Copia profunda real: cada mob del original se recrea con nuevo id, y se copian TODAS sus `mob_revisions` (mismo `revision_number`, mismo `model_jsonb`) más su `mob_drafts` actual si existe -- decisión explícita del Product Owner (ticket 021).
 - **"Export"** del menú de acciones del dashboard (mockup 01) está deshabilitado en el frontend -- no existe ningún endpoint de exportación de proyecto expuesto todavía (decisión del Product Owner, ticket 021; el export de un MOB individual vía `BBModelExporterV5`/V4 es un servicio de dominio interno sin controlador REST, épica futura).
 
 #### Ownership real de proyectos (ticket `084`)
@@ -70,14 +72,57 @@ privados, con una sección Explorar". `owner_ref` existía en el esquema
 desde el ticket 003 pero nunca se llenaba; este ticket lo puebla de
 verdad con el `sub` (user id) del JWT de auth-core-mc (mismo mecanismo de
 validación del ticket 077) y agrega `visibility` (`"PRIVATE"`/`"PUBLIC"`,
-migración `V5`, default `"PRIVATE"`). **Solo** `POST/GET /api/projects` y
-`GET /api/mobs/recent` exigen autenticación en este ticket -- el resto de
-rutas (detalle, rename, delete, duplicate, y los 9 controladores
-anidados de mobs/drafts/texturas/export) siguen sin cambios, abiertas,
-hasta el ticket `085` (enforcement dueño/público/privado sobre TODAS las
-rutas, con `404` en vez de `403` para no revelar existencia). Un cambio
-de visibilidad (`PATCH .../visibility`) y la sección Explorar en sí
-llegan en el ticket `086`.
+migración `V5`, default `"PRIVATE"`).
+
+#### Enforcement dueño/público/privado (ticket `085`)
+
+Cierra el ticket `077` ("queda listo para que un ticket futuro decida qué
+rutas proteger"). `ProjectAccessGuard` (paquete `project.access`) es el
+único punto de autorización: `requireOwner(projectId, callerId)` para
+toda mutación, `requireViewable(projectId, callerId)` para lecturas
+(dueño real O proyecto `PUBLIC`, `callerId` nullable = caller anónimo).
+Ambos métodos responden `ProjectNotFoundException` (`404`) cuando el
+caller no tiene acceso -- **nunca `403`**, para no revelar que el
+proyecto/recurso existe. Los 9 controladores en alcance:
+`ProjectController`, `MobController`, `MobDetailController`,
+`MobDraftController`, `MobExportController`, `MobGeometryController`,
+`MobReferenceImageController`, `MobTextureController`,
+`MobThumbnailController` -- cada uno resuelve el `projectId` real (directo,
+o vía el `project_id` del mob) y llama al guard antes de operar.
+
+`SecurityConfig` reemplaza `anyRequest().permitAll()` por reglas
+explícitas: toda mutación (`POST`/`PATCH`/`PUT`/`DELETE` de proyectos,
+mobs, drafts, revisiones, geometría, referencias, textura, thumbnail)
+exige `authenticated()` a nivel de Spring (más el guard, que decide
+dueño real); las lecturas JSON quedan `permitAll()` -- el guard decide
+si el caller (autenticado o anónimo) puede verlas, para que un proyecto
+`PUBLIC` sea legible sin sesión. `ApiAuthenticationEntryPoint` nuevo
+(paquete `config`) asegura que un `401` de Spring (rechazado ANTES de
+llegar al controlador) tenga la MISMA forma `ApiErrorResponse` que
+`UnauthenticatedRequestException` -- el cliente no debería notar cuál de
+los dos mecanismos rechazó la request.
+
+**Excepción deliberada, fuera de alcance de este ticket**: los 3
+endpoints que sirven bytes crudos de una imagen --
+`GET /api/mobs/{mobId}/thumbnail`, `GET /api/mobs/{mobId}/texture`,
+`GET /api/mobs/{mobId}/references/{referenceId}` -- siguen sin
+enforcement (ni en `SecurityConfig` ni en el guard). El frontend los
+renderiza vía `<img src="...">` directo (dashboard, tarjetas de
+proyecto/mob, wizard de referencia, pantalla de exportación), y un
+`<img>` del navegador nunca puede mandar `Authorization: Bearer` --
+protegerlos rompería el thumbnail/textura de CUALQUIER proyecto privado
+para su propio dueño en cuanto se desplegara (todos los proyectos nacen
+`PRIVATE`, ticket 084). VoBo explícito de Marco: quedan como un asset
+servido por id no adivinable (mismo criterio de confianza que una URL
+firmada), documentado como límite conocido hasta un ticket de
+seguimiento que reescriba la carga de imágenes del frontend (fetch
+autenticado + blob URL). Tampoco toca ninguna ruta de generación por IA
+(`/api/mobs/{mobId}/generate`, `/api/mobs/{mobId}/ai/edit-geometry`,
+`/api/jobs/**`, generación/edición de textura) -- esos controladores no
+son parte de los 9 en alcance.
+
+Un cambio de visibilidad (`PATCH .../visibility`) y la sección Explorar
+en sí llegan en el ticket `086`.
 
 ### Draft persistence + autosave + Guardar (ticket `020`)
 
@@ -106,6 +151,8 @@ POST   /api/mobs/{mobId}/revisions    -- Guardar (valida y crea una revisión in
 
 **Todos los errores** siguen la misma forma: `{ error, message, details }` (`details` es `null` salvo en `INVALID_DRAFT`).
 
+**Ticket 085**: `PATCH .../draft` y `POST .../revisions` exigen `Authorization: Bearer` y ser el dueño real (`404` si no); `GET .../draft` queda lectura (dueño real o proyecto `PUBLIC`, ver "Enforcement dueño/público/privado" arriba).
+
 ### Apply de geometría server-side + confirmación de resize (ticket `043`, Diseño técnico §2/§15)
 
 Implementado en `backend/.../project/api/MobGeometryController.java`. Autoridad de negocio: `MobGeometryApplyService` (paquete `project.geometry`), que ejecuta `GeometryEngine.apply(model, ops, uvLayoutStrategy, confirmPaintLoss)` (`domain/geometry`, `domain/uv`) sobre el DRAFT actual del mob y lo persiste por el MISMO mecanismo que `PATCH /draft` (`DraftPersistenceService.autosave`) -- cierra el Hallazgo B (el editor manual calculaba geometría/UV client-side sin que el backend lo revalidara) para las 3 operaciones que afectan UV.
@@ -122,6 +169,8 @@ POST   /api/mobs/{mobId}/geometry/apply    -- aplica createCuboid/resizeCuboid/r
 - `400 Bad Request` (`error: "INVALID_GEOMETRY_OPERATION"`, `details: [...]`) — el batch no pasa la validación del Geometry Engine (referencia no resuelta, dimensión resultante ≤ 0, etc.).
 - `400 Bad Request` (`error: "UNSUPPORTED_GEOMETRY_OPERATION"`) — se envió una operación fuera de la whitelist de este endpoint.
 - `404 Not Found` (`DRAFT_NOT_FOUND` / `MOB_NOT_FOUND`) — mismos códigos que `GET /draft`.
+
+**Ticket 085**: exige `Authorization: Bearer` y ser el dueño real (`404` si no) -- es una mutación, sin excepción.
 
 **Frontend (`ThreeViewport.vue`/`InspectorPanel.vue`, Diseño técnico §15)**: durante el arrastre del handle de resize (`pointermove`), el preview es 100% local (sin llamada de red, mismo mecanismo visual de siempre). Solo al soltar (`pointerup`, o al confirmar un input numérico) se dispara la ÚNICA llamada a este endpoint. Si responde `PAINTED_REGION_RESIZE_CONFIRMATION_REQUIRED`, se muestra `ConfirmDialog` con el detalle de las caras afectadas -- "Confirmar" reenvía la misma operación con `confirmPaintLoss: true`; "Cancelar" descarta el preview local sin llamar a `commitExternalModel` (el cuboid vuelve a su último estado confirmado).
 
@@ -146,6 +195,8 @@ Límites concretos (dejados abiertos a propósito por el documento de definició
 
 **`GET /api/mobs/{mobId}/references/{id}`** — bytes de la imagen con su `Content-Type` real (`image/png` o `image/jpeg`, según lo que se subió). `404 Not Found` sin cuerpo si la imagen no existe; `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe.
 
+**Ticket 085**: `POST` (subir) exige `Authorization: Bearer` y ser el dueño real; `GET .../references` (listado JSON) queda lectura (dueño real o proyecto `PUBLIC`). `GET .../references/{id}` (bytes crudos) sigue deliberadamente SIN enforcement -- ver "Enforcement dueño/público/privado" arriba.
+
 ### Pipeline de thumbnails (ticket `023`)
 
 Implementados en `backend/.../project/api/MobThumbnailController.java`. Autoridad de negocio: `ThumbnailService` (paquete `project.thumbnail`), sobre `AssetStorageService` (paquete `asset`, cliente S3 genérico contra MinIO — ver `docs/ARQUITECTURA.md`).
@@ -163,6 +214,8 @@ GET    /api/mobs/{mobId}/thumbnail    -- servir el PNG actual del mob
 - `200 OK` — bytes del PNG, `Content-Type: image/png`.
 - `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe; `404 Not Found` sin cuerpo si el mob existe pero todavía no tiene thumbnail subido (AC #4).
 
+**Ticket 085**: `POST` (subir) exige `Authorization: Bearer` y ser el dueño real. `GET` (descargar) sigue deliberadamente SIN enforcement -- el frontend lo carga vía `<img src>` directo, ver "Enforcement dueño/público/privado" arriba.
+
 El thumbnail es un asset **derivado y best-effort**: el frontend lo genera/sube DESPUÉS de un Guardar exitoso (`EditorToolbar.vue`, botón "Guardar" real añadido en este mismo ticket — el ticket 020 solo implementó el backend de "Guardar"), en un paso separado cuyo fallo nunca revierte ni bloquea la revisión ya guardada (solo `console.warn` en el frontend).
 
 ### Persistencia content-addressed de textura (ticket `045`, HU-30/HU-31)
@@ -179,6 +232,8 @@ PUT    /api/mobs/{mobId}/texture    -- subir el bitmap de textura, content-addre
 - `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe.
 
 **Flush obligatorio antes de crear una Revision** (Diseño técnico §6): el frontend debe esperar (await) la respuesta de este endpoint y usar EXACTAMENTE el `storageKey` devuelto antes de invocar "Guardar" (`POST /revisions`) o "Usar este modelo" (`POST /jobs/{jobId}/apply`) — nunca dispararlos en paralelo con un `PUT /texture` todavía en vuelo. Como defensa en profundidad (contra un cliente que por bug no respete ese orden), ambos endpoints verifican que el `storageKey` referenciado por `model.texture()` exista realmente en MinIO antes de escribir la fila: `400 Bad Request` (`error: "DANGLING_TEXTURE_REFERENCE"`) si no existe — nunca se persiste una `mob_revision` con una referencia colgante.
+
+**Ticket 085**: `PUT` (subir) exige `Authorization: Bearer` y ser el dueño real. `GET` (descargar) sigue deliberadamente SIN enforcement -- el frontend lo carga vía `<img>`/canvas directo, ver "Enforcement dueño/público/privado" arriba.
 
 El dirty-check de autosave (`PATCH /draft`, ticket 020) no requiere ningún cambio: `TextureDocument.storageKey` es un `String` más dentro de `MobProjectModel`, así que la comparación de igualdad estructural ya existente lo cubre automáticamente (O(1), sin comparar bitmaps) — el `storageKey` comparado es siempre el que este endpoint devolvió, nunca uno calculado solo por el cliente.
 

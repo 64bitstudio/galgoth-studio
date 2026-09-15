@@ -8,9 +8,10 @@
  */
 import { API_BASE_URL } from '../api/apiConfig'
 import { ApiError } from '../api/ApiError'
+import { authenticatedFetch } from '../auth/authenticatedFetch'
 
 export async function uploadThumbnail(mobId: string, png: Blob): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/mobs/${mobId}/thumbnail`, {
+  const response = await authenticatedFetch(`${API_BASE_URL}/api/mobs/${mobId}/thumbnail`, {
     method: 'POST',
     headers: { 'Content-Type': 'image/png' },
     body: png,

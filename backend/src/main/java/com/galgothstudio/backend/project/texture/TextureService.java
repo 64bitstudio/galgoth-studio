@@ -1,8 +1,10 @@
 package com.galgothstudio.backend.project.texture;
 
 import com.galgothstudio.backend.asset.AssetStorageService;
+import com.galgothstudio.backend.project.access.ProjectAccessGuard;
 import com.galgothstudio.backend.project.draft.DraftPersistenceService;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
+import com.galgothstudio.backend.project.persistence.MobEntity;
 import com.galgothstudio.backend.project.persistence.MobRepository;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -66,20 +68,42 @@ public class TextureService {
 	private final MobRepository mobRepository;
 	private final AssetStorageService assetStorageService;
 	private final DraftPersistenceService draftPersistenceService;
+	private final ProjectAccessGuard projectAccessGuard;
 
 	public TextureService(
-			MobRepository mobRepository, AssetStorageService assetStorageService, DraftPersistenceService draftPersistenceService) {
+			MobRepository mobRepository,
+			AssetStorageService assetStorageService,
+			DraftPersistenceService draftPersistenceService,
+			ProjectAccessGuard projectAccessGuard) {
 		this.mobRepository = mobRepository;
 		this.assetStorageService = assetStorageService;
 		this.draftPersistenceService = draftPersistenceService;
+		this.projectAccessGuard = projectAccessGuard;
 	}
 
+	/**
+	 * Sin enforcement -- para el caller INTERNO del pipeline de IA
+	 * ({@code TextureGenerationService}), fuera del alcance del ticket 085
+	 * (mismo criterio que el overload sin `callerId` de
+	 * {@link DraftPersistenceService#getDraft(UUID)}).
+	 */
 	@Transactional(readOnly = true)
 	public TextureUploadResponse upload(UUID mobId, byte[] rawBytes) {
 		if (mobRepository.findById(mobId).isEmpty()) {
 			throw new MobNotFoundException(mobId);
 		}
+		return doUpload(rawBytes);
+	}
 
+	/** Ticket 085 -- variante para {@code PUT /api/mobs/{mobId}/texture} (`MobTextureController`): mutación, exige dueño real. */
+	@Transactional(readOnly = true)
+	public TextureUploadResponse upload(UUID mobId, String callerId, byte[] rawBytes) {
+		MobEntity mob = mobRepository.findById(mobId).orElseThrow(() -> new MobNotFoundException(mobId));
+		projectAccessGuard.requireOwner(mob.getProjectId(), callerId);
+		return doUpload(rawBytes);
+	}
+
+	private TextureUploadResponse doUpload(byte[] rawBytes) {
 		byte[] canonicalPngBytes = decodeAndReencode(rawBytes);
 		String storageKey = STORAGE_PREFIX + sha256Hex(canonicalPngBytes) + STORAGE_SUFFIX;
 
@@ -101,9 +125,19 @@ public class TextureService {
 	 * en {@code ApiExceptionHandler}, la misma semántica de "nada que
 	 * descargar" que este método expone explícitamente para los otros
 	 * dos casos.
+	 *
+	 * <p>Ticket 085 -- deliberadamente SIN enforcement (mismo criterio que
+	 * {@link com.galgothstudio.backend.project.thumbnail.ThumbnailService#download}):
+	 * el frontend carga la textura vía {@code <img>}/canvas directo, que no
+	 * puede mandar `Authorization: Bearer`. VoBo explícito de Marco --
+	 * queda fuera de alcance hasta el ticket de seguimiento que reescriba
+	 * la carga de imágenes.
 	 */
 	@Transactional(readOnly = true)
 	public Optional<byte[]> download(UUID mobId) {
+		if (mobRepository.findById(mobId).isEmpty()) {
+			throw new MobNotFoundException(mobId);
+		}
 		String storageKey = draftPersistenceService.getDraft(mobId).model().texture().storageKey();
 		if (storageKey == null) {
 			return Optional.empty();

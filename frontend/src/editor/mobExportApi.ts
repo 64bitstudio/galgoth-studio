@@ -12,6 +12,7 @@
  */
 import { API_BASE_URL } from '../api/apiConfig'
 import { ApiError } from '../api/ApiError'
+import { authenticatedFetch } from '../auth/authenticatedFetch'
 import type { FmmIssue } from '../api/generationResultApi'
 
 export interface ExportStatus {
@@ -29,7 +30,7 @@ export interface DownloadedBbmodel {
 }
 
 export async function getExportStatus(mobId: string): Promise<ExportStatus> {
-  const response = await fetch(`${API_BASE_URL}/api/mobs/${mobId}/export/status`)
+  const response = await authenticatedFetch(`${API_BASE_URL}/api/mobs/${mobId}/export/status`)
   const body = await response.json().catch(() => null)
   if (!response.ok) {
     throw new ApiError(body?.message ?? `Error HTTP ${response.status}`, response.status, body?.error)
@@ -45,7 +46,7 @@ function filenameFrom(response: Response, fallback: string): string {
 }
 
 export async function downloadBbmodel(mobId: string): Promise<DownloadedBbmodel> {
-  const response = await fetch(`${API_BASE_URL}/api/mobs/${mobId}/export/bbmodel`)
+  const response = await authenticatedFetch(`${API_BASE_URL}/api/mobs/${mobId}/export/bbmodel`)
   if (!response.ok) {
     const body = await response.json().catch(() => null)
     throw new ApiError(body?.message ?? `Error HTTP ${response.status}`, response.status, body?.error)

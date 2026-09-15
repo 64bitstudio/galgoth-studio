@@ -3,6 +3,7 @@ package com.galgothstudio.backend.aiorchestrator.api;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -26,6 +27,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -74,9 +76,17 @@ class AiEditControllerTest {
 		entityManager.flush();
 	}
 
+	/** Ticket 085 -- `sub` constante para el archivo completo, mismo patrón que {@link com.galgothstudio.backend.project.api.ProjectControllerTest}. */
+	private static final String OWNER_ID = "4635300a-5049-4cd5-933d-a37b807c83b0";
+
+	private static RequestPostProcessor authenticated() {
+		return jwt().jwt(builder -> builder.subject(OWNER_ID));
+	}
+
+	/** Ticket 085 -- `owner_ref` real (084) para que el guard de acceso reconozca a {@code OWNER_ID} como dueño de `draft`/`revisions` (los únicos 2 endpoints de este archivo que están dentro del alcance de ese ticket -- `ai/edit-geometry`/`jobs/{id}/apply-edit` no lo están). */
 	private UUID aProjectAndMob() {
 		UUID projectId = UUID.randomUUID();
-		jdbc.update("insert into projects (id, name) values (?, ?)", projectId, "Galgoth");
+		jdbc.update("insert into projects (id, name, owner_ref) values (?, ?, ?)", projectId, "Galgoth", OWNER_ID);
 		UUID mobId = UUID.randomUUID();
 		jdbc.update(
 				"insert into mobs (id, project_id, name, base_type, status) values (?, ?, ?, ?, ?)",
@@ -114,11 +124,11 @@ class AiEditControllerTest {
 	 */
 	private void seedDraft(UUID mobId, UUID projectId) throws Exception {
 		mockMvc.perform(
-						patch("/api/mobs/{mobId}/draft", mobId).contentType(MediaType.APPLICATION_JSON).content(
+						patch("/api/mobs/{mobId}/draft", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content(
 								"{\"model\":" + modelWithHands(mobId, projectId) + "}"))
 				.andExpect(status().isOk());
 		mockMvc.perform(
-						post("/api/mobs/{mobId}/revisions", mobId).contentType(MediaType.APPLICATION_JSON).content(
+						post("/api/mobs/{mobId}/revisions", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content(
 								"{\"model\":" + modelWithHands(mobId, projectId) + "}"))
 				.andExpect(status().isCreated());
 	}
@@ -172,7 +182,7 @@ class AiEditControllerTest {
 		UUID mobId = aProjectAndMob();
 		UUID projectId = UUID.fromString(jdbc.queryForObject("select project_id from mobs where id = ?", String.class, mobId));
 		mockMvc.perform(
-						patch("/api/mobs/{mobId}/draft", mobId).contentType(MediaType.APPLICATION_JSON).content(
+						patch("/api/mobs/{mobId}/draft", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content(
 								"{\"model\":" + modelWithHands(mobId, projectId) + "}"))
 				.andExpect(status().isOk()); // draft SIN ningún "Guardar"/"Usar este modelo" todavía
 
@@ -202,7 +212,7 @@ class AiEditControllerTest {
 		UUID mobId = aProjectAndMob();
 		UUID projectId = UUID.fromString(jdbc.queryForObject("select project_id from mobs where id = ?", String.class, mobId));
 		mockMvc.perform(
-						post("/api/mobs/{mobId}/revisions", mobId).contentType(MediaType.APPLICATION_JSON).content(
+						post("/api/mobs/{mobId}/revisions", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content(
 								"{\"model\":" + modelWithHands(mobId, projectId) + "}"))
 				.andExpect(status().isCreated()); // "Guardar" directo, sin autosave previo -- current_revision_number=1, mob_drafts sigue vacío
 
@@ -264,7 +274,7 @@ class AiEditControllerTest {
 
 		// El draft avanza (otro autosave real) DESPUÉS de generar el plan -- el job quedó con una base ahora vieja.
 		mockMvc.perform(
-						patch("/api/mobs/{mobId}/draft", mobId)
+						patch("/api/mobs/{mobId}/draft", mobId).with(authenticated())
 								.contentType(MediaType.APPLICATION_JSON)
 								.content("{\"model\":" + modelWithHands(mobId, projectId).replace("\"Carcomido\"", "\"Carcomido Editado\"") + "}"))
 				.andExpect(status().isOk());

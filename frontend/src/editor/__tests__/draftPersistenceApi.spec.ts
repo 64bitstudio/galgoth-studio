@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../api/ApiError'
 import { getDraft, saveRevision } from '../draftPersistenceApi'
 import type { MobProjectModel } from '../../domain/MobProjectModel'
@@ -25,6 +26,12 @@ function emptyModel(mobId: string): MobProjectModel {
 }
 
 describe('draftPersistenceApi', () => {
+  // Ticket 085 -- getDraft/saveRevision pasan a usar authenticatedFetch
+  // (ticket 078), que necesita un Pinia activo para leer la sesión.
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })

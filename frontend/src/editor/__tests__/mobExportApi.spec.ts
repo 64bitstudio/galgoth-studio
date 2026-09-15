@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../api/ApiError'
 import { downloadBbmodel, getExportStatus } from '../mobExportApi'
 
@@ -7,6 +8,13 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('mobExportApi', () => {
+  // Ticket 085 -- getExportStatus/downloadBbmodel pasan a usar
+  // authenticatedFetch (ticket 078), que necesita un Pinia activo para leer
+  // la sesión.
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })

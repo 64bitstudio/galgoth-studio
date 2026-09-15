@@ -5,6 +5,8 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,7 +17,10 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Ticket 023 (Diseño técnico §8) -- ver `docs/API.md`. Mismo estilo de
  * ruta mob-scoped (no anidada bajo `/api/projects/...`) que
- * `MobDraftController` (ticket 020).
+ * `MobDraftController` (ticket 020). Ticket 085 agrega enforcement
+ * dueño/público/privado vía `ProjectAccessGuard` a la subida -- la
+ * descarga queda deliberadamente sin protección (ver Javadoc de
+ * {@link ThumbnailService#download}).
  */
 @RestController
 @RequestMapping("/api/mobs/{mobId}/thumbnail")
@@ -28,8 +33,8 @@ public class MobThumbnailController {
 	}
 
 	@PostMapping(consumes = MediaType.IMAGE_PNG_VALUE)
-	public ResponseEntity<Void> upload(@PathVariable UUID mobId, @RequestBody byte[] pngBytes) {
-		thumbnailService.upload(mobId, pngBytes);
+	public ResponseEntity<Void> upload(@PathVariable UUID mobId, @AuthenticationPrincipal Jwt jwt, @RequestBody byte[] pngBytes) {
+		thumbnailService.upload(mobId, callerId(jwt), pngBytes);
 		return ResponseEntity.noContent().build();
 	}
 
@@ -39,6 +44,10 @@ public class MobThumbnailController {
 				.download(mobId)
 				.map(bytes -> ResponseEntity.ok().contentType(MediaType.IMAGE_PNG).body(bytes))
 				.orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
+	}
+
+	private static String callerId(Jwt jwt) {
+		return jwt == null ? null : jwt.getSubject();
 	}
 
 }
