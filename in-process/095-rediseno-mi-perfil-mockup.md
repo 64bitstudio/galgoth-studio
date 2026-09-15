@@ -60,4 +60,44 @@ se reutiliza tal cual — no se re-implementa.
   ciudad/país cuando el backend los manda y cuando no (null).
 
 ## Hecho
-[Se completa al cerrar el ticket.]
+⚠️ Pendiente antes de cerrar del todo: verificación visual en vivo por
+Marco (ver nota al final) -- el código está implementado, probado y
+desplegado, pero el objetivo del ticket es fidelidad VISUAL contra un
+mockup, y eso solo lo puede confirmar un humano viéndolo.
+
+Implementado y mergeado en PR #141 (`feat/095-rediseno-mi-perfil-mockup`),
+desplegado en DEV (build Jenkins verde sobre `dev`, commit `6bd149a`).
+
+- `UserView.vue`: layout de 2 columnas, cabecera tipo tarjeta (`GPanel
+  elevated`) con avatar, badge, "Miembro desde" con ícono de calendario,
+  botones "Editar perfil" (lleva el foco a Información personal) y
+  "Cambiar foto".
+- `ChangePasswordModal.vue` y `SessionsModal.vue` (nuevos): reemplazan el
+  formulario/lista inline de Seguridad -- mismo patrón que
+  `ChangeEmailModal.vue` (el modal solo junta el formulario/muestra la
+  lista, la llamada real sigue en `UserView.vue`).
+- Cada proveedor conectado gana un menú "···" (`GMenu.vue`) con
+  "Desvincular", sobre `DELETE /connected-providers/{provider}`
+  (auth-core-mc#069, ya mergeado). `accountApi.unlinkProvider` nuevo.
+- `SessionSummary` gana `city`/`country` (auth-core-mc#070, GeoLite2,
+  ya mergeado) -- `SessionsModal` los muestra cuando vienen, degrada a
+  solo dispositivo/fecha cuando no.
+- 5 íconos nuevos: `IconCalendar`, `IconLock`, `IconShield`,
+  `IconDevice`, `IconLink`.
+- Tests: 15 nuevos (`ChangePasswordModal.spec.ts`, `SessionsModal.spec.ts`,
+  casos nuevos en `UserView.spec.ts`/`accountApi.spec.ts`) + toda la
+  suite existente sigue en verde -- 883 tests, 0 fallos. `npm run build`
+  (`vue-tsc -b && vite build`) y `npm run lint` verdes.
+
+**Verificación en vivo -- parcial, pendiente de Marco.** Confirmé por
+navegador que `https://studio-dev.galgoth.64bitstudio.com` despliega sin
+errores de consola y que `/login` renderiza bien (el bundle nuevo carga
+correctamente). La pantalla `/usuario` en sí vive detrás de login, y por
+política no debo introducir una contraseña en ningún formulario aunque
+sea de una cuenta de prueba -- así que no pude comparar visualmente el
+resultado final contra el mockup yo mismo. Falta que Marco entre a
+`/usuario` en DEV y confirme que el resultado se apega al mockup antes de
+dar esto por completamente cerrado en la práctica (el ticket se archiva
+a `done/` porque el trabajo descrito está completo y verificado por
+tests/build, no porque la fidelidad visual final ya fue confirmada por
+un humano).
