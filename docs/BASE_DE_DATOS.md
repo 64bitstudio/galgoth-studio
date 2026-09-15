@@ -2,7 +2,7 @@
 
 Esquema conceptual completo en `docs/definiciones/galgoth-studio-mvp.md` (Diseño técnico §2). Este archivo documenta el esquema **real ya migrado** (ticket `003-esquema-bd-inicial-migraciones`, `done/`).
 
-Motor de migraciones: **Flyway** (community), archivos SQL versionados en `backend/src/main/resources/db/migration/`. `V1__init_schema.sql` crea las 8 tablas; `V2__mobs_soft_delete.sql` (ticket 039) agrega `mobs.deleted_at`. Se aplican automáticamente al arrancar la app (`spring-boot-starter-flyway`) — sin paso manual. **V1 nunca se edita** una vez aplicado a un ambiente real (Flyway valida checksums) -- cambios de esquema van en un `V*` nuevo.
+Motor de migraciones: **Flyway** (community), archivos SQL versionados en `backend/src/main/resources/db/migration/`. `V1__init_schema.sql` crea las 8 tablas; `V2__mobs_soft_delete.sql` (ticket 039) agrega `mobs.deleted_at`; `V6__user_profile.sql` (ticket 091) crea `user_profile`. Se aplican automáticamente al arrancar la app (`spring-boot-starter-flyway`) — sin paso manual. **V1 nunca se edita** una vez aplicado a un ambiente real (Flyway valida checksums) -- cambios de esquema van en un `V*` nuevo.
 
 ## Tablas
 
@@ -14,6 +14,7 @@ Motor de migraciones: **Flyway** (community), archivos SQL versionados en `backe
 - **`ai_jobs`** — `job_type CHECK IN ('generate','edit')`. **`CHECK` a nivel de fila** (`chk_ai_jobs_base_values_by_type`): si `job_type='generate'`, `base_revision_number`/`base_draft_version` deben ser `NULL`; si `job_type='edit'`, ambos deben ser `NOT NULL` — la base de datos rechaza la fila si no se cumple, no queda solo a criterio de la capa de aplicación.
 - **`ai_job_events`** — `payload_jsonb` nullable, transporta `preview_snapshot`/`preview_operations`. `UNIQUE(job_id, seq)`.
 - **`exports`** — `format_version CHECK IN ('v4','v5')`.
+- **`user_profile`** (ticket 091, `V6`) — "perfil de producto" por usuario de auth-core-mc: `user_id` (PK) es el `sub` del JWT, sin FK (mismo criterio que `projects.owner_ref`). `avatar_key`/`avatar_content_type` nullable (sin avatar subido todavía); las 3 columnas de preferencias de notificación (`notify_email`/`notify_product_news`/`notify_save_reminders`) `NOT NULL DEFAULT true`. Una fila solo existe si el usuario ya subió avatar o guardó preferencias al menos una vez -- `GET /api/account/profile` devuelve los defaults sin crear ninguna fila.
 
 ## FK compuestas — decisión de este ticket (resuelve la "Nota abierta" del documento de definición)
 

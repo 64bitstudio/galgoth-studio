@@ -1,5 +1,6 @@
 package com.galgothstudio.backend.project.api;
 
+import com.galgothstudio.backend.account.InvalidAvatarException;
 import com.galgothstudio.backend.aiorchestrator.InvalidJobStateException;
 import com.galgothstudio.backend.aiorchestrator.JobNotCompletedException;
 import com.galgothstudio.backend.aiorchestrator.JobNotFoundException;
@@ -13,6 +14,7 @@ import com.galgothstudio.backend.aiorchestrator.texture.TextureTargetBoneNotFoun
 import com.galgothstudio.backend.domain.geometry.GeometryValidationException;
 import com.galgothstudio.backend.domain.uv.PaintedRegionResizeConfirmationRequiredException;
 import com.galgothstudio.backend.domain.uv.UvAtlasOverflowException;
+import com.galgothstudio.backend.internal.InvalidInternalSecretException;
 import com.galgothstudio.backend.project.InvalidProjectNameException;
 import com.galgothstudio.backend.project.ProjectNotFoundException;
 import com.galgothstudio.backend.project.UnauthenticatedRequestException;
@@ -62,6 +64,12 @@ public class ApiExceptionHandler {
 		return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ApiErrorResponse("UNAUTHENTICATED", ex.getMessage(), null));
 	}
 
+	/** Ticket 091 -- header `X-Internal-Secret` ausente o incorrecto en `/api/internal/**`. */
+	@ExceptionHandler(InvalidInternalSecretException.class)
+	public ResponseEntity<ApiErrorResponse> handleInvalidInternalSecret(InvalidInternalSecretException ex) {
+		return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ApiErrorResponse("INVALID_INTERNAL_SECRET", ex.getMessage(), null));
+	}
+
 	@ExceptionHandler(InvalidProjectNameException.class)
 	public ResponseEntity<ApiErrorResponse> handleInvalidProjectName(InvalidProjectNameException ex) {
 		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("INVALID_PROJECT_NAME", ex.getMessage(), null));
@@ -75,6 +83,11 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(InvalidReferenceImageException.class)
 	public ResponseEntity<ApiErrorResponse> handleInvalidReferenceImage(InvalidReferenceImageException ex) {
 		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("INVALID_REFERENCE_IMAGE", ex.getMessage(), null));
+	}
+
+	@ExceptionHandler(InvalidAvatarException.class)
+	public ResponseEntity<ApiErrorResponse> handleInvalidAvatar(InvalidAvatarException ex) {
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ApiErrorResponse("INVALID_AVATAR", ex.getMessage(), null));
 	}
 
 	@ExceptionHandler(InvalidTextureException.class)

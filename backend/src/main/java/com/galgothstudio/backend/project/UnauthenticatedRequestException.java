@@ -9,6 +9,11 @@ package com.galgothstudio.backend.project;
  * este chequeo puntual en el controlador es la pieza mínima que HU-1/HU-2
  * necesitan ya: sin un {@code sub} real en el JWT no hay a quién ligar el
  * proyecto ni por quién filtrar el listado.
+ *
+ * <p>Ticket 091 -- reutilizada tal cual por {@code account.api} (perfil de
+ * producto, avatar, preferencias): mismo significado exacto ("esta
+ * operación requiere sesión"), sin ninguna razón de negocio para que cada
+ * dominio tenga su propia versión de este mismo error.
  */
 public class UnauthenticatedRequestException extends RuntimeException {
 

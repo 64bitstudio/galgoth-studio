@@ -99,6 +99,25 @@ public class ProjectService {
 		projectRepository.save(project);
 	}
 
+	/**
+	 * Ticket 091 -- llamado por {@code PurgeAccountDataService} al eliminar
+	 * una cuenta (ticket 064 de auth-core-mc, vía el endpoint interno). Se
+	 * lleva TODOS los proyectos del dueño, públicos o privados por igual --
+	 * eliminar la cuenta no debe dejar proyectos públicos huérfanos
+	 * visibles en Explorar (decisión de Marco, docs/definiciones/perfil-de-usuario.md).
+	 * Sin `callerId`/guard a propósito: el caller es otro backend (vía el
+	 * secreto compartido de {@code InternalSecretAuthenticator}), no un
+	 * usuario -- no hay contra qué comparar ownership.
+	 */
+	@Transactional
+	public void purgeAllForOwner(String ownerId) {
+		Instant now = Instant.now();
+		for (ProjectEntity project : projectRepository.findByOwnerRefAndDeletedAtIsNullOrderByUpdatedAtDesc(ownerId)) {
+			project.setDeletedAt(now);
+			projectRepository.save(project);
+		}
+	}
+
 	/** Ticket 085 -- mutación, exige dueño real. */
 	@Transactional
 	public ProjectDetail duplicate(UUID projectId, String callerId) {
@@ -143,10 +162,6 @@ public class ProjectService {
 
 		draftRepository.findById(original.getId()).ifPresent(draft -> draftRepository.save(
 				new MobDraftEntity(newMobId, draft.getModelJson(), draft.getDraftVersion(), now)));
-	}
-
-	private ProjectEntity requireProject(UUID projectId) {
-		return projectRepository.findByIdAndDeletedAtIsNull(projectId).orElseThrow(() -> new ProjectNotFoundException(projectId));
 	}
 
 	private String requireValidName(String name) {
