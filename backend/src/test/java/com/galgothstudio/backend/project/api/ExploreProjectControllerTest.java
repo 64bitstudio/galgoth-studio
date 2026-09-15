@@ -2,6 +2,7 @@ package com.galgothstudio.backend.project.api;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -62,6 +63,30 @@ class ExploreProjectControllerTest {
 				.andExpect(jsonPath("$[0].name", is("Público de B"))) // más reciente primero (updated_at desc)
 				.andExpect(jsonPath("$[0].ownerDisplayName", is("Grace Hopper")))
 				.andExpect(jsonPath("$[1].name", is("Público de A")));
+	}
+
+	// Ticket 092 -- avatarUrl en la respuesta de Explorar.
+	@Test
+	void un_dueno_con_avatar_agrega_avatarUrl_en_la_respuesta() throws Exception {
+		String ownerId = UUID.randomUUID().toString();
+		jdbc.update(
+				"insert into user_profile (user_id, avatar_key, avatar_content_type, notify_email, notify_product_news, notify_save_reminders, updated_at) values (?, ?, ?, true, true, true, now())",
+				UUID.fromString(ownerId), "users/" + ownerId + "/avatar-x.png", "image/png");
+		aProjectOf(ownerId, "PUBLIC", "Con avatar", "Ada Lovelace");
+
+		mockMvc.perform(get("/api/explore/projects"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].avatarUrl", is("/api/account/avatar/" + ownerId)));
+	}
+
+	@Test
+	void un_dueno_sin_avatar_deja_avatarUrl_en_null_nunca_una_url_rota() throws Exception {
+		String ownerId = UUID.randomUUID().toString();
+		aProjectOf(ownerId, "PUBLIC", "Sin avatar", "Grace Hopper");
+
+		mockMvc.perform(get("/api/explore/projects"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].avatarUrl", is(nullValue())));
 	}
 
 	@Test

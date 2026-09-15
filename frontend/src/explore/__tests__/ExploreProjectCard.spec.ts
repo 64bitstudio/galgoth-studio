@@ -13,6 +13,7 @@ function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     status: 'draft',
     visibility: 'PUBLIC',
     ownerDisplayName: null,
+    avatarUrl: null,
     createdAt: '',
     updatedAt: '',
     ...overrides,
@@ -36,6 +37,21 @@ describe('ExploreProjectCard.vue', () => {
     const wrapper = mount(ExploreProjectCard, { props: { project: project({ ownerDisplayName: null }) } })
 
     expect(wrapper.text()).not.toContain('por ')
+  })
+
+  // Ticket 092 -- avatar real del autor, con fallback a la inicial del nombre si no tiene uno subido (ticket 091).
+  it('con avatarUrl, muestra la imagen real del autor', () => {
+    const wrapper = mount(ExploreProjectCard, { props: { project: project({ ownerDisplayName: 'Ada Lovelace', avatarUrl: '/api/account/avatar/u1' }) } })
+
+    expect(wrapper.find('.explore-card__avatar img').exists()).toBe(true)
+    expect(wrapper.find('.explore-card__avatar-initial').exists()).toBe(false)
+  })
+
+  it('sin avatarUrl, muestra la inicial del nombre en vez de una imagen rota', () => {
+    const wrapper = mount(ExploreProjectCard, { props: { project: project({ ownerDisplayName: 'Ada Lovelace', avatarUrl: null }) } })
+
+    expect(wrapper.find('.explore-card__avatar img').exists()).toBe(false)
+    expect(wrapper.find('.explore-card__avatar-initial').text()).toBe('A')
   })
 
   it('con description, la muestra', () => {

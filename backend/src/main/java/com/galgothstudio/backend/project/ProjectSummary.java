@@ -24,6 +24,10 @@ import java.util.List;
  * Ticket 086 -- `ownerDisplayName` (`null` si no se capturó al crear).
  * Este mismo record se reutiliza tal cual para `GET /api/explore/projects`
  * (mismo shape que una tarjeta de "Mis proyectos") -- sin un DTO nuevo.
+ *
+ * Ticket 092 -- `avatarUrl` (`null` si el dueño no tiene avatar subido,
+ * ticket 091): ruta servible (`/api/account/avatar/{userId}`, pública),
+ * nunca una URL rota. Ver `ProjectService.avatarUrlFor`/`UserProfileService.avatarUrlIfPresent`.
  */
 public record ProjectSummary(
 		String id,
@@ -34,6 +38,7 @@ public record ProjectSummary(
 		String status,
 		String visibility,
 		String ownerDisplayName,
+		String avatarUrl,
 		Instant createdAt,
 		Instant updatedAt) {
 }

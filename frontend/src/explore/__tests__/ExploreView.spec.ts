@@ -19,6 +19,7 @@ function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     status: 'draft',
     visibility: 'PUBLIC',
     ownerDisplayName: 'Ada Lovelace',
+    avatarUrl: null,
     createdAt: '',
     updatedAt: '',
     ...overrides,

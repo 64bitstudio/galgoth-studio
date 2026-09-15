@@ -17,3 +17,13 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localho
 export function thumbnailUrl(key: string | null): string | null {
   return key ? `${API_BASE_URL}${key}` : null
 }
+
+/**
+ * Ticket 092 -- `ProjectSummary.avatarUrl`/`ProjectDetail.avatarUrl`
+ * llegan del backend como ruta relativa servible (`/api/account/avatar/{userId}`,
+ * público -- ver `AccountAvatarController`), mismo criterio que
+ * `thumbnailUrl` de arriba.
+ */
+export function avatarUrl(path: string | null): string | null {
+  return path ? `${API_BASE_URL}${path}` : null
+}

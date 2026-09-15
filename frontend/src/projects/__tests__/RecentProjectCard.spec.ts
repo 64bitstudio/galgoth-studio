@@ -14,6 +14,7 @@ function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     status: 'draft',
     visibility: 'PRIVATE',
     ownerDisplayName: null,
+    avatarUrl: null,
     createdAt: '',
     updatedAt: new Date().toISOString(),
     ...overrides,

@@ -19,6 +19,9 @@ import java.time.Instant;
  * `GET /api/projects/{id}/mobs` que ya usa "Mis proyectos" -- desde el
  * ticket 085 ese endpoint ya es de lectura pública para un proyecto
  * `PUBLIC`, así que no hace falta inlinear los mobs acá también.
+ *
+ * Ticket 092 -- `avatarUrl` (`null` si el dueño no tiene avatar subido,
+ * ticket 091), ver docstring de `ProjectSummary.avatarUrl`.
  */
 public record ProjectDetail(
 		String id,
@@ -27,6 +30,7 @@ public record ProjectDetail(
 		int mobCount,
 		String visibility,
 		String ownerDisplayName,
+		String avatarUrl,
 		Instant createdAt,
 		Instant updatedAt) {
 }

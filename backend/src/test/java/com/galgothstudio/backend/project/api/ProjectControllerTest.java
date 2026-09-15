@@ -496,6 +496,30 @@ class ProjectControllerTest {
 				.andExpect(jsonPath("$.name", is("Proyecto de prueba")));
 	}
 
+	// Ticket 092 -- avatarUrl en el detalle público de un proyecto (mismo endpoint que "Mis proyectos").
+	@Test
+	void el_detalle_de_un_proyecto_incluye_avatarUrl_si_el_dueno_tiene_avatar() throws Exception {
+		String ownerId = UUID.randomUUID().toString();
+		jdbc.update(
+				"insert into user_profile (user_id, avatar_key, avatar_content_type, notify_email, notify_product_news, notify_save_reminders, updated_at) values (?, ?, ?, true, true, true, now())",
+				UUID.fromString(ownerId), "users/" + ownerId + "/avatar-x.png", "image/png");
+		UUID projectId = aProjectOf(ownerId, "PUBLIC");
+
+		mockMvc.perform(get("/api/projects/{id}", projectId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.avatarUrl", is("/api/account/avatar/" + ownerId)));
+	}
+
+	@Test
+	void el_detalle_de_un_proyecto_deja_avatarUrl_en_null_si_el_dueno_no_tiene_avatar() throws Exception {
+		String ownerId = UUID.randomUUID().toString();
+		UUID projectId = aProjectOf(ownerId, "PUBLIC");
+
+		mockMvc.perform(get("/api/projects/{id}", projectId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.avatarUrl", is(nullValue())));
+	}
+
 	@Test
 	void un_usuario_distinto_al_dueno_no_puede_mutar_un_proyecto_ajeno_publico_o_privado() throws Exception {
 		String ownerId = UUID.randomUUID().toString();

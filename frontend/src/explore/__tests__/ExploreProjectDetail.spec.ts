@@ -48,6 +48,37 @@ describe('ExploreProjectDetail.vue', () => {
     expect(wrapper.text()).toContain('Augur')
   })
 
+  // Ticket 092 -- avatar real del autor, con fallback a la inicial del nombre si no tiene uno subido.
+  it('con avatarUrl, muestra la imagen real del autor', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (url) => {
+      if (String(url).includes('/mobs')) {
+        return jsonResponse([])
+      }
+      return jsonResponse({ id: 'p1', name: 'Bosque maldito', description: null, mobCount: 0, visibility: 'PUBLIC', ownerDisplayName: 'Ada Lovelace', avatarUrl: '/api/account/avatar/u1', createdAt: '', updatedAt: '' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ExploreProjectDetail, { global: { plugins: [await routerAt('p1')] } })
+    await flushPromises()
+
+    expect(wrapper.find('.explore-detail__avatar img').exists()).toBe(true)
+    expect(wrapper.find('.explore-detail__avatar-initial').exists()).toBe(false)
+  })
+
+  it('sin avatarUrl, muestra la inicial del nombre en vez de una imagen rota', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (url) => {
+      if (String(url).includes('/mobs')) {
+        return jsonResponse([])
+      }
+      return jsonResponse({ id: 'p1', name: 'Bosque maldito', description: null, mobCount: 0, visibility: 'PUBLIC', ownerDisplayName: 'Ada Lovelace', avatarUrl: null, createdAt: '', updatedAt: '' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ExploreProjectDetail, { global: { plugins: [await routerAt('p1')] } })
+    await flushPromises()
+
+    expect(wrapper.find('.explore-detail__avatar img').exists()).toBe(false)
+    expect(wrapper.find('.explore-detail__avatar-initial').text()).toBe('A')
+  })
+
   // Ticket 088 -- AC: modo estrictamente lectura, sin ninguna acción de edición visible.
   it('no muestra ninguna acción de edición (sin renombrar, sin menú ⋮, sin "Agregar mob"/"Crear con IA")', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (url) => {

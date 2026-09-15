@@ -1,5 +1,6 @@
 package com.galgothstudio.backend.project;
 
+import com.galgothstudio.backend.account.UserProfileService;
 import com.galgothstudio.backend.project.access.ProjectAccessGuard;
 import com.galgothstudio.backend.project.persistence.MobDraftEntity;
 import com.galgothstudio.backend.project.persistence.MobDraftRepository;
@@ -44,18 +45,21 @@ public class ProjectService {
 	private final MobDraftRepository draftRepository;
 	private final MobRevisionRepository revisionRepository;
 	private final ProjectAccessGuard projectAccessGuard;
+	private final UserProfileService userProfileService;
 
 	public ProjectService(
 			ProjectRepository projectRepository,
 			MobRepository mobRepository,
 			MobDraftRepository draftRepository,
 			MobRevisionRepository revisionRepository,
-			ProjectAccessGuard projectAccessGuard) {
+			ProjectAccessGuard projectAccessGuard,
+			UserProfileService userProfileService) {
 		this.projectRepository = projectRepository;
 		this.mobRepository = mobRepository;
 		this.draftRepository = draftRepository;
 		this.revisionRepository = revisionRepository;
 		this.projectAccessGuard = projectAccessGuard;
+		this.userProfileService = userProfileService;
 	}
 
 	/**
@@ -224,6 +228,7 @@ public class ProjectService {
 				mobCount,
 				project.getVisibility(),
 				project.getOwnerDisplayName(),
+				avatarUrlFor(project.getOwnerRef()),
 				project.getCreatedAt(),
 				project.getUpdatedAt());
 	}
@@ -241,8 +246,24 @@ public class ProjectService {
 				deriveStatus(mobs),
 				project.getVisibility(),
 				project.getOwnerDisplayName(),
+				avatarUrlFor(project.getOwnerRef()),
 				project.getCreatedAt(),
 				project.getUpdatedAt());
+	}
+
+	/**
+	 * Ticket 092 -- `ownerRef` es el `sub` (UUID) del JWT de auth-core-mc
+	 * (ver docstring de {@code ProjectEntity.ownerRef}); `null` solo en
+	 * datos heredados de antes del ticket 084, nunca en la práctica desde
+	 * entonces. N+1 consciente (un `SELECT` por proyecto listado) -- mismo
+	 * criterio ya aceptado en {@code toSummary} para los mobs de cada
+	 * proyecto, sin requisito de escala que lo justifique todavía.
+	 */
+	private String avatarUrlFor(String ownerRef) {
+		if (ownerRef == null) {
+			return null;
+		}
+		return userProfileService.avatarUrlIfPresent(UUID.fromString(ownerRef)).orElse(null);
 	}
 
 	/**

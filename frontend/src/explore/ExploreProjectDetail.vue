@@ -16,11 +16,17 @@
  */
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { avatarUrl } from '../api/apiConfig'
 import GSidebar, { type GSidebarKey } from '../design-system/components/GSidebar.vue'
 import IconChevron from '../design-system/icons/IconChevron.vue'
 import { ApiError, getProject, type ProjectDetail } from '../projects/projectsApi'
 import { listMobs, type MobSummary } from '../projects/mobsApi'
 import ExploreMobCard from './ExploreMobCard.vue'
+
+/** Ticket 092 -- fallback sin avatar subido (ticket 091), mismo criterio que `ExploreProjectCard.vue`. */
+function initial(name: string): string {
+  return name.trim().charAt(0).toUpperCase()
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -75,9 +81,13 @@ function handleSidebarSelect(key: GSidebarKey): void {
 
         <div class="explore-detail__header">
           <h1 class="explore-detail__title">{{ project.name }}</h1>
-          <p class="explore-detail__meta">
-            {{ mobCountLabel(project.mobCount) }}
-            <span v-if="project.ownerDisplayName"> · por {{ project.ownerDisplayName }}</span>
+          <p class="explore-detail__meta">{{ mobCountLabel(project.mobCount) }}</p>
+          <p v-if="project.ownerDisplayName" class="explore-detail__author">
+            <span class="explore-detail__avatar">
+              <img v-if="avatarUrl(project.avatarUrl)" :src="avatarUrl(project.avatarUrl)!" alt="" />
+              <span v-else class="explore-detail__avatar-initial" aria-hidden="true">{{ initial(project.ownerDisplayName) }}</span>
+            </span>
+            por {{ project.ownerDisplayName }}
           </p>
           <p v-if="project.description" class="explore-detail__description">{{ project.description }}</p>
         </div>
@@ -142,6 +152,42 @@ function handleSidebarSelect(key: GSidebarKey): void {
   margin: 6px 0 0;
   color: var(--muted);
   font-size: var(--text-sm);
+}
+
+.explore-detail__author {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  color: var(--text);
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
+.explore-detail__avatar {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--accent-soft);
+}
+
+.explore-detail__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.explore-detail__avatar-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
 }
 
 .explore-detail__description {
