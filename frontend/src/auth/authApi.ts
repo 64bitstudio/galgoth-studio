@@ -74,6 +74,21 @@ export function requestPasswordReset(identifier: string): Promise<void> {
   return requestJson<void>('/api/v1/password-reset/request', { identifier })
 }
 
+/**
+ * Hallazgo real (verificación en vivo de ticket 093/094): `RegisterView.vue`
+ * mostraba "Revisa tu correo" tras registrarse asumiendo que auth-core-mc
+ * mandaba el correo de verificación solo (docstring original de ticket
+ * 078) -- `RegistrationService.register` nunca lo hace, es responsabilidad
+ * del CALLER pedirlo explícitamente. Sin esto, ninguna cuenta nueva real
+ * recibía el correo. A diferencia de `/password-reset/request`, este SÍ
+ * exige `X-Client-Id` (mismo criterio que documenta `docs/API.md` de
+ * auth-core-mc: el llamador ya "posee" el `userId`, viene de su propia
+ * respuesta de `/register`).
+ */
+export function requestEmailVerification(userId: string): Promise<void> {
+  return requestJson<void>('/api/v1/verify-email/request', { userId })
+}
+
 /** `/api/v1/password-reset/confirm` no exige `X-Client-Id` -- el token ya identifica de qué usuario es (mismo criterio que `token/refresh`). */
 export function confirmPasswordReset(token: string, newPassword: string): Promise<void> {
   return requestJson<void>('/api/v1/password-reset/confirm', { token, newPassword }, false)

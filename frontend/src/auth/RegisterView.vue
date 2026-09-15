@@ -1,10 +1,21 @@
 <script setup lang="ts">
 /**
  * Ticket 078, `PROP-GS-AUTH-01` Fig. 02: registro real contra la API
- * directa de auth-core-mc. No entrega sesión -- solo crea la cuenta y
- * auth-core-mc dispara un correo de verificación real (Resend); esta
+ * directa de auth-core-mc. No entrega sesión -- solo crea la cuenta; esta
  * pantalla muestra el mensaje y ofrece ir a iniciar sesión, sin navegar
- * sola (la verificación de email es el ticket 079, pantalla aparte).
+ * sola (la verificación de email es el ticket 094, pantalla aparte).
+ *
+ * Hallazgo real (verificación en vivo del ticket 093/094): a diferencia
+ * de lo que este docstring afirmaba originalmente, `/register` NUNCA
+ * dispara el correo de verificación por sí solo -- es responsabilidad
+ * del caller pedirlo explícitamente vía `/verify-email/request`
+ * (`RegistrationService.register`, auth-core-mc, no lo hace). Sin la
+ * llamada de abajo, "Revisa tu correo" era una pantalla que mentía: se
+ * mostraba igual aunque ningún correo hubiera salido. Si el `request`
+ * falla (red, backend caído), el registro YA fue exitoso -- se ignora en
+ * silencio en vez de bloquear la pantalla de éxito por un problema en un
+ * paso secundario; el usuario siempre puede reintentar la confirmación
+ * desde `/login` más adelante (ticket futuro, "reenviar correo").
  *
  * Ticket 082: rediseño visual (fondo + referencia aportados por Marco),
  * mismo patrón split-screen ya corregido en `LoginView.vue`. El único
@@ -23,6 +34,7 @@
  */
 import { ref } from 'vue'
 import { ApiError } from '../api/ApiError'
+import * as authApi from './authApi'
 import GButton from '../design-system/components/GButton.vue'
 import backgroundUrl from '../assets/auth/auth-register-background.jpg'
 import logoUrl from '../assets/auth/galgoth-logo.png'
@@ -57,13 +69,19 @@ async function submit(): Promise<void> {
   }
   busy.value = true
   try {
-    await session.register({
+    const user = await session.register({
       email: email.value.trim(),
       nombre: nombre.value.trim(),
       apellidos: apellidos.value.trim(),
       password: password.value,
     })
     registered.value = true
+    // El registro ya fue exitoso -- si este paso secundario falla, no se
+    // bloquea la pantalla de éxito (ver docstring de arriba), pero sí se
+    // deja rastro real en consola en vez de fallar en silencio total.
+    authApi.requestEmailVerification(user.id).catch((e: unknown) => {
+      console.error('No se pudo pedir el correo de verificación tras registrarse:', e)
+    })
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : 'No se pudo completar el registro. Intenta de nuevo.'
   } finally {
