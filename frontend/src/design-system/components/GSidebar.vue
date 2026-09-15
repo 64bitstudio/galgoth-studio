@@ -16,6 +16,13 @@
  * todavía. Documentado como gap conocido, no una reinterpretación
  * silenciosa.
  *
+ * Ticket 093: ese "gap conocido" era doble -- ni el tratamiento visual
+ * del ítem NI la ruta detrás existían (mismo estado que "Explorar" antes
+ * del ticket 088). Este ticket cierra la parte de la ruta (navega de
+ * verdad a `/usuario`, ver `router.ts`); el tratamiento visual con
+ * avatar+subtítulo en el propio ítem del sidebar sigue siendo el gap
+ * decorativo pendiente de arriba, sin ticket que lo pida todavía.
+ *
  * Ticket 068 (feedback del PO sobre el editor de mob -- homologación
  * Modelo/Textura): botón para colapsar el sidebar a solo íconos, libera
  * espacio horizontal para pantallas de trabajo angostas (el editor). El
