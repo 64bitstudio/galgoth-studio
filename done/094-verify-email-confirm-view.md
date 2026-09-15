@@ -14,3 +14,10 @@ Ticket retroactivo. Dos hallazgos reales encadenados, ambos durante la verificac
 - Verificado en vivo contra dev: registrar una cuenta real nueva, confirmar que un token real se genera, confirmar el correo desde la vista nueva (sin llamar al endpoint de confirmación a mano).
 
 ## Hecho
+`VerifyEmailConfirmView.vue` (mismo patrón exacto que `EmailChangeConfirmView.vue`) + ruta pública `/verify-email/confirm` + `authApi.confirmEmailVerification`. `RegisterView.vue` ahora llama a `authApi.requestEmailVerification(user.id)` tras un registro exitoso (falla en silencio hacia consola, nunca bloquea "Revisa tu correo" — el registro ya fue real). PR #136 y PR #137, ambos con CI de Jenkins verde, self-merge.
+
+Tests: 854/854 en verde (`VerifyEmailConfirmView.spec.ts` nuevo, `router.spec.ts`/`RegisterView.spec.ts` ampliados). `vue-tsc -b` y `eslint --max-warnings 0` limpios.
+
+**Verificación en vivo contra dev, de punta a punta, sin ningún atajo manual**: se registró una cuenta de prueba real (`ticket094b`) → se confirmó con Postgres que el usuario se creó (`email_verified=false`) → se confirmó con Redis (`token:email-verify:*`) que un token real se generó automáticamente (antes del fix, esto no pasaba — verificado también, ver hallazgo #2 de `## Objetivo`) → llegó el correo real a la bandeja (marca de tiempo "hace 0 minutos", token idéntico al de Redis) → se hizo clic en el link real dentro del correo (no se copió/pegó la URL a mano) → aterrizó en la vista nueva mostrando "Correo confirmado" → Postgres confirma `email_verified=true` → login exitoso con la cuenta ya verificada → cuenta de prueba eliminada al final desde la propia Zona de peligro de la Pantalla Usuario.
+
+No rompe compatibilidad — ambos cambios son puramente aditivos (una vista/ruta nueva, una llamada adicional tras un paso que ya existía).
