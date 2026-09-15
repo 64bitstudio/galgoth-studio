@@ -7,12 +7,17 @@
  * línea "por {ownerDisplayName}" (dato nuevo del ticket 086 que "Mis
  * proyectos" no necesita mostrar, porque ahí el dueño ya eres tú).
  */
-import { thumbnailUrl } from '../api/apiConfig'
+import { avatarUrl, thumbnailUrl } from '../api/apiConfig'
 import { formatRelativeDate } from '../domain/relativeDate'
 import type { ProjectSummary } from '../projects/projectsApi'
 
 function mobCountLabel(count: number): string {
   return count === 1 ? '1 mob' : `${count} mobs`
+}
+
+/** Ticket 092 -- fallback sin avatar subido (ticket 091): inicial del nombre, mismo criterio ya anticipado en el propio ticket ("el frontend ya sabe mostrar un avatar por defecto"). */
+function initial(name: string): string {
+  return name.trim().charAt(0).toUpperCase()
 }
 
 defineProps<{ project: ProjectSummary }>()
@@ -35,7 +40,13 @@ const emit = defineEmits<{ open: [string] }>()
     <span class="explore-card__name">{{ project.name }}</span>
     <p v-if="project.description" class="explore-card__description">{{ project.description }}</p>
     <span class="explore-card__meta">{{ mobCountLabel(project.mobCount) }} · {{ formatRelativeDate(project.updatedAt) }}</span>
-    <span v-if="project.ownerDisplayName" class="explore-card__owner">por {{ project.ownerDisplayName }}</span>
+    <span v-if="project.ownerDisplayName" class="explore-card__owner">
+      <span class="explore-card__avatar">
+        <img v-if="avatarUrl(project.avatarUrl)" :src="avatarUrl(project.avatarUrl)!" alt="" />
+        <span v-else class="explore-card__avatar-initial" aria-hidden="true">{{ initial(project.ownerDisplayName) }}</span>
+      </span>
+      por {{ project.ownerDisplayName }}
+    </span>
   </button>
 </template>
 
@@ -132,6 +143,35 @@ const emit = defineEmits<{ open: [string] }>()
 }
 
 .explore-card__owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 600;
+}
+
+.explore-card__avatar {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--accent-soft);
+}
+
+.explore-card__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.explore-card__avatar-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
 }
 </style>

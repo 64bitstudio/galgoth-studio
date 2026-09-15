@@ -25,7 +25,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function summary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
-  return { id: 'p1', name: 'Galgoth', description: null, mobCount: 0, mobThumbnails: [], status: 'draft', visibility: 'PRIVATE', ownerDisplayName: null, createdAt: '', updatedAt: '', ...overrides }
+  return { id: 'p1', name: 'Galgoth', description: null, mobCount: 0, mobThumbnails: [], status: 'draft', visibility: 'PRIVATE', ownerDisplayName: null, avatarUrl: null, createdAt: '', updatedAt: '', ...overrides }
 }
 
 function testRouter(): Router {

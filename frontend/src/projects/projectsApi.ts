@@ -40,6 +40,8 @@ export interface ProjectSummary {
   visibility: ProjectVisibility
   /** Ticket 086 -- nombre completo capturado al crear el proyecto (`sessionStore.user.nombre`/`apellidos` en ese momento), `null` si no se envió. Usado por Explorar (ticket 088) para mostrar "por Fulano Pérez"; puede quedar desactualizado si el usuario cambia su nombre después (tradeoff aceptado, documento de definición). */
   ownerDisplayName: string | null
+  /** Ticket 092 -- ruta relativa servible (ver `avatarUrl()` de `apiConfig.ts`), `null` si el dueño no tiene avatar subido (ticket 091). */
+  avatarUrl: string | null
   createdAt: string
   updatedAt: string
 }
@@ -52,6 +54,8 @@ export interface ProjectDetail {
   visibility: ProjectVisibility
   /** Ticket 086 -- ver docstring de `ProjectSummary.ownerDisplayName`. */
   ownerDisplayName: string | null
+  /** Ticket 092 -- ver docstring de `ProjectSummary.avatarUrl`. */
+  avatarUrl: string | null
   createdAt: string
   updatedAt: string
 }

@@ -82,6 +82,19 @@ public class UserProfileService {
 		return userProfileRepository.findById(userId).map(this::toResponse).orElseGet(UserProfileService::defaultResponse);
 	}
 
+	/**
+	 * Ticket 092 -- Explorar (y el detalle público de un proyecto) necesitan
+	 * saber si el dueño tiene avatar, sin acoplarse a mano a la convención
+	 * de ruta de {@link #avatarUrlFor}. {@code Optional.empty()} tanto si
+	 * el usuario no tiene fila en {@code user_profile} como si la tiene
+	 * pero sin avatar -- mismo criterio que {@link #downloadAvatar}.
+	 */
+	@Transactional(readOnly = true)
+	public Optional<String> avatarUrlIfPresent(UUID userId) {
+		return userProfileRepository.findById(userId).filter(profile -> profile.getAvatarKey() != null).map(profile -> avatarUrlFor(
+				profile.getUserId()));
+	}
+
 	@Transactional
 	public UserProfileResponse updatePreferences(UUID userId, PreferencesRequest request) {
 		UserProfileEntity profile = findOrCreate(userId);
