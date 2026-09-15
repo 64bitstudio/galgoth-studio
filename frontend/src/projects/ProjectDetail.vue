@@ -62,6 +62,7 @@ import MobRenameDialog from './MobRenameDialog.vue'
 import ProjectNameModal from './ProjectNameModal.vue'
 import {
   ApiError,
+  changeProjectVisibility,
   deleteProject,
   duplicateProject,
   getProject,
@@ -69,6 +70,7 @@ import {
   type ProjectDetail as ProjectDetailDto,
 } from './projectsApi'
 import { createMob, deleteMob, listMobs, renameMob, type BaseType, type MobStatus, type MobSummary } from './mobsApi'
+import { useSessionStore } from '../auth/sessionStore'
 
 type TypeFilter = BaseType | 'all'
 type StatusFilter = MobStatus | 'all'
@@ -96,19 +98,23 @@ const SORT_OPTIONS: GSelectOption[] = [
   { value: 'name-desc', label: 'Nombre Z-A' },
 ]
 
-const PROJECT_MENU_ITEMS: GMenuItem[] = [
-  { key: 'duplicate', label: 'Duplicar' },
-  { key: 'delete', label: 'Eliminar', danger: true },
-]
-
 const route = useRoute()
 const router = useRouter()
+const session = useSessionStore()
 const projectId = route.params.id as string
 
 const project = ref<ProjectDetailDto | null>(null)
 const mobs = ref<MobSummary[]>([])
 const loadError = ref<string | null>(null)
 const actionError = ref<string | null>(null)
+const toggleVisibilityBusy = ref(false)
+
+/** Ticket 087 -- "Hacer público"/"Hacer privado" según el estado actual del proyecto cargado; sin `project` cargado, el menú no se usa igual (queda oculto por el `v-else-if="project"` del template). */
+const PROJECT_MENU_ITEMS = computed<GMenuItem[]>(() => [
+  { key: 'toggle-visibility', label: isPublic.value ? 'Hacer privado' : 'Hacer público', disabled: toggleVisibilityBusy.value },
+  { key: 'duplicate', label: 'Duplicar' },
+  { key: 'delete', label: 'Eliminar', danger: true },
+])
 const searchQuery = ref('')
 const typeFilter = ref<TypeFilter>('all')
 const statusFilter = ref<StatusFilter>('all')
@@ -174,6 +180,19 @@ const noMatchesMessage = computed(() => {
   return 'Ningún mob coincide con los filtros aplicados.'
 })
 
+/** Ticket 087 -- `?? 'PRIVATE'` como default defensivo (coincide con el `DEFAULT 'PRIVATE'` real de la columna): protege contra un fixture de test que no la declare, no solo contra un dato real ausente (el backend siempre la manda). */
+const isPublic = computed(() => project.value?.visibility === 'PUBLIC')
+
+/**
+ * Ticket 087 -- esta ruta no lleva `meta.requiresAuth` (un proyecto
+ * `PUBLIC` es legítimamente visible sin sesión desde el ticket 085), así
+ * que una carga fallida sin sesión activa es ambigua: puede ser un
+ * proyecto que de verdad no existe, o el propio proyecto PRIVATE del
+ * visitante, que simplemente no se ha logueado todavía (el backend
+ * nunca distingue los dos casos, mismo `404` para ambos). Redirige a
+ * login en vez de aceptar el "no existe" como definitivo -- el
+ * visitante puede volver a intentarlo ya logueado.
+ */
 async function load(): Promise<void> {
   try {
     const [projectResult, mobsResult] = await Promise.all([getProject(projectId), listMobs(projectId)])
@@ -181,6 +200,10 @@ async function load(): Promise<void> {
     mobs.value = mobsResult
     loadError.value = null
   } catch (error) {
+    if (!session.isAuthenticated) {
+      await router.push({ name: 'login', query: { redirect: route.fullPath } })
+      return
+    }
     loadError.value = error instanceof ApiError ? error.message : 'No se pudo cargar el proyecto.'
   }
 }
@@ -285,13 +308,32 @@ function cancelDeleteMob(): void {
   pendingDeleteMob.value = null
 }
 
-/** Ticket 073 -- menú ⋮ del PROYECTO (no de un mob): Duplicar/Eliminar, mismo criterio de responsabilidad que `ProjectsDashboard.vue`. */
+/** Ticket 073 -- menú ⋮ del PROYECTO: Duplicar/Eliminar, mismo criterio de responsabilidad que `ProjectsDashboard.vue`. Ticket 087 agrega el toggle de visibilidad. */
 async function handleProjectAction(actionKey: string): Promise<void> {
-  if (actionKey === 'duplicate') {
+  if (actionKey === 'toggle-visibility') {
+    await handleToggleVisibility()
+  } else if (actionKey === 'duplicate') {
     await handleDuplicateProject()
   } else if (actionKey === 'delete') {
     deleteProjectError.value = null
     pendingDeleteProject.value = true
+  }
+}
+
+/** Ticket 087 -- "sin recargar" (AC): actualiza `project.value` con la respuesta del PATCH en vez de re-disparar `load()` completo. */
+async function handleToggleVisibility(): Promise<void> {
+  if (!project.value || toggleVisibilityBusy.value) {
+    return
+  }
+  const next = project.value.visibility === 'PUBLIC' ? 'PRIVATE' : 'PUBLIC'
+  toggleVisibilityBusy.value = true
+  try {
+    project.value = await changeProjectVisibility(projectId, next)
+    actionError.value = null
+  } catch (error) {
+    actionError.value = error instanceof ApiError ? error.message : 'No se pudo cambiar la visibilidad del proyecto.'
+  } finally {
+    toggleVisibilityBusy.value = false
   }
 }
 
@@ -366,6 +408,9 @@ function handleSidebarSelect(key: GSidebarKey): void {
             <div class="project-detail__title-row">
               <h1 class="project-detail__title">{{ project.name }}</h1>
               <IconButton label="Editar proyecto" size="sm" @click="showRenameProject = true"><IconEdit :size="16" /></IconButton>
+              <span class="project-detail__visibility" :class="isPublic ? 'project-detail__visibility--public' : 'project-detail__visibility--private'">
+                {{ isPublic ? 'Público' : 'Privado' }}
+              </span>
             </div>
             <p class="project-detail__meta">{{ mobCountLabel(project.mobCount) }} · {{ formatRelativeDate(project.updatedAt) }}</p>
             <p v-if="project.description" class="project-detail__description">{{ project.description }}</p>
@@ -540,6 +585,25 @@ function handleSidebarSelect(key: GSidebarKey): void {
   font-size: var(--text-2xl);
   font-weight: 800;
   letter-spacing: -0.01em;
+}
+
+/* Ticket 087 -- mismo look de pill que `GStatusPill.vue` (radio total + tono por color), sin reusar ese componente porque está tipado solo para status de mob (ready/in-progress/draft), no para visibilidad de proyecto. */
+.project-detail__visibility {
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.project-detail__visibility--public {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.project-detail__visibility--private {
+  color: var(--muted);
+  background: var(--surface-2);
 }
 
 .project-detail__meta {

@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSessionStore } from '../../auth/sessionStore'
-import { ApiError, createProject, deleteProject, duplicateProject, listProjects, renameProject } from '../projectsApi'
+import { ApiError, changeProjectVisibility, createProject, deleteProject, duplicateProject, listProjects, renameProject } from '../projectsApi'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -77,6 +77,21 @@ describe('projectsApi', () => {
     const [url, init] = fetchMock.mock.calls[0]!
     expect(String(url)).toContain('/api/projects/1')
     expect(init?.method).toBe('PATCH')
+  })
+
+  // Ticket 087 -- toggle de visibilidad sobre el endpoint del ticket 086.
+  it('changeProjectVisibility hace PATCH a /api/projects/{id}/visibility con el nuevo valor en el body', async () => {
+    const detail = { id: '1', name: 'Galgoth', mobCount: 0, visibility: 'PUBLIC', createdAt: '', updatedAt: '' }
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(detail))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await changeProjectVisibility('1', 'PUBLIC')
+
+    expect(result).toEqual(detail)
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/projects/1/visibility')
+    expect(init?.method).toBe('PATCH')
+    expect(init?.body).toBe(JSON.stringify({ visibility: 'PUBLIC' }))
   })
 
   // Ticket 073 -- `description` siempre explícita (nunca omitida) en el body del PATCH, para no borrarla accidentalmente.

@@ -12,6 +12,7 @@ function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     mobCount: 0,
     mobThumbnails: [],
     status: 'draft',
+    visibility: 'PRIVATE',
     ownerDisplayName: null,
     createdAt: '',
     updatedAt: new Date().toISOString(),
