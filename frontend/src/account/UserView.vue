@@ -28,7 +28,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as accountApi from '../auth/accountApi'
-import { requestEmailChange, requestEmailVerification } from '../auth/authApi'
+import { requestEmailVerification } from '../auth/authApi'
 import * as productProfileApi from '../account/productProfileApi'
 import type { RegisteredUser } from '../auth/authApi'
 import type { SessionSummary, ConnectedProviderSummary } from '../auth/accountApi'
@@ -233,7 +233,7 @@ async function confirmChangeEmail(newEmail: string): Promise<void> {
   changeEmailBusy.value = true
   changeEmailError.value = null
   try {
-    await requestEmailChange(authProfile.value.id, newEmail)
+    await accountApi.requestEmailChange(newEmail)
     showChangeEmail.value = false
     changeEmailSent.value = newEmail
   } catch (error) {

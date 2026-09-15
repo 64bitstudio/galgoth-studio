@@ -43,6 +43,19 @@ describe('accountApi', () => {
     expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer token')
   })
 
+  it('requestEmailChange hace POST a /account/change-email/request con el Bearer real, sin userId en el body', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(null, { status: 202 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await accountApi.requestEmailChange('nueva@example.com')
+
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/v1/change-email/request')
+    expect(init?.method).toBe('POST')
+    expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer token')
+    expect(JSON.parse(init?.body as string)).toEqual({ newEmail: 'nueva@example.com' })
+  })
+
   it('updateProfile hace PATCH con nombre/apellidos/country/username en el body', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(user))
     vi.stubGlobal('fetch', fetchMock)

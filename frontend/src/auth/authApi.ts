@@ -94,20 +94,6 @@ export function confirmPasswordReset(token: string, newPassword: string): Promis
   return requestJson<void>('/api/v1/password-reset/confirm', { token, newPassword }, false)
 }
 
-/**
- * Ticket 093 -- "Cambiar correo" en la pantalla Usuario. A diferencia de
- * los demás endpoints de cuenta (`accountApi.ts`, Bearer real), este
- * usa el mismo mecanismo "confía en el `userId` que manda el caller" que
- * `/2fa`/`/change-email` en general (ver docs/API.md de auth-core-mc):
- * adivinar el `userId` de otra persona solo alcanza a mandarle un correo
- * de confirmación a SU bandeja real, no a completar el cambio -- exige
- * abrir ese link. Siempre `202`, nunca revela si `newEmail` ya está en
- * uso (auth-core-mc lo valida al confirmar, no aquí).
- */
-export function requestEmailChange(userId: string, newEmail: string): Promise<void> {
-  return requestJson<void>('/api/v1/change-email/request', { userId, newEmail })
-}
-
 /** `/api/v1/change-email/confirm` no exige `X-Client-Id` -- el token ya identifica de qué usuario es (mismo criterio que `token/refresh`/`password-reset/confirm`). */
 export function confirmEmailChange(token: string): Promise<void> {
   return requestJson<void>('/api/v1/change-email/confirm', { token }, false)
