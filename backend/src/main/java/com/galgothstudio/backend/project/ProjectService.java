@@ -1,5 +1,6 @@
 package com.galgothstudio.backend.project;
 
+import com.galgothstudio.backend.project.access.ProjectAccessGuard;
 import com.galgothstudio.backend.project.persistence.MobDraftEntity;
 import com.galgothstudio.backend.project.persistence.MobDraftRepository;
 import com.galgothstudio.backend.project.persistence.MobEntity;
@@ -41,16 +42,19 @@ public class ProjectService {
 	private final MobRepository mobRepository;
 	private final MobDraftRepository draftRepository;
 	private final MobRevisionRepository revisionRepository;
+	private final ProjectAccessGuard projectAccessGuard;
 
 	public ProjectService(
 			ProjectRepository projectRepository,
 			MobRepository mobRepository,
 			MobDraftRepository draftRepository,
-			MobRevisionRepository revisionRepository) {
+			MobRevisionRepository revisionRepository,
+			ProjectAccessGuard projectAccessGuard) {
 		this.projectRepository = projectRepository;
 		this.mobRepository = mobRepository;
 		this.draftRepository = draftRepository;
 		this.revisionRepository = revisionRepository;
+		this.projectAccessGuard = projectAccessGuard;
 	}
 
 	/** Ticket 084 -- {@code ownerId} es el {@code sub} (user id) del JWT de auth-core-mc, ya validado por el controlador antes de llegar aquí (nunca null). */
@@ -69,16 +73,17 @@ public class ProjectService {
 		return projectRepository.findByOwnerRefAndDeletedAtIsNullOrderByUpdatedAtDesc(ownerId).stream().map(this::toSummary).toList();
 	}
 
+	/** Ticket 085 -- lectura: dueño real o proyecto {@code PUBLIC} (`callerId` nullable, caller anónimo). */
 	@Transactional(readOnly = true)
-	public ProjectDetail get(UUID projectId) {
-		ProjectEntity project = requireProject(projectId);
+	public ProjectDetail get(UUID projectId, String callerId) {
+		ProjectEntity project = projectAccessGuard.requireViewable(projectId, callerId);
 		return toDetail(project, (int) mobRepository.countByProjectIdAndDeletedAtIsNull(projectId));
 	}
 
-	/** Ticket 073 -- `description` siempre explícita (nunca ambigua entre "ausente" y "null"), ver docstring de `RenameProjectRequest`. */
+	/** Ticket 073 -- `description` siempre explícita (nunca ambigua entre "ausente" y "null"), ver docstring de `RenameProjectRequest`. Ticket 085 -- mutación, exige dueño real. */
 	@Transactional
-	public ProjectDetail rename(UUID projectId, String newName, String description) {
-		ProjectEntity project = requireProject(projectId);
+	public ProjectDetail rename(UUID projectId, String callerId, String newName, String description) {
+		ProjectEntity project = projectAccessGuard.requireOwner(projectId, callerId);
 		project.setName(requireValidName(newName));
 		project.setDescription(normalizeDescription(description));
 		project.setUpdatedAt(Instant.now());
@@ -86,9 +91,10 @@ public class ProjectService {
 		return toDetail(project, (int) mobRepository.countByProjectIdAndDeletedAtIsNull(projectId));
 	}
 
+	/** Ticket 085 -- mutación, exige dueño real. */
 	@Transactional
-	public void softDelete(UUID projectId) {
-		ProjectEntity project = requireProject(projectId);
+	public void softDelete(UUID projectId, String callerId) {
+		ProjectEntity project = projectAccessGuard.requireOwner(projectId, callerId);
 		project.setDeletedAt(Instant.now());
 		projectRepository.save(project);
 	}
@@ -99,6 +105,9 @@ public class ProjectService {
 	 * lleva TODOS los proyectos del dueño, públicos o privados por igual --
 	 * eliminar la cuenta no debe dejar proyectos públicos huérfanos
 	 * visibles en Explorar (decisión de Marco, docs/definiciones/perfil-de-usuario.md).
+	 * Sin `callerId`/guard a propósito: el caller es otro backend (vía el
+	 * secreto compartido de {@code InternalSecretAuthenticator}), no un
+	 * usuario -- no hay contra qué comparar ownership.
 	 */
 	@Transactional
 	public void purgeAllForOwner(String ownerId) {
@@ -109,9 +118,10 @@ public class ProjectService {
 		}
 	}
 
+	/** Ticket 085 -- mutación, exige dueño real. */
 	@Transactional
-	public ProjectDetail duplicate(UUID projectId) {
-		ProjectEntity original = requireProject(projectId);
+	public ProjectDetail duplicate(UUID projectId, String callerId) {
+		ProjectEntity original = projectAccessGuard.requireOwner(projectId, callerId);
 		Instant now = Instant.now();
 		// Ticket 084 -- la copia nace PRIVATE sin importar la visibilidad del original: duplicar no debe publicar nada por accidente.
 		ProjectEntity copy =
@@ -152,10 +162,6 @@ public class ProjectService {
 
 		draftRepository.findById(original.getId()).ifPresent(draft -> draftRepository.save(
 				new MobDraftEntity(newMobId, draft.getModelJson(), draft.getDraftVersion(), now)));
-	}
-
-	private ProjectEntity requireProject(UUID projectId) {
-		return projectRepository.findByIdAndDeletedAtIsNull(projectId).orElseThrow(() -> new ProjectNotFoundException(projectId));
 	}
 
 	private String requireValidName(String name) {

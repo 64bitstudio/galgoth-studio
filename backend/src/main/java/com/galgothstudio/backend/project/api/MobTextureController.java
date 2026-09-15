@@ -6,6 +6,8 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -20,7 +22,10 @@ import org.springframework.web.bind.annotation.RestController;
  * (ticket 023): el cliente sube bytes crudos de un PNG, el backend
  * decodifica/valida/hashea/persiste y devuelve el `storageKey` que ÉL
  * calculó -- nunca uno propuesto por el cliente (de hecho el contrato
- * no tiene ningún campo para que el cliente proponga uno).
+ * no tiene ningún campo para que el cliente proponga uno). Ticket 085
+ * agrega enforcement dueño/público/privado vía `ProjectAccessGuard` a la
+ * subida -- la descarga queda deliberadamente sin protección (ver
+ * Javadoc de {@link TextureService#download}).
  */
 @RestController
 @RequestMapping("/api/mobs/{mobId}/texture")
@@ -33,8 +38,8 @@ public class MobTextureController {
 	}
 
 	@PutMapping(consumes = MediaType.IMAGE_PNG_VALUE)
-	public TextureUploadResponse upload(@PathVariable UUID mobId, @RequestBody byte[] pngBytes) {
-		return textureService.upload(mobId, pngBytes);
+	public TextureUploadResponse upload(@PathVariable UUID mobId, @AuthenticationPrincipal Jwt jwt, @RequestBody byte[] pngBytes) {
+		return textureService.upload(mobId, callerId(jwt), pngBytes);
 	}
 
 	/** Ticket 066 -- ver Javadoc de {@link TextureService#download}. Mismo patrón de respuesta que {@code MobThumbnailController#download}. */
@@ -44,6 +49,10 @@ public class MobTextureController {
 				.download(mobId)
 				.map(bytes -> ResponseEntity.ok().contentType(MediaType.IMAGE_PNG).body(bytes))
 				.orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
+	}
+
+	private static String callerId(Jwt jwt) {
+		return jwt == null ? null : jwt.getSubject();
 	}
 
 }

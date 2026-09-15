@@ -2,6 +2,7 @@ package com.galgothstudio.backend.project.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -20,6 +21,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -57,9 +59,17 @@ class MobThumbnailControllerTest {
 	private static final byte[] TINY_PNG =
 			Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
 
+	/** Ticket 085 -- `sub` constante para el archivo completo, mismo patrón que {@link ProjectControllerTest}. */
+	private static final String OWNER_ID = "4635300a-5049-4cd5-933d-a37b807c83b0";
+
+	private static RequestPostProcessor authenticated() {
+		return jwt().jwt(builder -> builder.subject(OWNER_ID));
+	}
+
+	/** Ticket 085 -- `owner_ref` real (084) para que el guard de acceso reconozca a {@code OWNER_ID} como dueño (la subida es una mutación protegida; la descarga sigue sin enforcement, ver Javadoc de {@code ThumbnailService#download}). */
 	private UUID aProjectAndMob() {
 		UUID projectId = UUID.randomUUID();
-		jdbc.update("insert into projects (id, name) values (?, ?)", projectId, "Galgoth");
+		jdbc.update("insert into projects (id, name, owner_ref) values (?, ?, ?)", projectId, "Galgoth", OWNER_ID);
 		UUID mobId = UUID.randomUUID();
 		jdbc.update(
 				"insert into mobs (id, project_id, name, base_type, status) values (?, ?, ?, ?, ?)",
@@ -71,7 +81,7 @@ class MobThumbnailControllerTest {
 	void subir_un_thumbnail_y_descargarlo_devuelve_los_mismos_bytes() throws Exception {
 		UUID mobId = aProjectAndMob();
 
-		mockMvc.perform(post("/api/mobs/{mobId}/thumbnail", mobId).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
+		mockMvc.perform(post("/api/mobs/{mobId}/thumbnail", mobId).with(authenticated()).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
 				.andExpect(status().isNoContent());
 
 		byte[] downloaded = mockMvc.perform(get("/api/mobs/{mobId}/thumbnail", mobId))
@@ -88,7 +98,7 @@ class MobThumbnailControllerTest {
 	void subir_un_thumbnail_actualiza_mobs_thumbnail_key_con_una_ruta_servible_por_la_api() throws Exception {
 		UUID mobId = aProjectAndMob();
 
-		mockMvc.perform(post("/api/mobs/{mobId}/thumbnail", mobId).contentType(MediaType.IMAGE_PNG).content(TINY_PNG));
+		mockMvc.perform(post("/api/mobs/{mobId}/thumbnail", mobId).with(authenticated()).contentType(MediaType.IMAGE_PNG).content(TINY_PNG));
 
 		flush();
 		String thumbnailKey = jdbc.queryForObject("select thumbnail_key from mobs where id = ?", String.class, mobId);
@@ -104,7 +114,7 @@ class MobThumbnailControllerTest {
 
 	@Test
 	void subir_un_thumbnail_a_un_mob_inexistente_responde_404() throws Exception {
-		mockMvc.perform(post("/api/mobs/{mobId}/thumbnail", UUID.randomUUID())
+		mockMvc.perform(post("/api/mobs/{mobId}/thumbnail", UUID.randomUUID()).with(authenticated())
 						.contentType(MediaType.IMAGE_PNG)
 						.content(TINY_PNG))
 				.andExpect(status().isNotFound())
@@ -119,11 +129,11 @@ class MobThumbnailControllerTest {
 	@Test
 	void subir_un_segundo_thumbnail_sobrescribe_el_anterior() throws Exception {
 		UUID mobId = aProjectAndMob();
-		mockMvc.perform(post("/api/mobs/{mobId}/thumbnail", mobId).contentType(MediaType.IMAGE_PNG).content(TINY_PNG));
+		mockMvc.perform(post("/api/mobs/{mobId}/thumbnail", mobId).with(authenticated()).contentType(MediaType.IMAGE_PNG).content(TINY_PNG));
 
 		byte[] secondPng = TINY_PNG.clone();
 		secondPng[secondPng.length - 1] = 0; // distinto contenido, sigue siendo bytes válidos para este test
-		mockMvc.perform(post("/api/mobs/{mobId}/thumbnail", mobId).contentType(MediaType.IMAGE_PNG).content(secondPng));
+		mockMvc.perform(post("/api/mobs/{mobId}/thumbnail", mobId).with(authenticated()).contentType(MediaType.IMAGE_PNG).content(secondPng));
 
 		byte[] downloaded = mockMvc.perform(get("/api/mobs/{mobId}/thumbnail", mobId))
 				.andReturn()

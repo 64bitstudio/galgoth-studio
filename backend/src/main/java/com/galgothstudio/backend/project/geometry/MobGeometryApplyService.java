@@ -52,14 +52,15 @@ public class MobGeometryApplyService {
 		this.uvLayoutStrategy = uvLayoutStrategy;
 	}
 
-	public MobGeometryApplyResponse apply(UUID mobId, MobGeometryApplyRequest request) {
+	/** Ticket 085 -- mutación, exige dueño real (enforcement delegado a `DraftPersistenceService`, mismo criterio que el resto de este paquete: no reimplementa persistencia de draft, tampoco reimplementa el guard). */
+	public MobGeometryApplyResponse apply(UUID mobId, String callerId, MobGeometryApplyRequest request) {
 		requireWhitelistedOperations(request.operations());
 
-		DraftView currentDraft = draftPersistenceService.getDraft(mobId);
+		DraftView currentDraft = draftPersistenceService.getDraft(mobId, callerId);
 		MobProjectModel updated = GeometryEngine.apply(
 				currentDraft.model(), request.operations(), uvLayoutStrategy, request.confirmPaintLoss());
 
-		AutosaveResponse saved = draftPersistenceService.autosave(mobId, updated);
+		AutosaveResponse saved = draftPersistenceService.autosave(mobId, callerId, updated);
 		return new MobGeometryApplyResponse(updated, saved.draftVersion());
 	}
 

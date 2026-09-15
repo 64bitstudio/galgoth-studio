@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.startsWith;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -23,6 +24,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -55,9 +57,17 @@ class MobReferenceImageControllerTest {
 			.decode(
 					"/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVt//2Q==");
 
+	/** Ticket 085 -- `sub` constante para el archivo completo, mismo patrón que {@link ProjectControllerTest}. */
+	private static final String OWNER_ID = "4635300a-5049-4cd5-933d-a37b807c83b0";
+
+	private static RequestPostProcessor authenticated() {
+		return jwt().jwt(builder -> builder.subject(OWNER_ID));
+	}
+
+	/** Ticket 085 -- `owner_ref` real (084) para que el guard de acceso reconozca a {@code OWNER_ID} como dueño (subida y listado son mutación/lectura protegidas; la descarga por id sigue sin enforcement, ver Javadoc de {@code ReferenceImageService#download}). */
 	private UUID aProjectAndMob() {
 		UUID projectId = UUID.randomUUID();
-		jdbc.update("insert into projects (id, name) values (?, ?)", projectId, "Galgoth");
+		jdbc.update("insert into projects (id, name, owner_ref) values (?, ?, ?)", projectId, "Galgoth", OWNER_ID);
 		UUID mobId = UUID.randomUUID();
 		jdbc.update(
 				"insert into mobs (id, project_id, name, base_type, status) values (?, ?, ?, ?, ?)",
@@ -70,7 +80,7 @@ class MobReferenceImageControllerTest {
 	void subir_un_png_valido_devuelve_201_con_ancho_alto_y_content_type_reales_AC1_AC3() throws Exception {
 		UUID mobId = aProjectAndMob();
 
-		mockMvc.perform(post("/api/mobs/{mobId}/references", mobId).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
+		mockMvc.perform(post("/api/mobs/{mobId}/references", mobId).with(authenticated()).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.width", is(1)))
 				.andExpect(jsonPath("$.height", is(1)))
@@ -82,7 +92,7 @@ class MobReferenceImageControllerTest {
 	void subir_un_jpeg_valido_tambien_se_acepta() throws Exception {
 		UUID mobId = aProjectAndMob();
 
-		mockMvc.perform(post("/api/mobs/{mobId}/references", mobId).contentType(MediaType.IMAGE_JPEG).content(TINY_JPEG))
+		mockMvc.perform(post("/api/mobs/{mobId}/references", mobId).with(authenticated()).contentType(MediaType.IMAGE_JPEG).content(TINY_JPEG))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.contentType", is("image/jpeg")));
 	}
@@ -92,7 +102,7 @@ class MobReferenceImageControllerTest {
 		UUID mobId = aProjectAndMob();
 
 		String responseJson = mockMvc.perform(
-						post("/api/mobs/{mobId}/references", mobId).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
+						post("/api/mobs/{mobId}/references", mobId).with(authenticated()).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
 				.andReturn()
 				.getResponse()
 				.getContentAsString();
@@ -107,10 +117,10 @@ class MobReferenceImageControllerTest {
 	@Test
 	void listar_devuelve_las_referencias_en_orden_de_subida() throws Exception {
 		UUID mobId = aProjectAndMob();
-		mockMvc.perform(post("/api/mobs/{mobId}/references", mobId).contentType(MediaType.IMAGE_PNG).content(TINY_PNG));
-		mockMvc.perform(post("/api/mobs/{mobId}/references", mobId).contentType(MediaType.IMAGE_JPEG).content(TINY_JPEG));
+		mockMvc.perform(post("/api/mobs/{mobId}/references", mobId).with(authenticated()).contentType(MediaType.IMAGE_PNG).content(TINY_PNG));
+		mockMvc.perform(post("/api/mobs/{mobId}/references", mobId).with(authenticated()).contentType(MediaType.IMAGE_JPEG).content(TINY_JPEG));
 
-		mockMvc.perform(get("/api/mobs/{mobId}/references", mobId))
+		mockMvc.perform(get("/api/mobs/{mobId}/references", mobId).with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$", hasSize(2)))
 				.andExpect(jsonPath("$[0].contentType", is("image/png")))
@@ -121,7 +131,7 @@ class MobReferenceImageControllerTest {
 	void subir_un_formato_no_soportado_es_rechazado_con_mensaje_claro_AC2() throws Exception {
 		UUID mobId = aProjectAndMob();
 
-		mockMvc.perform(post("/api/mobs/{mobId}/references", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/references", mobId).with(authenticated())
 						.contentType(MediaType.IMAGE_GIF)
 						.content(new byte[] {1, 2, 3}))
 				.andExpect(status().isBadRequest())
@@ -136,7 +146,7 @@ class MobReferenceImageControllerTest {
 		// 10MB es el máximo soportado (VoBo del PO, ticket 024) -- 1 byte de más basta para rechazar.
 		byte[] tooLarge = new byte[10 * 1024 * 1024 + 1];
 
-		mockMvc.perform(post("/api/mobs/{mobId}/references", mobId).contentType(MediaType.IMAGE_PNG).content(tooLarge))
+		mockMvc.perform(post("/api/mobs/{mobId}/references", mobId).with(authenticated()).contentType(MediaType.IMAGE_PNG).content(tooLarge))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.error", is("INVALID_REFERENCE_IMAGE")));
 	}
@@ -145,7 +155,7 @@ class MobReferenceImageControllerTest {
 	void subir_bytes_no_decodificables_como_imagen_es_rechazado_AC2() throws Exception {
 		UUID mobId = aProjectAndMob();
 
-		mockMvc.perform(post("/api/mobs/{mobId}/references", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/references", mobId).with(authenticated())
 						.contentType(MediaType.IMAGE_PNG)
 						.content(new byte[] {1, 2, 3, 4, 5}))
 				.andExpect(status().isBadRequest())
@@ -154,7 +164,7 @@ class MobReferenceImageControllerTest {
 
 	@Test
 	void subir_una_referencia_a_un_mob_inexistente_responde_404() throws Exception {
-		mockMvc.perform(post("/api/mobs/{mobId}/references", UUID.randomUUID())
+		mockMvc.perform(post("/api/mobs/{mobId}/references", UUID.randomUUID()).with(authenticated())
 						.contentType(MediaType.IMAGE_PNG)
 						.content(TINY_PNG))
 				.andExpect(status().isNotFound())
@@ -163,7 +173,7 @@ class MobReferenceImageControllerTest {
 
 	@Test
 	void listar_referencias_de_un_mob_inexistente_responde_404() throws Exception {
-		mockMvc.perform(get("/api/mobs/{mobId}/references", UUID.randomUUID()))
+		mockMvc.perform(get("/api/mobs/{mobId}/references", UUID.randomUUID()).with(authenticated()))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.error", is("MOB_NOT_FOUND")));
 	}

@@ -6,6 +6,7 @@ import com.galgothstudio.backend.asset.AssetStorageService;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.TextureDocument;
 import com.galgothstudio.backend.modelvalidation.MobProjectModelValidator;
+import com.galgothstudio.backend.project.access.ProjectAccessGuard;
 import com.galgothstudio.backend.project.persistence.MobDraftEntity;
 import com.galgothstudio.backend.project.persistence.MobDraftRepository;
 import com.galgothstudio.backend.project.persistence.MobEntity;
@@ -53,6 +54,7 @@ public class DraftPersistenceService {
 	private final MobProjectModelValidator validator;
 	private final ObjectMapper objectMapper;
 	private final AssetStorageService assetStorageService;
+	private final ProjectAccessGuard projectAccessGuard;
 
 	public DraftPersistenceService(
 			MobRepository mobRepository,
@@ -60,25 +62,49 @@ public class DraftPersistenceService {
 			MobRevisionRepository revisionRepository,
 			MobProjectModelValidator validator,
 			ObjectMapper objectMapper,
-			AssetStorageService assetStorageService) {
+			AssetStorageService assetStorageService,
+			ProjectAccessGuard projectAccessGuard) {
 		this.mobRepository = mobRepository;
 		this.draftRepository = draftRepository;
 		this.revisionRepository = revisionRepository;
 		this.validator = validator;
 		this.objectMapper = objectMapper;
 		this.assetStorageService = assetStorageService;
+		this.projectAccessGuard = projectAccessGuard;
 	}
 
+	/**
+	 * Sin enforcement -- para los callers INTERNOS del pipeline de IA
+	 * ({@code AiEditService}/{@code TextureGenerationService}), fuera del
+	 * alcance del ticket 085 (los 9 controladores REST directos bajo
+	 * `/api/projects/{projectId}/**`): esos flujos ya operan sobre un mob
+	 * cuyo acceso se autorizó al crear el job de IA, no en cada lectura
+	 * subsiguiente del draft.
+	 */
 	@Transactional(readOnly = true)
 	public DraftView getDraft(UUID mobId) {
 		requireMob(mobId);
+		return buildDraftView(mobId);
+	}
+
+	/** Ticket 085 -- variante para las rutas expuestas directamente (`MobDraftController`, `TextureService`, `MobGeometryApplyService`): lectura, dueño real o proyecto {@code PUBLIC} (`callerId` nullable). */
+	@Transactional(readOnly = true)
+	public DraftView getDraft(UUID mobId, String callerId) {
+		MobEntity mob = requireMob(mobId);
+		projectAccessGuard.requireViewable(mob.getProjectId(), callerId);
+		return buildDraftView(mobId);
+	}
+
+	private DraftView buildDraftView(UUID mobId) {
 		MobDraftEntity draft = draftRepository.findById(mobId).orElseThrow(() -> new DraftNotFoundException(mobId));
 		return new DraftView(mobId.toString(), draft.getDraftVersion(), deserialize(draft.getModelJson()), draft.getUpdatedAt());
 	}
 
+	/** Ticket 085 -- mutación, exige dueño real. */
 	@Transactional
-	public AutosaveResponse autosave(UUID mobId, MobProjectModel model) {
-		requireMob(mobId);
+	public AutosaveResponse autosave(UUID mobId, String callerId, MobProjectModel model) {
+		MobEntity mob = requireMob(mobId);
+		projectAccessGuard.requireOwner(mob.getProjectId(), callerId);
 		Optional<MobDraftEntity> existing = draftRepository.findById(mobId);
 		if (existing.isEmpty()) {
 			// Primer autosave de este mob -- no hay nada previo con qué
@@ -101,9 +127,11 @@ public class DraftPersistenceService {
 		return new AutosaveResponse(true, draft.getDraftVersion(), draft.getUpdatedAt());
 	}
 
+	/** Ticket 085 -- mutación, exige dueño real. */
 	@Transactional
-	public SaveRevisionResponse saveRevision(UUID mobId, MobProjectModel model) {
+	public SaveRevisionResponse saveRevision(UUID mobId, String callerId, MobProjectModel model) {
 		MobEntity mob = requireMob(mobId);
+		projectAccessGuard.requireOwner(mob.getProjectId(), callerId);
 
 		List<String> errors = validator.validate(model);
 		if (!errors.isEmpty()) {

@@ -7,6 +7,8 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,7 +28,10 @@ import org.springframework.web.bind.annotation.RestController;
  * 415 sin cuerpo JSON, un formato de error distinto al resto de la API.
  * En cambio, `ReferenceImageService` valida el content-type y responde
  * el mismo `ApiErrorResponse` que cualquier otro rechazo de negocio (AC:
- * "se rechaza con un mensaje claro").
+ * "se rechaza con un mensaje claro"). Ticket 085 agrega enforcement
+ * dueño/público/privado vía `ProjectAccessGuard` a subida y listado -- la
+ * descarga de una imagen individual queda deliberadamente sin protección
+ * (ver Javadoc de {@link ReferenceImageService#download}).
  */
 @RestController
 @RequestMapping("/api/mobs/{mobId}/references")
@@ -40,14 +45,17 @@ public class MobReferenceImageController {
 
 	@PostMapping
 	public ResponseEntity<ReferenceImageSummary> upload(
-			@PathVariable UUID mobId, @RequestHeader("Content-Type") String contentType, @RequestBody byte[] content) {
-		ReferenceImageSummary summary = referenceImageService.upload(mobId, contentType, content);
+			@PathVariable UUID mobId,
+			@AuthenticationPrincipal Jwt jwt,
+			@RequestHeader("Content-Type") String contentType,
+			@RequestBody byte[] content) {
+		ReferenceImageSummary summary = referenceImageService.upload(mobId, callerId(jwt), contentType, content);
 		return ResponseEntity.status(HttpStatus.CREATED).body(summary);
 	}
 
 	@GetMapping
-	public List<ReferenceImageSummary> list(@PathVariable UUID mobId) {
-		return referenceImageService.list(mobId);
+	public List<ReferenceImageSummary> list(@PathVariable UUID mobId, @AuthenticationPrincipal Jwt jwt) {
+		return referenceImageService.list(mobId, callerId(jwt));
 	}
 
 	@GetMapping("/{referenceId}")
@@ -56,6 +64,10 @@ public class MobReferenceImageController {
 				.download(mobId, referenceId)
 				.map(image -> ResponseEntity.ok().contentType(MediaType.parseMediaType(image.contentType())).body(image.content()))
 				.orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
+	}
+
+	private static String callerId(Jwt jwt) {
+		return jwt == null ? null : jwt.getSubject();
 	}
 
 }

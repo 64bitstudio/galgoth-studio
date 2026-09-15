@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -28,6 +29,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -61,9 +63,17 @@ class MobExportControllerTest {
 	private static final byte[] TINY_PNG =
 			Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
 
+	/** Ticket 085 -- `sub` constante para el archivo completo, mismo patrón que {@link ProjectControllerTest}. */
+	private static final String OWNER_ID = "4635300a-5049-4cd5-933d-a37b807c83b0";
+
+	private static RequestPostProcessor authenticated() {
+		return jwt().jwt(builder -> builder.subject(OWNER_ID));
+	}
+
+	/** Ticket 085 -- `owner_ref` real (084) para que el guard de acceso reconozca a {@code OWNER_ID} como dueño. */
 	private UUID aProjectAndMob(String name) {
 		UUID projectId = UUID.randomUUID();
-		jdbc.update("insert into projects (id, name) values (?, ?)", projectId, "Galgoth");
+		jdbc.update("insert into projects (id, name, owner_ref) values (?, ?, ?)", projectId, "Galgoth", OWNER_ID);
 		UUID mobId = UUID.randomUUID();
 		jdbc.update(
 				"insert into mobs (id, project_id, name, base_type, status) values (?, ?, ?, ?, ?)",
@@ -102,13 +112,13 @@ class MobExportControllerTest {
 	void un_mob_completamente_nuevo_sin_draft_ni_revision_no_tiene_nada_que_exportar() throws Exception {
 		UUID mobId = aProjectAndMob("Nuevo");
 
-		mockMvc.perform(get("/api/mobs/{mobId}/export/status", mobId))
+		mockMvc.perform(get("/api/mobs/{mobId}/export/status", mobId).with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.hasSavedRevision", is(false)))
 				.andExpect(jsonPath("$.hasUnsavedChanges", is(false)))
 				.andExpect(jsonPath("$.fmmCompatible").doesNotExist());
 
-		mockMvc.perform(get("/api/mobs/{mobId}/export/bbmodel", mobId))
+		mockMvc.perform(get("/api/mobs/{mobId}/export/bbmodel", mobId).with(authenticated()))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.error", is("NO_SAVED_REVISION")));
 	}
@@ -117,17 +127,17 @@ class MobExportControllerTest {
 	void un_mob_con_draft_pero_ninguna_revision_guardada_todavia_marca_cambios_sin_guardar_AC2() throws Exception {
 		UUID mobId = aProjectAndMob("Recien creado");
 		UUID projectId = projectIdOf(mobId);
-		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).contentType(MediaType.APPLICATION_JSON).content(
+		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content(
 						"{\"model\":" + model(mobId, projectId, 2) + "}"))
 				.andExpect(status().isOk());
 
-		mockMvc.perform(get("/api/mobs/{mobId}/export/status", mobId))
+		mockMvc.perform(get("/api/mobs/{mobId}/export/status", mobId).with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.hasSavedRevision", is(false)))
 				.andExpect(jsonPath("$.hasUnsavedChanges", is(true)))
 				.andExpect(jsonPath("$.fmmCompatible").doesNotExist());
 
-		mockMvc.perform(get("/api/mobs/{mobId}/export/bbmodel", mobId)).andExpect(status().isNotFound());
+		mockMvc.perform(get("/api/mobs/{mobId}/export/bbmodel", mobId).with(authenticated())).andExpect(status().isNotFound());
 	}
 
 	@Test
@@ -135,12 +145,12 @@ class MobExportControllerTest {
 		UUID mobId = aProjectAndMob("Carcomido");
 		UUID projectId = projectIdOf(mobId);
 		String modelJson = model(mobId, projectId, 4);
-		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).contentType(MediaType.APPLICATION_JSON).content("{\"model\":" + modelJson + "}"))
+		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content("{\"model\":" + modelJson + "}"))
 				.andExpect(status().isOk());
-		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).contentType(MediaType.APPLICATION_JSON).content("{\"model\":" + modelJson + "}"))
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content("{\"model\":" + modelJson + "}"))
 				.andExpect(status().isCreated());
 
-		mockMvc.perform(get("/api/mobs/{mobId}/export/status", mobId))
+		mockMvc.perform(get("/api/mobs/{mobId}/export/status", mobId).with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.hasSavedRevision", is(true)))
 				.andExpect(jsonPath("$.hasUnsavedChanges", is(false)))
@@ -152,18 +162,18 @@ class MobExportControllerTest {
 	void draft_distinto_de_la_ultima_revision_marca_cambios_sin_guardar_AC2() throws Exception {
 		UUID mobId = aProjectAndMob("Carcomido");
 		UUID projectId = projectIdOf(mobId);
-		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).contentType(MediaType.APPLICATION_JSON).content(
+		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content(
 						"{\"model\":" + model(mobId, projectId, 4) + "}"))
 				.andExpect(status().isOk());
-		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).contentType(MediaType.APPLICATION_JSON).content(
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content(
 						"{\"model\":" + model(mobId, projectId, 4) + "}"))
 				.andExpect(status().isCreated());
 		// autosave posterior con contenido DISTINTO -- el draft avanza, la revisión ya guardada no
-		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).contentType(MediaType.APPLICATION_JSON).content(
+		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content(
 						"{\"model\":" + model(mobId, projectId, 6) + "}"))
 				.andExpect(status().isOk());
 
-		mockMvc.perform(get("/api/mobs/{mobId}/export/status", mobId))
+		mockMvc.perform(get("/api/mobs/{mobId}/export/status", mobId).with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.hasSavedRevision", is(true)))
 				.andExpect(jsonPath("$.hasUnsavedChanges", is(true)));
@@ -175,11 +185,11 @@ class MobExportControllerTest {
 		// documentado en 020/031) -- ninguna fila en mob_drafts todavía.
 		UUID mobId = aProjectAndMob("Carcomido");
 		UUID projectId = projectIdOf(mobId);
-		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).contentType(MediaType.APPLICATION_JSON).content(
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content(
 						"{\"model\":" + model(mobId, projectId, 4) + "}"))
 				.andExpect(status().isCreated());
 
-		mockMvc.perform(get("/api/mobs/{mobId}/export/status", mobId))
+		mockMvc.perform(get("/api/mobs/{mobId}/export/status", mobId).with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.hasSavedRevision", is(true)))
 				.andExpect(jsonPath("$.hasUnsavedChanges", is(false)));
@@ -190,14 +200,14 @@ class MobExportControllerTest {
 		UUID mobId = aProjectAndMob("Carcomido Real!! 2");
 		UUID projectId = projectIdOf(mobId);
 		String modelJson = model(mobId, projectId, 4);
-		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).contentType(MediaType.APPLICATION_JSON).content("{\"model\":" + modelJson + "}"))
+		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content("{\"model\":" + modelJson + "}"))
 				.andExpect(status().isOk());
-		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).contentType(MediaType.APPLICATION_JSON).content("{\"model\":" + modelJson + "}"))
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content("{\"model\":" + modelJson + "}"))
 				.andExpect(status().isCreated());
 		entityManager.flush();
 		Integer draftVersionBefore = jdbc.queryForObject("select draft_version from mob_drafts where mob_id = ?", Integer.class, mobId);
 
-		MvcResult result = mockMvc.perform(get("/api/mobs/{mobId}/export/bbmodel", mobId))
+		MvcResult result = mockMvc.perform(get("/api/mobs/{mobId}/export/bbmodel", mobId).with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(header().string("Content-Disposition", containsString("Carcomido_Real_2.bbmodel")))
 				.andReturn();
@@ -217,24 +227,24 @@ class MobExportControllerTest {
 		UUID mobId = aProjectAndMob("Con textura real");
 		UUID projectId = projectIdOf(mobId);
 
-		MvcResult uploadResult = mockMvc.perform(put("/api/mobs/{mobId}/texture", mobId).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
+		MvcResult uploadResult = mockMvc.perform(put("/api/mobs/{mobId}/texture", mobId).with(authenticated()).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
 				.andExpect(status().isOk())
 				.andReturn();
 		String storageKey = objectMapper.readTree(uploadResult.getResponse().getContentAsByteArray()).get("storageKey").asText();
 
 		String modelJson = modelWithTexture(mobId, projectId, 4, storageKey);
-		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).contentType(MediaType.APPLICATION_JSON).content("{\"model\":" + modelJson + "}"))
+		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content("{\"model\":" + modelJson + "}"))
 				.andExpect(status().isOk());
-		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).contentType(MediaType.APPLICATION_JSON).content("{\"model\":" + modelJson + "}"))
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).with(authenticated()).contentType(MediaType.APPLICATION_JSON).content("{\"model\":" + modelJson + "}"))
 				.andExpect(status().isCreated());
 
 		// AC HU-20 (056): la validación FMM sigue sin errores pendientes, ahora con contenido de textura real.
-		mockMvc.perform(get("/api/mobs/{mobId}/export/status", mobId))
+		mockMvc.perform(get("/api/mobs/{mobId}/export/status", mobId).with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.fmmCompatible", is(true)))
 				.andExpect(jsonPath("$.fmmIssues", hasSize(0)));
 
-		MvcResult exportResult = mockMvc.perform(get("/api/mobs/{mobId}/export/bbmodel", mobId))
+		MvcResult exportResult = mockMvc.perform(get("/api/mobs/{mobId}/export/bbmodel", mobId).with(authenticated()))
 				.andExpect(status().isOk())
 				.andReturn();
 		JsonNode bbmodel = objectMapper.readTree(exportResult.getResponse().getContentAsByteArray());
@@ -252,10 +262,10 @@ class MobExportControllerTest {
 	void un_mobId_inexistente_responde_404_MOB_NOT_FOUND_en_ambos_endpoints() throws Exception {
 		UUID randomId = UUID.randomUUID();
 
-		mockMvc.perform(get("/api/mobs/{mobId}/export/status", randomId))
+		mockMvc.perform(get("/api/mobs/{mobId}/export/status", randomId).with(authenticated()))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.error", is("MOB_NOT_FOUND")));
-		mockMvc.perform(get("/api/mobs/{mobId}/export/bbmodel", randomId))
+		mockMvc.perform(get("/api/mobs/{mobId}/export/bbmodel", randomId).with(authenticated()))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.error", is("MOB_NOT_FOUND")));
 	}

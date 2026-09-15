@@ -70,8 +70,13 @@ class MobRecentControllerTest {
 	}
 
 	private String createMob(UUID projectId, String name, String baseType) throws Exception {
+		return createMob(projectId, name, baseType, OWNER_ID);
+	}
+
+	/** Ticket 085 -- variante para el mob de un proyecto ajeno: el creador debe ser el DUEÑO REAL de {@code projectId}, no siempre {@code OWNER_ID}. */
+	private String createMob(UUID projectId, String name, String baseType, String ownerId) throws Exception {
 		String body = mockMvc
-				.perform(post("/api/projects/{projectId}/mobs", projectId)
+				.perform(post("/api/projects/{projectId}/mobs", projectId).with(authenticated(ownerId))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody(name, baseType)))
 				.andReturn()
@@ -146,7 +151,7 @@ class MobRecentControllerTest {
 		createMob(deletedProject, "Fantasma", "custom");
 		createMob(keptProject, "Tejedora", "arachnid");
 
-		mockMvc.perform(delete("/api/mobs/{mobId}", deletedMobId));
+		mockMvc.perform(delete("/api/mobs/{mobId}", deletedMobId).with(authenticated()));
 		jdbc.update("update projects set deleted_at = now() where id = ?", deletedProject);
 
 		mockMvc.perform(get("/api/mobs/recent").with(authenticated()))
@@ -169,7 +174,7 @@ class MobRecentControllerTest {
 		UUID mioProject = aProject("Mío");
 		UUID ajenoProject = aProject("Ajeno", otroOwnerId);
 		createMob(mioProject, "Carcomido", "humanoid");
-		createMob(ajenoProject, "Intruso", "custom");
+		createMob(ajenoProject, "Intruso", "custom", otroOwnerId);
 
 		mockMvc.perform(get("/api/mobs/recent").with(authenticated()))
 				.andExpect(status().isOk())

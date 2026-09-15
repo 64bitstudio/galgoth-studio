@@ -3,6 +3,7 @@ package com.galgothstudio.backend.project.api;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -21,6 +22,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -46,14 +48,22 @@ class MobControllerTest {
 	@Autowired
 	private EntityManager entityManager;
 
+	/** Ticket 085 -- `sub` constante para el archivo completo, mismo patrón que {@link ProjectControllerTest}. */
+	private static final String OWNER_ID = "4635300a-5049-4cd5-933d-a37b807c83b0";
+
 	/** Ver la nota en {@link MobDraftControllerTest} (ticket 020) sobre por qué esto hace falta antes de leer vía JDBC crudo dentro de la misma transacción de test. */
 	private void flush() {
 		entityManager.flush();
 	}
 
+	private static RequestPostProcessor authenticated() {
+		return jwt().jwt(builder -> builder.subject(OWNER_ID));
+	}
+
+	/** Ticket 085 -- `owner_ref` real (084) para que el guard de acceso reconozca a {@code OWNER_ID} como dueño. */
 	private UUID aProject() {
 		UUID id = UUID.randomUUID();
-		jdbc.update("insert into projects (id, name) values (?, ?)", id, "Galgoth");
+		jdbc.update("insert into projects (id, name, owner_ref) values (?, ?, ?)", id, "Galgoth", OWNER_ID);
 		return id;
 	}
 
@@ -65,7 +75,7 @@ class MobControllerTest {
 	void crear_un_mob_lo_deja_en_estado_draft_sin_revision_ni_draft_persistido_AC2() throws Exception {
 		UUID projectId = aProject();
 
-		mockMvc.perform(post("/api/projects/{projectId}/mobs", projectId)
+		mockMvc.perform(post("/api/projects/{projectId}/mobs", projectId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Carcomido", "humanoid")))
 				.andExpect(status().isCreated())
@@ -87,7 +97,7 @@ class MobControllerTest {
 	void crear_con_nombre_vacio_es_rechazado() throws Exception {
 		UUID projectId = aProject();
 
-		mockMvc.perform(post("/api/projects/{projectId}/mobs", projectId)
+		mockMvc.perform(post("/api/projects/{projectId}/mobs", projectId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("", "humanoid")))
 				.andExpect(status().isBadRequest())
@@ -98,7 +108,7 @@ class MobControllerTest {
 	void crear_con_baseType_invalido_es_rechazado() throws Exception {
 		UUID projectId = aProject();
 
-		mockMvc.perform(post("/api/projects/{projectId}/mobs", projectId)
+		mockMvc.perform(post("/api/projects/{projectId}/mobs", projectId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Algo", "dragon")))
 				.andExpect(status().isBadRequest())
@@ -107,7 +117,7 @@ class MobControllerTest {
 
 	@Test
 	void crear_en_un_proyecto_inexistente_responde_404() throws Exception {
-		mockMvc.perform(post("/api/projects/{projectId}/mobs", UUID.randomUUID())
+		mockMvc.perform(post("/api/projects/{projectId}/mobs", UUID.randomUUID()).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Carcomido", "humanoid")))
 				.andExpect(status().isNotFound())
@@ -117,14 +127,14 @@ class MobControllerTest {
 	@Test
 	void listar_devuelve_todos_los_mobs_del_proyecto_para_el_grid_AC4() throws Exception {
 		UUID projectId = aProject();
-		mockMvc.perform(post("/api/projects/{projectId}/mobs", projectId)
+		mockMvc.perform(post("/api/projects/{projectId}/mobs", projectId).with(authenticated())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(createBody("Carcomido", "humanoid")));
-		mockMvc.perform(post("/api/projects/{projectId}/mobs", projectId)
+		mockMvc.perform(post("/api/projects/{projectId}/mobs", projectId).with(authenticated())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(createBody("Augur", "flying")));
 
-		mockMvc.perform(get("/api/projects/{projectId}/mobs", projectId))
+		mockMvc.perform(get("/api/projects/{projectId}/mobs", projectId).with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$", hasSize(2)))
 				.andExpect(jsonPath("$[0].status", is("draft")))
@@ -141,11 +151,11 @@ class MobControllerTest {
 	@Test
 	void un_mob_eliminado_ticket_039_ya_no_aparece_en_el_listado_del_proyecto() throws Exception {
 		UUID projectId = aProject();
-		mockMvc.perform(post("/api/projects/{projectId}/mobs", projectId)
+		mockMvc.perform(post("/api/projects/{projectId}/mobs", projectId).with(authenticated())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(createBody("Carcomido", "humanoid")));
 		String secondBody = mockMvc
-				.perform(post("/api/projects/{projectId}/mobs", projectId)
+				.perform(post("/api/projects/{projectId}/mobs", projectId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Augur", "flying")))
 				.andReturn()
@@ -153,9 +163,9 @@ class MobControllerTest {
 				.getContentAsString();
 		String augurId = objectMapper.readTree(secondBody).get("id").asText();
 
-		mockMvc.perform(delete("/api/mobs/{mobId}", augurId));
+		mockMvc.perform(delete("/api/mobs/{mobId}", augurId).with(authenticated()));
 
-		mockMvc.perform(get("/api/projects/{projectId}/mobs", projectId))
+		mockMvc.perform(get("/api/projects/{projectId}/mobs", projectId).with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$", hasSize(1)))
 				.andExpect(jsonPath("$[0].name", is("Carcomido")));

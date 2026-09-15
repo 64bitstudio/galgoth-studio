@@ -2,6 +2,7 @@ package com.galgothstudio.backend.project.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -32,6 +33,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -62,9 +64,17 @@ class MobTextureControllerTest {
 	private static final byte[] TINY_PNG =
 			Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
 
+	/** Ticket 085 -- `sub` constante para el archivo completo, mismo patrón que {@link ProjectControllerTest}. */
+	private static final String OWNER_ID = "4635300a-5049-4cd5-933d-a37b807c83b0";
+
+	private static RequestPostProcessor authenticated() {
+		return jwt().jwt(builder -> builder.subject(OWNER_ID));
+	}
+
+	/** Ticket 085 -- `owner_ref` real (084) para que el guard de acceso reconozca a {@code OWNER_ID} como dueño (la subida es una mutación protegida; la descarga sigue sin enforcement, ver Javadoc de {@code TextureService#download}). */
 	private UUID aProjectAndMob() {
 		UUID projectId = UUID.randomUUID();
-		jdbc.update("insert into projects (id, name) values (?, ?)", projectId, "Galgoth");
+		jdbc.update("insert into projects (id, name, owner_ref) values (?, ?, ?)", projectId, "Galgoth", OWNER_ID);
 		UUID mobId = UUID.randomUUID();
 		jdbc.update(
 				"insert into mobs (id, project_id, name, base_type, status) values (?, ?, ?, ?, ?)",
@@ -103,7 +113,7 @@ class MobTextureControllerTest {
 		UUID mobId = aProjectAndMob();
 		String expectedStorageKey = expectedStorageKeyFor(TINY_PNG);
 
-		mockMvc.perform(put("/api/mobs/{mobId}/texture", mobId).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
+		mockMvc.perform(put("/api/mobs/{mobId}/texture", mobId).with(authenticated()).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.storageKey", is(expectedStorageKey)));
 
@@ -115,7 +125,7 @@ class MobTextureControllerTest {
 		UUID mobId = aProjectAndMob();
 		String expectedStorageKey = expectedStorageKeyFor(TINY_PNG);
 
-		mockMvc.perform(put("/api/mobs/{mobId}/texture", mobId).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
+		mockMvc.perform(put("/api/mobs/{mobId}/texture", mobId).with(authenticated()).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
 				.andExpect(status().isOk());
 
 		// Sustituye manualmente el contenido de la key ya existente por un
@@ -126,7 +136,7 @@ class MobTextureControllerTest {
 		byte[] sentinel = {9, 9, 9};
 		assetStorageService.put(expectedStorageKey, sentinel, "image/png");
 
-		mockMvc.perform(put("/api/mobs/{mobId}/texture", mobId).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
+		mockMvc.perform(put("/api/mobs/{mobId}/texture", mobId).with(authenticated()).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.storageKey", is(expectedStorageKey)));
 
@@ -143,7 +153,7 @@ class MobTextureControllerTest {
 		// deliberadamente incorrecto demuestra que, aunque un cliente lo
 		// intentara colar de cualquier forma fuera del contrato, la
 		// respuesta sigue siendo exclusivamente la que el backend calculó.
-		mockMvc.perform(put("/api/mobs/{mobId}/texture", mobId)
+		mockMvc.perform(put("/api/mobs/{mobId}/texture", mobId).with(authenticated())
 						.contentType(MediaType.IMAGE_PNG)
 						.header("X-Client-Computed-Storage-Key", "textures/deliberadamente-incorrecto.png")
 						.content(TINY_PNG))
@@ -156,14 +166,14 @@ class MobTextureControllerTest {
 		UUID mobId = aProjectAndMob();
 		byte[] notAPng = {1, 2, 3, 4, 5};
 
-		mockMvc.perform(put("/api/mobs/{mobId}/texture", mobId).contentType(MediaType.IMAGE_PNG).content(notAPng))
+		mockMvc.perform(put("/api/mobs/{mobId}/texture", mobId).with(authenticated()).contentType(MediaType.IMAGE_PNG).content(notAPng))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.error", is("INVALID_TEXTURE")));
 	}
 
 	@Test
 	void subir_una_textura_a_un_mob_inexistente_responde_404() throws Exception {
-		mockMvc.perform(put("/api/mobs/{mobId}/texture", UUID.randomUUID())
+		mockMvc.perform(put("/api/mobs/{mobId}/texture", UUID.randomUUID()).with(authenticated())
 						.contentType(MediaType.IMAGE_PNG)
 						.content(TINY_PNG))
 				.andExpect(status().isNotFound())

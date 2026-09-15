@@ -100,7 +100,11 @@ class InternalPurgeControllerTest {
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.error", is("INVALID_INTERNAL_SECRET")));
 
-		mockMvc.perform(get("/api/projects/{id}", projectId)).andExpect(status().isOk());
+		// Ticket 085 -- el proyecto es PRIVATE: confirmar que sigue existiendo
+		// exige mandar el JWT de su propio dueño (una lectura anónima ahora
+		// respondería 404 igual, sin distinguir "no existe" de "no es tuyo").
+		mockMvc.perform(get("/api/projects/{id}", projectId).with(jwt().jwt(builder -> builder.subject(ownerId))))
+				.andExpect(status().isOk());
 	}
 
 	@Test

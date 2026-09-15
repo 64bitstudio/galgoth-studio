@@ -9,6 +9,8 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,7 +21,8 @@ import org.springframework.web.bind.annotation.RestController;
  * endpoint propio: el frontend orquesta `POST /api/mobs/{mobId}/revisions`
  * (020, "Guardar") seguido de `GET .../export/bbmodel` -- dos llamadas
  * secuenciales en vez de un endpoint compuesto, reutilizando el mecanismo
- * de Guardar tal cual en vez de duplicarlo.
+ * de Guardar tal cual en vez de duplicarlo. Ticket 085 agrega enforcement
+ * dueño/público/privado vía `ProjectAccessGuard`.
  */
 @RestController
 @RequestMapping("/api/mobs/{mobId}/export")
@@ -32,13 +35,13 @@ public class MobExportController {
 	}
 
 	@GetMapping("/status")
-	public ExportStatusView status(@PathVariable UUID mobId) {
-		return exportService.getStatus(mobId);
+	public ExportStatusView status(@PathVariable UUID mobId, @AuthenticationPrincipal Jwt jwt) {
+		return exportService.getStatus(mobId, callerId(jwt));
 	}
 
 	@GetMapping("/bbmodel")
-	public ResponseEntity<byte[]> bbmodel(@PathVariable UUID mobId) {
-		ExportedFile file = exportService.exportBbmodel(mobId);
+	public ResponseEntity<byte[]> bbmodel(@PathVariable UUID mobId, @AuthenticationPrincipal Jwt jwt) {
+		ExportedFile file = exportService.exportBbmodel(mobId, callerId(jwt));
 		byte[] bytes = file.content().getBytes(StandardCharsets.UTF_8);
 		ContentDisposition disposition =
 				ContentDisposition.attachment().filename(file.filename(), StandardCharsets.UTF_8).build();
@@ -52,6 +55,10 @@ public class MobExportController {
 				.contentType(MediaType.APPLICATION_OCTET_STREAM)
 				.header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
 				.body(bytes);
+	}
+
+	private static String callerId(Jwt jwt) {
+		return jwt == null ? null : jwt.getSubject();
 	}
 
 }

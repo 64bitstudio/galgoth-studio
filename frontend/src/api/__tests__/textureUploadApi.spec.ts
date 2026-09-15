@@ -1,9 +1,15 @@
+import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../ApiError'
 import { downloadTexture, uploadTexture } from '../textureUploadApi'
 
 describe('textureUploadApi', () => {
+  // Ticket 085 -- uploadTexture pasa a usar authenticatedFetch (ticket 078),
+  // que necesita un Pinia activo para leer la sesión (sin sesión, simplemente
+  // no adjunta Authorization). downloadTexture sigue con fetch plano a
+  // propósito (endpoint sin enforcement, ver Javadoc de TextureService#download).
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.stubGlobal('fetch', vi.fn())
   })
 

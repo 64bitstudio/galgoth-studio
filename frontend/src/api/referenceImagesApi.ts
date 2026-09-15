@@ -6,6 +6,7 @@
  */
 import { API_BASE_URL } from './apiConfig'
 import { ApiError } from './ApiError'
+import { authenticatedFetch } from '../auth/authenticatedFetch'
 
 export interface ReferenceImageSummary {
   id: string
@@ -21,7 +22,7 @@ export const MAX_REFERENCE_IMAGE_BYTES = 10 * 1024 * 1024
 export const SUPPORTED_REFERENCE_IMAGE_TYPES = ['image/png', 'image/jpeg']
 
 export async function uploadReferenceImage(mobId: string, file: Blob): Promise<ReferenceImageSummary> {
-  const response = await fetch(`${API_BASE_URL}/api/mobs/${mobId}/references`, {
+  const response = await authenticatedFetch(`${API_BASE_URL}/api/mobs/${mobId}/references`, {
     method: 'POST',
     headers: { 'Content-Type': file.type },
     body: file,
@@ -51,7 +52,7 @@ export function referenceImageUrl(relativeUrl: string): string {
 }
 
 async function requestJson<T>(url: string): Promise<T> {
-  const response = await fetch(url)
+  const response = await authenticatedFetch(url)
   const body = await response.json().catch(() => null)
   if (!response.ok) {
     throw new ApiError(body?.message ?? `Error HTTP ${response.status}`, response.status, body?.error)

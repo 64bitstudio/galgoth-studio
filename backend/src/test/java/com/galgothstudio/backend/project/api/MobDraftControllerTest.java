@@ -2,6 +2,7 @@ package com.galgothstudio.backend.project.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -28,6 +29,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -83,9 +85,17 @@ class MobDraftControllerTest {
 		entityManager.flush();
 	}
 
+	/** Ticket 085 -- `sub` constante para el archivo completo, mismo patrón que {@link ProjectControllerTest}. */
+	private static final String OWNER_ID = "4635300a-5049-4cd5-933d-a37b807c83b0";
+
+	private static RequestPostProcessor authenticated() {
+		return jwt().jwt(builder -> builder.subject(OWNER_ID));
+	}
+
+	/** Ticket 085 -- `owner_ref` real (084) para que el guard de acceso reconozca a {@code OWNER_ID} como dueño. */
 	private UUID aProject() {
 		UUID id = UUID.randomUUID();
-		jdbc.update("insert into projects (id, name) values (?, ?)", id, "Galgoth");
+		jdbc.update("insert into projects (id, name, owner_ref) values (?, ?, ?)", id, "Galgoth", OWNER_ID);
 		return id;
 	}
 
@@ -132,14 +142,14 @@ class MobDraftControllerTest {
 	void getDraft_de_un_mob_sin_draft_responde_404_explicito() throws Exception {
 		UUID mobId = aMob(aProject());
 
-		mockMvc.perform(get("/api/mobs/{mobId}/draft", mobId))
+		mockMvc.perform(get("/api/mobs/{mobId}/draft", mobId).with(authenticated()))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.error", is("DRAFT_NOT_FOUND")));
 	}
 
 	@Test
 	void getDraft_de_un_mob_inexistente_responde_404_mob_not_found() throws Exception {
-		mockMvc.perform(get("/api/mobs/{mobId}/draft", UUID.randomUUID()))
+		mockMvc.perform(get("/api/mobs/{mobId}/draft", UUID.randomUUID()).with(authenticated()))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.error", is("MOB_NOT_FOUND")));
 	}
@@ -147,12 +157,12 @@ class MobDraftControllerTest {
 	@Test
 	void getDraft_tras_un_autosave_refleja_el_mismo_draftVersion_y_modelo() throws Exception {
 		UUID mobId = aMob(aProject());
-		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId)
+		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(draftRequestBody(fixtureJson())))
 				.andExpect(status().isOk());
 
-		MvcResult result = mockMvc.perform(get("/api/mobs/{mobId}/draft", mobId))
+		MvcResult result = mockMvc.perform(get("/api/mobs/{mobId}/draft", mobId).with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.draftVersion", is(1)))
 				.andReturn();
@@ -168,14 +178,14 @@ class MobDraftControllerTest {
 	@Test
 	void autosave_con_contenido_nuevo_incrementa_draftVersion_en_1_AC1() throws Exception {
 		UUID mobId = aMob(aProject());
-		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId)
+		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(draftRequestBody(fixtureJsonWithName("Carcomido_v1"))))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.changed", is(true)))
 				.andExpect(jsonPath("$.draftVersion", is(1)));
 
-		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId)
+		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(draftRequestBody(fixtureJsonWithName("Carcomido_v2"))))
 				.andExpect(status().isOk())
@@ -188,14 +198,14 @@ class MobDraftControllerTest {
 		UUID mobId = aMob(aProject());
 		String modelJson = fixtureJsonWithName("Carcomido_estable");
 
-		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId)
+		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).with(authenticated())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(draftRequestBody(modelJson)));
 		flush();
 		String updatedAtAfterFirst =
 				jdbc.queryForObject("select updated_at::text from mob_drafts where mob_id = ?", String.class, mobId);
 
-		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId)
+		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(draftRequestBody(modelJson)))
 				.andExpect(status().isOk())
@@ -210,7 +220,7 @@ class MobDraftControllerTest {
 
 	@Test
 	void autosave_de_un_mob_inexistente_responde_404() throws Exception {
-		mockMvc.perform(patch("/api/mobs/{mobId}/draft", UUID.randomUUID())
+		mockMvc.perform(patch("/api/mobs/{mobId}/draft", UUID.randomUUID()).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(draftRequestBody(fixtureJson())))
 				.andExpect(status().isNotFound())
@@ -223,7 +233,7 @@ class MobDraftControllerTest {
 	void guardar_crea_la_primera_revision_y_actualiza_current_revision_number_AC4() throws Exception {
 		UUID mobId = aMob(aProject());
 
-		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(draftRequestBody(fixtureJson())))
 				.andExpect(status().isCreated())
@@ -243,11 +253,11 @@ class MobDraftControllerTest {
 	void guardar_sin_cambios_desde_la_ultima_revision_no_duplica_AC5() throws Exception {
 		UUID mobId = aMob(aProject());
 		String modelJson = fixtureJson();
-		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).with(authenticated())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(draftRequestBody(modelJson)));
 
-		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(draftRequestBody(modelJson)))
 				.andExpect(status().isOk()) // no 201 -- no se creó nada nuevo
@@ -263,11 +273,11 @@ class MobDraftControllerTest {
 	@Test
 	void guardar_con_cambios_reales_crea_la_revision_2_tras_la_1() throws Exception {
 		UUID mobId = aMob(aProject());
-		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).with(authenticated())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(draftRequestBody(fixtureJsonWithName("Carcomido_r1"))));
 
-		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(draftRequestBody(fixtureJsonWithName("Carcomido_r2"))))
 				.andExpect(status().isCreated())
@@ -279,7 +289,7 @@ class MobDraftControllerTest {
 	void guardar_con_un_modelo_invalido_responde_400_y_no_crea_revision_AC6() throws Exception {
 		UUID mobId = aMob(aProject());
 
-		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(draftRequestBody(fixtureJsonWithoutTexture())))
 				.andExpect(status().isBadRequest())
@@ -297,7 +307,7 @@ class MobDraftControllerTest {
 
 	@Test
 	void guardar_de_un_mob_inexistente_responde_404() throws Exception {
-		mockMvc.perform(post("/api/mobs/{mobId}/revisions", UUID.randomUUID())
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", UUID.randomUUID()).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(draftRequestBody(fixtureJson())))
 				.andExpect(status().isNotFound())
@@ -314,7 +324,7 @@ class MobDraftControllerTest {
 		UUID mobId = aMob(aProject());
 		String modelJson = fixtureJsonWithTextureStorageKey("textures/no-existe-en-minio.png");
 
-		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(draftRequestBody(modelJson)))
 				.andExpect(status().isBadRequest())
@@ -333,7 +343,7 @@ class MobDraftControllerTest {
 		assetStorageService.put(storageKey, new byte[] {1, 2, 3}, "image/png");
 		String modelJson = fixtureJsonWithTextureStorageKey(storageKey);
 
-		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/revisions", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(draftRequestBody(modelJson)))
 				.andExpect(status().isCreated())

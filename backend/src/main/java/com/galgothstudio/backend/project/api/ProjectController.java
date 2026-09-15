@@ -56,25 +56,32 @@ public class ProjectController {
 		return jwt.getSubject();
 	}
 
+	/** Ticket 085 -- lectura: dueño real o proyecto {@code PUBLIC} (`jwt` nullable, caller anónimo permitido). */
 	@GetMapping("/{projectId}")
-	public ProjectDetail get(@PathVariable UUID projectId) {
-		return projectService.get(projectId);
+	public ProjectDetail get(@PathVariable UUID projectId, @AuthenticationPrincipal Jwt jwt) {
+		return projectService.get(projectId, callerId(jwt));
 	}
 
 	@PatchMapping("/{projectId}")
-	public ProjectDetail rename(@PathVariable UUID projectId, @RequestBody RenameProjectRequest request) {
-		return projectService.rename(projectId, request.name(), request.description());
+	public ProjectDetail rename(
+			@PathVariable UUID projectId, @AuthenticationPrincipal Jwt jwt, @RequestBody RenameProjectRequest request) {
+		return projectService.rename(projectId, callerId(jwt), request.name(), request.description());
 	}
 
 	@DeleteMapping("/{projectId}")
-	public ResponseEntity<Void> delete(@PathVariable UUID projectId) {
-		projectService.softDelete(projectId);
+	public ResponseEntity<Void> delete(@PathVariable UUID projectId, @AuthenticationPrincipal Jwt jwt) {
+		projectService.softDelete(projectId, callerId(jwt));
 		return ResponseEntity.noContent().build();
 	}
 
 	@PostMapping("/{projectId}/duplicate")
-	public ResponseEntity<ProjectDetail> duplicate(@PathVariable UUID projectId) {
-		return ResponseEntity.status(HttpStatus.CREATED).body(projectService.duplicate(projectId));
+	public ResponseEntity<ProjectDetail> duplicate(@PathVariable UUID projectId, @AuthenticationPrincipal Jwt jwt) {
+		return ResponseEntity.status(HttpStatus.CREATED).body(projectService.duplicate(projectId, callerId(jwt)));
+	}
+
+	/** Ticket 085 -- {@code null} = caller anónimo, válido solo para lecturas de un proyecto {@code PUBLIC}. */
+	private static String callerId(Jwt jwt) {
+		return jwt == null ? null : jwt.getSubject();
 	}
 
 }

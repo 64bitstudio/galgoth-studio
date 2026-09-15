@@ -81,6 +81,25 @@ class ProjectControllerTest {
 		return "{\"name\":\"" + name + "\"}";
 	}
 
+	/**
+	 * Ticket 085 -- inserta el proyecto directo por JDBC en vez de crear
+	 * por API y luego mutar `visibility` con un segundo `UPDATE` crudo:
+	 * mezclar una escritura JDBC con una lectura JPA subsiguiente dentro
+	 * de la MISMA transacción de test devuelve el `ProjectEntity` ya
+	 * managed en el contexto de persistencia (caché de primer nivel de
+	 * Hibernate), no la fila real recién escrita -- un `entityManager.clear()`
+	 * no alcanza a evitarlo de forma confiable. Insertar la fila completa
+	 * de una sola vez por JDBC, como ya hace `aMobIn`, evita el problema
+	 * por completo.
+	 */
+	private UUID aProjectOf(String ownerId, String visibility) {
+		UUID id = UUID.randomUUID();
+		jdbc.update(
+				"insert into projects (id, name, owner_ref, visibility) values (?, ?, ?, ?)",
+				id, "Proyecto de prueba", ownerId, visibility);
+		return id;
+	}
+
 	private UUID aMobIn(UUID projectId, String name) {
 		return aMobIn(projectId, name, "draft");
 	}
@@ -117,7 +136,9 @@ class ProjectControllerTest {
 		JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
 		String projectId = body.get("id").asText();
 
-		mockMvc.perform(get("/api/projects/{id}", projectId))
+		// Ticket 085 -- un proyecto recién creado nace PRIVATE (084): su
+		// propio dueño necesita seguir mandando el JWT para leerlo.
+		mockMvc.perform(get("/api/projects/{id}", projectId).with(authenticated()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.name", is("Galgoth")));
 	}
@@ -260,7 +281,7 @@ class ProjectControllerTest {
 		aMobIn(projectId, "mob-vivo");
 		UUID mobEliminadoId = aMobIn(projectId, "mob-eliminado");
 		flush();
-		mockMvc.perform(delete("/api/mobs/{mobId}", mobEliminadoId)).andExpect(status().isNoContent());
+		mockMvc.perform(delete("/api/mobs/{mobId}", mobEliminadoId).with(authenticated())).andExpect(status().isNoContent());
 
 		mockMvc.perform(get("/api/projects").with(authenticated()))
 				.andExpect(status().isOk())
@@ -276,7 +297,7 @@ class ProjectControllerTest {
 				.andReturn();
 		String projectId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
 
-		mockMvc.perform(delete("/api/projects/{id}", projectId)).andExpect(status().isNoContent());
+		mockMvc.perform(delete("/api/projects/{id}", projectId).with(authenticated())).andExpect(status().isNoContent());
 		flush();
 
 		mockMvc.perform(get("/api/projects/{id}", projectId)).andExpect(status().isNotFound());
@@ -292,7 +313,7 @@ class ProjectControllerTest {
 				.andReturn();
 		String projectId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
 
-		mockMvc.perform(patch("/api/projects/{id}", projectId)
+		mockMvc.perform(patch("/api/projects/{id}", projectId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("Nombre nuevo")))
 				.andExpect(status().isOk())
@@ -307,13 +328,13 @@ class ProjectControllerTest {
 				.andReturn();
 		String projectId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
 
-		mockMvc.perform(patch("/api/projects/{id}", projectId)
+		mockMvc.perform(patch("/api/projects/{id}", projectId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(renameBody("Galgoth", "Universo de criaturas oscuras y corrompidas.")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.description", is("Universo de criaturas oscuras y corrompidas.")));
 
-		mockMvc.perform(get("/api/projects/{id}", projectId))
+		mockMvc.perform(get("/api/projects/{id}", projectId).with(authenticated()))
 				.andExpect(jsonPath("$.description", is("Universo de criaturas oscuras y corrompidas.")));
 	}
 
@@ -336,7 +357,7 @@ class ProjectControllerTest {
 				.andReturn();
 		String projectId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
 
-		mockMvc.perform(patch("/api/projects/{id}", projectId)
+		mockMvc.perform(patch("/api/projects/{id}", projectId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(createBody("")))
 				.andExpect(status().isBadRequest())
@@ -347,7 +368,7 @@ class ProjectControllerTest {
 
 	@Test
 	void eliminar_un_proyecto_inexistente_responde_404() throws Exception {
-		mockMvc.perform(delete("/api/projects/{id}", UUID.randomUUID())).andExpect(status().isNotFound());
+		mockMvc.perform(delete("/api/projects/{id}", UUID.randomUUID()).with(authenticated())).andExpect(status().isNotFound());
 	}
 
 	// -- POST /api/projects/{id}/duplicate (copia profunda) ------------------
@@ -366,7 +387,7 @@ class ProjectControllerTest {
 		jdbc.update("update mobs set current_revision_number = 2 where id = ?", mobId);
 		flush();
 
-		MvcResult duplicated = mockMvc.perform(post("/api/projects/{id}/duplicate", projectId))
+		MvcResult duplicated = mockMvc.perform(post("/api/projects/{id}/duplicate", projectId).with(authenticated()))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.name", is("Original (copia)")))
 				.andExpect(jsonPath("$.mobCount", is(1)))
@@ -388,7 +409,8 @@ class ProjectControllerTest {
 
 	@Test
 	void duplicar_un_proyecto_inexistente_responde_404() throws Exception {
-		mockMvc.perform(post("/api/projects/{id}/duplicate", UUID.randomUUID())).andExpect(status().isNotFound());
+		mockMvc.perform(post("/api/projects/{id}/duplicate", UUID.randomUUID()).with(authenticated()))
+				.andExpect(status().isNotFound());
 	}
 
 	// -- Ticket 039: un mob eliminado (soft-delete) no debe contarse ni copiarse --
@@ -409,9 +431,9 @@ class ProjectControllerTest {
 		UUID mobEliminadoId = aMobIn(projectId, "mob-eliminado");
 		flush();
 
-		mockMvc.perform(delete("/api/mobs/{mobId}", mobEliminadoId)).andExpect(status().isNoContent());
+		mockMvc.perform(delete("/api/mobs/{mobId}", mobEliminadoId).with(authenticated())).andExpect(status().isNoContent());
 
-		mockMvc.perform(get("/api/projects/{id}", projectId)).andExpect(jsonPath("$.mobCount", is(1)));
+		mockMvc.perform(get("/api/projects/{id}", projectId).with(authenticated())).andExpect(jsonPath("$.mobCount", is(1)));
 	}
 
 	@Test
@@ -425,9 +447,9 @@ class ProjectControllerTest {
 		aMobIn(projectId, "mob-vivo");
 		UUID mobEliminadoId = aMobIn(projectId, "mob-eliminado");
 		flush();
-		mockMvc.perform(delete("/api/mobs/{mobId}", mobEliminadoId)).andExpect(status().isNoContent());
+		mockMvc.perform(delete("/api/mobs/{mobId}", mobEliminadoId).with(authenticated())).andExpect(status().isNoContent());
 
-		MvcResult duplicated = mockMvc.perform(post("/api/projects/{id}/duplicate", projectId))
+		MvcResult duplicated = mockMvc.perform(post("/api/projects/{id}/duplicate", projectId).with(authenticated()))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.mobCount", is(1)))
 				.andReturn();
@@ -437,6 +459,71 @@ class ProjectControllerTest {
 		Integer newMobCount =
 				jdbc.queryForObject("select count(*) from mobs where project_id = ?", Integer.class, UUID.fromString(newProjectId));
 		assertThat(newMobCount).isEqualTo(1); // solo el mob vivo se copió, no el eliminado
+	}
+
+	// -- Ticket 085: enforcement dueño/público/privado -----------------------
+
+	@Test
+	void un_usuario_distinto_al_dueno_no_puede_leer_un_proyecto_privado_ajeno() throws Exception {
+		String otroOwnerId = "9c3e3b1a-2222-4d3d-8888-0f1a2b3c4d5e";
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Privado ajeno")))
+				.andReturn();
+		String projectId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
+
+		mockMvc.perform(get("/api/projects/{id}", projectId).with(authenticated(otroOwnerId))).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void una_lectura_sin_autorizacion_de_un_proyecto_privado_responde_404() throws Exception {
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Privado")))
+				.andReturn();
+		String projectId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
+
+		mockMvc.perform(get("/api/projects/{id}", projectId)).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void una_lectura_sin_autorizacion_de_un_proyecto_publico_funciona() throws Exception {
+		String ownerId = UUID.randomUUID().toString();
+		UUID projectId = aProjectOf(ownerId, "PUBLIC");
+
+		mockMvc.perform(get("/api/projects/{id}", projectId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.name", is("Proyecto de prueba")));
+	}
+
+	@Test
+	void un_usuario_distinto_al_dueno_no_puede_mutar_un_proyecto_ajeno_publico_o_privado() throws Exception {
+		String ownerId = UUID.randomUUID().toString();
+		String otroOwnerId = "9c3e3b1a-2222-4d3d-8888-0f1a2b3c4d5e";
+		UUID projectId = aProjectOf(ownerId, "PUBLIC");
+
+		mockMvc.perform(patch("/api/projects/{id}", projectId).with(authenticated(otroOwnerId))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Hackeado")))
+				.andExpect(status().isNotFound());
+		mockMvc.perform(delete("/api/projects/{id}", projectId).with(authenticated(otroOwnerId))).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void el_dueno_real_sigue_accediendo_sin_problema_a_cada_operacion_de_su_propio_proyecto() throws Exception {
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Mío de verdad")))
+				.andReturn();
+		String projectId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
+
+		mockMvc.perform(get("/api/projects/{id}", projectId).with(authenticated())).andExpect(status().isOk());
+		mockMvc.perform(patch("/api/projects/{id}", projectId).with(authenticated())
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Mío de verdad, renombrado")))
+				.andExpect(status().isOk());
+		mockMvc.perform(post("/api/projects/{id}/duplicate", projectId).with(authenticated())).andExpect(status().isCreated());
+		mockMvc.perform(delete("/api/projects/{id}", projectId).with(authenticated())).andExpect(status().isNoContent());
 	}
 
 	// -- CORS (docs/definiciones/galgoth-studio-mvp.md §9 -- origen local de desarrollo) --

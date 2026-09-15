@@ -1,10 +1,9 @@
 package com.galgothstudio.backend.project.mob;
 
-import com.galgothstudio.backend.project.ProjectNotFoundException;
+import com.galgothstudio.backend.project.access.ProjectAccessGuard;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
 import com.galgothstudio.backend.project.persistence.MobEntity;
 import com.galgothstudio.backend.project.persistence.MobRepository;
-import com.galgothstudio.backend.project.persistence.ProjectRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -26,19 +25,18 @@ public class MobService {
 	/** Mismos 5 valores del CHECK constraint `mobs.base_type` (`V1__init_schema.sql`, ticket 003). */
 	private static final Set<String> VALID_BASE_TYPES = Set.of("humanoid", "arachnid", "quadruped", "flying", "custom");
 
-	private final ProjectRepository projectRepository;
 	private final MobRepository mobRepository;
+	private final ProjectAccessGuard projectAccessGuard;
 
-	public MobService(ProjectRepository projectRepository, MobRepository mobRepository) {
-		this.projectRepository = projectRepository;
+	public MobService(MobRepository mobRepository, ProjectAccessGuard projectAccessGuard) {
 		this.mobRepository = mobRepository;
+		this.projectAccessGuard = projectAccessGuard;
 	}
 
+	/** Ticket 085 -- exige dueño real del proyecto (agregar un mob es una mutación). */
 	@Transactional
-	public MobSummary create(UUID projectId, String name, String baseType) {
-		if (projectRepository.findByIdAndDeletedAtIsNull(projectId).isEmpty()) {
-			throw new ProjectNotFoundException(projectId);
-		}
+	public MobSummary create(UUID projectId, String callerId, String name, String baseType) {
+		projectAccessGuard.requireOwner(projectId, callerId);
 		String validName = requireValidName(name);
 		String validBaseType = requireValidBaseType(baseType);
 
@@ -58,18 +56,22 @@ public class MobService {
 		return toSummary(mob);
 	}
 
+	/** Ticket 085 -- lectura: dueño real o proyecto {@code PUBLIC} (`callerId` nullable, caller anónimo). */
 	@Transactional(readOnly = true)
-	public List<MobSummary> list(UUID projectId) {
-		if (projectRepository.findByIdAndDeletedAtIsNull(projectId).isEmpty()) {
-			throw new ProjectNotFoundException(projectId);
-		}
+	public List<MobSummary> list(UUID projectId, String callerId) {
+		projectAccessGuard.requireViewable(projectId, callerId);
 		return mobRepository.findByProjectIdAndDeletedAtIsNullOrderByUpdatedAtDesc(projectId).stream().map(this::toSummary).toList();
 	}
 
-	/** Ticket 034 -- ruta prevista desde el bootstrap del proyecto (`docs/API.md`, "Rutas previstas"), sin `projectId` en el path a propósito (mismo criterio que `MobDraftController`/`MobThumbnailController`: el mob ya se identifica solo por su id). */
+	/**
+	 * Ticket 034 -- ruta prevista desde el bootstrap del proyecto (`docs/API.md`, "Rutas previstas"), sin `projectId` en el path a propósito (mismo criterio que `MobDraftController`/`MobThumbnailController`: el mob ya se identifica solo por su id).
+	 *
+	 * <p>Ticket 085 -- el mob debe existir primero (`MOB_NOT_FOUND` si no) antes de resolver su proyecto y delegar la visibilidad al guard.
+	 */
 	@Transactional(readOnly = true)
-	public MobSummary get(UUID mobId) {
+	public MobSummary get(UUID mobId, String callerId) {
 		MobEntity mob = requireMob(mobId);
+		projectAccessGuard.requireViewable(mob.getProjectId(), callerId);
 		return toSummary(mob);
 	}
 
@@ -87,20 +89,22 @@ public class MobService {
 		return mobRepository.findRecentAcrossProjects(ownerId, PageRequest.of(0, limit)).stream().map(this::toRecentSummary).toList();
 	}
 
-	/** Ticket 039 -- mismo criterio de validación que `create`. */
+	/** Ticket 039 -- mismo criterio de validación que `create`. Ticket 085 -- mutación, exige dueño real del proyecto del mob. */
 	@Transactional
-	public MobSummary rename(UUID mobId, String newName) {
+	public MobSummary rename(UUID mobId, String callerId, String newName) {
 		MobEntity mob = requireMob(mobId);
+		projectAccessGuard.requireOwner(mob.getProjectId(), callerId);
 		mob.setName(requireValidName(newName));
 		mob.setUpdatedAt(Instant.now());
 		mobRepository.save(mob);
 		return toSummary(mob);
 	}
 
-	/** Ticket 039 -- soft-delete, mismo criterio que `ProjectService.softDelete`. */
+	/** Ticket 039 -- soft-delete, mismo criterio que `ProjectService.softDelete`. Ticket 085 -- mutación, exige dueño real. */
 	@Transactional
-	public void softDelete(UUID mobId) {
+	public void softDelete(UUID mobId, String callerId) {
 		MobEntity mob = requireMob(mobId);
+		projectAccessGuard.requireOwner(mob.getProjectId(), callerId);
 		mob.setDeletedAt(Instant.now());
 		mobRepository.save(mob);
 	}

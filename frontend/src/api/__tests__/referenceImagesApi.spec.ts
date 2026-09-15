@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../ApiError'
 import { listReferenceImages, referenceImageUrl, uploadReferenceImage } from '../referenceImagesApi'
 
@@ -7,6 +8,13 @@ function jsonResponse(body: unknown, status = 201): Response {
 }
 
 describe('referenceImagesApi', () => {
+  // Ticket 085 -- uploadReferenceImage/listReferenceImages pasan a usar
+  // authenticatedFetch (ticket 078), que necesita un Pinia activo para leer
+  // la sesión (sin sesión, simplemente no adjunta Authorization).
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })

@@ -1,8 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../api/ApiError'
 import { uploadThumbnail } from '../thumbnailApi'
 
 describe('thumbnailApi', () => {
+  // Ticket 085 -- uploadThumbnail pasa a usar authenticatedFetch (ticket 078),
+  // que necesita un Pinia activo para leer la sesión.
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })

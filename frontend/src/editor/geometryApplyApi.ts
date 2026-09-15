@@ -11,6 +11,7 @@
  */
 import { API_BASE_URL } from '../api/apiConfig'
 import { ApiError } from '../api/ApiError'
+import { authenticatedFetch } from '../auth/authenticatedFetch'
 import type { FaceName, MobProjectModel, Vec3 } from '../domain/MobProjectModel'
 
 export interface ResizeCuboidOperation {
@@ -75,7 +76,7 @@ export async function applyGeometry(
   operations: GeometryApplyOperation[],
   confirmPaintLoss = false,
 ): Promise<GeometryApplyResult> {
-  const response = await fetch(`${API_BASE_URL}/api/mobs/${mobId}/geometry/apply`, {
+  const response = await authenticatedFetch(`${API_BASE_URL}/api/mobs/${mobId}/geometry/apply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ operations, confirmPaintLoss }),

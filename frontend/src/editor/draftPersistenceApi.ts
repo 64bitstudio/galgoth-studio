@@ -9,6 +9,7 @@
  */
 import { API_BASE_URL } from '../api/apiConfig'
 import { ApiError } from '../api/ApiError'
+import { authenticatedFetch } from '../auth/authenticatedFetch'
 import type { MobProjectModel } from '../domain/MobProjectModel'
 
 export interface SaveRevisionResult {
@@ -25,7 +26,7 @@ export interface DraftView {
 }
 
 export async function saveRevision(mobId: string, model: MobProjectModel): Promise<SaveRevisionResult> {
-  const response = await fetch(`${API_BASE_URL}/api/mobs/${mobId}/revisions`, {
+  const response = await authenticatedFetch(`${API_BASE_URL}/api/mobs/${mobId}/revisions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model }),
@@ -39,7 +40,7 @@ export async function saveRevision(mobId: string, model: MobProjectModel): Promi
 }
 
 export async function getDraft(mobId: string): Promise<DraftView> {
-  const response = await fetch(`${API_BASE_URL}/api/mobs/${mobId}/draft`)
+  const response = await authenticatedFetch(`${API_BASE_URL}/api/mobs/${mobId}/draft`)
 
   const body = await response.json().catch(() => null)
   if (!response.ok) {

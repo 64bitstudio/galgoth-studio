@@ -2,6 +2,7 @@ package com.galgothstudio.backend.project.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -29,6 +30,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -62,9 +64,17 @@ class MobGeometryControllerTest {
 		entityManager.flush();
 	}
 
+	/** Ticket 085 -- `sub` constante para el archivo completo, mismo patrón que {@link ProjectControllerTest}. */
+	private static final String OWNER_ID = "4635300a-5049-4cd5-933d-a37b807c83b0";
+
+	private static RequestPostProcessor authenticated() {
+		return jwt().jwt(builder -> builder.subject(OWNER_ID));
+	}
+
+	/** Ticket 085 -- `owner_ref` real (084) para que el guard de acceso reconozca a {@code OWNER_ID} como dueño. */
 	private UUID aProject() {
 		UUID id = UUID.randomUUID();
-		jdbc.update("insert into projects (id, name) values (?, ?)", id, "Galgoth");
+		jdbc.update("insert into projects (id, name, owner_ref) values (?, ?, ?)", id, "Galgoth", OWNER_ID);
 		return id;
 	}
 
@@ -93,7 +103,7 @@ class MobGeometryControllerTest {
 	}
 
 	private void seedDraft(UUID mobId, String modelJson) throws Exception {
-		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId)
+		mockMvc.perform(patch("/api/mobs/{mobId}/draft", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("{\"model\":" + modelJson + "}"))
 				.andExpect(status().isOk());
@@ -111,7 +121,7 @@ class MobGeometryControllerTest {
 		seedDraft(mobId, fixtureJson());
 		String operations = "[{\"op\":\"resizeCuboid\",\"target\":\"head_main\",\"scale\":[1.5,1.5,1.5]}]";
 
-		MvcResult result = mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId)
+		MvcResult result = mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(applyRequestBody(operations, false)))
 				.andExpect(status().isOk())
@@ -137,7 +147,7 @@ class MobGeometryControllerTest {
 		seedDraft(mobId, fixtureJsonWithHeadNorthPainted());
 		String operations = "[{\"op\":\"resizeCuboid\",\"target\":\"head_main\",\"scale\":[2,2,2]}]";
 
-		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(applyRequestBody(operations, false)))
 				.andExpect(status().isConflict())
@@ -159,7 +169,7 @@ class MobGeometryControllerTest {
 		seedDraft(mobId, fixtureJsonWithHeadNorthPainted());
 		String operations = "[{\"op\":\"resizeCuboid\",\"target\":\"head_main\",\"scale\":[2,2,2]}]";
 
-		MvcResult result = mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId)
+		MvcResult result = mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(applyRequestBody(operations, true)))
 				.andExpect(status().isOk())
@@ -180,7 +190,7 @@ class MobGeometryControllerTest {
 		String operations = "[{\"op\":\"createCuboid\",\"tempId\":\"tmp-1\",\"name\":\"nuevo\",\"boneId\":\"head\","
 				+ "\"from\":[-1,0,-1],\"to\":[1,2,1],\"origin\":[0,1,0],\"rotation\":[0,0,0]}]";
 
-		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(applyRequestBody(operations, false)))
 				.andExpect(status().isOk())
@@ -195,7 +205,7 @@ class MobGeometryControllerTest {
 		seedDraft(mobId, fixtureJson());
 		String operations = "[{\"op\":\"removeCuboid\",\"target\":\"arm_right_upper\"}]";
 
-		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(applyRequestBody(operations, false)))
 				.andExpect(status().isOk())
@@ -212,7 +222,7 @@ class MobGeometryControllerTest {
 		String operations = "[{\"op\":\"createCuboid\",\"tempId\":\"tmp-1\",\"name\":\"gigante\",\"boneId\":\"head\","
 				+ "\"from\":[-100,-100,-100],\"to\":[100,100,100],\"origin\":[0,0,0],\"rotation\":[0,0,0]}]";
 
-		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(applyRequestBody(operations, false)))
 				.andExpect(status().isBadRequest())
@@ -229,7 +239,7 @@ class MobGeometryControllerTest {
 		seedDraft(mobId, fixtureJson());
 		String operations = "[" + operationJson + "]";
 
-		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(applyRequestBody(operations, false)))
 				.andExpect(status().isBadRequest())
@@ -249,7 +259,7 @@ class MobGeometryControllerTest {
 	void applyDeUnMobInexistente_responde404MobNotFound() throws Exception {
 		String operations = "[{\"op\":\"resizeCuboid\",\"target\":\"head_main\",\"scale\":[1.5,1.5,1.5]}]";
 
-		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", UUID.randomUUID())
+		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", UUID.randomUUID()).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(applyRequestBody(operations, false)))
 				.andExpect(status().isNotFound())
@@ -261,7 +271,7 @@ class MobGeometryControllerTest {
 		UUID mobId = aMob(aProject());
 		String operations = "[{\"op\":\"resizeCuboid\",\"target\":\"head_main\",\"scale\":[1.5,1.5,1.5]}]";
 
-		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId)
+		mockMvc.perform(post("/api/mobs/{mobId}/geometry/apply", mobId).with(authenticated())
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(applyRequestBody(operations, false)))
 				.andExpect(status().isNotFound())

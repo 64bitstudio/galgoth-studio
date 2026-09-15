@@ -1,6 +1,7 @@
 package com.galgothstudio.backend.project.thumbnail;
 
 import com.galgothstudio.backend.asset.AssetStorageService;
+import com.galgothstudio.backend.project.access.ProjectAccessGuard;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
 import com.galgothstudio.backend.project.persistence.MobEntity;
 import com.galgothstudio.backend.project.persistence.MobRepository;
@@ -31,10 +32,12 @@ public class ThumbnailService {
 
 	private final MobRepository mobRepository;
 	private final AssetStorageService assetStorageService;
+	private final ProjectAccessGuard projectAccessGuard;
 
-	public ThumbnailService(MobRepository mobRepository, AssetStorageService assetStorageService) {
+	public ThumbnailService(MobRepository mobRepository, AssetStorageService assetStorageService, ProjectAccessGuard projectAccessGuard) {
 		this.mobRepository = mobRepository;
 		this.assetStorageService = assetStorageService;
+		this.projectAccessGuard = projectAccessGuard;
 	}
 
 	private static String keyFor(UUID mobId) {
@@ -46,15 +49,30 @@ public class ThumbnailService {
 		return "/api/mobs/" + mobId + "/thumbnail";
 	}
 
+	/** Ticket 085 -- mutación, exige dueño real. */
 	@Transactional
-	public void upload(UUID mobId, byte[] pngBytes) {
+	public void upload(UUID mobId, String callerId, byte[] pngBytes) {
 		MobEntity mob = mobRepository.findById(mobId).orElseThrow(() -> new MobNotFoundException(mobId));
+		projectAccessGuard.requireOwner(mob.getProjectId(), callerId);
 		assetStorageService.put(keyFor(mobId), pngBytes, CONTENT_TYPE_PNG);
 		mob.setThumbnailKey(servablePathFor(mobId));
 		mob.setUpdatedAt(Instant.now());
 		mobRepository.save(mob);
 	}
 
+	/**
+	 * Ticket 085 -- deliberadamente SIN enforcement (a diferencia de
+	 * {@link #upload}): el frontend renderiza el thumbnail vía
+	 * {@code <img :src="...">} directo (dashboard, tarjetas de
+	 * proyecto/mob, pantalla de exportación) -- un `<img>` del navegador
+	 * nunca puede mandar `Authorization: Bearer`. Protegerlo rompería el
+	 * thumbnail de CUALQUIER proyecto privado para su propio dueño (todos
+	 * los proyectos nacen privados, ticket 084). VoBo explícito de Marco:
+	 * queda como un asset servido por id no adivinable (mismo criterio de
+	 * confianza que una URL firmada), hasta un ticket de seguimiento que
+	 * reescriba la carga de imágenes en el frontend (fetch autenticado +
+	 * blob URL) -- fuera de alcance de este ticket ("nada de frontend").
+	 */
 	@Transactional(readOnly = true)
 	public Optional<byte[]> download(UUID mobId) {
 		if (mobRepository.findById(mobId).isEmpty()) {
