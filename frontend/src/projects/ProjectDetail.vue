@@ -377,12 +377,14 @@ function cancelDeleteProject(): void {
   pendingDeleteProject.value = false
 }
 
-/** Ticket 071 -- "Inicio" ya NO es sinónimo de "Mis proyectos": navega a "/" (HomeView.vue), no a este dashboard. */
+/** Ticket 071 -- "Inicio" ya NO es sinónimo de "Mis proyectos": navega a "/" (HomeView.vue), no a este dashboard. Ticket 088 -- "Explorar" ya navega de verdad. */
 function handleSidebarSelect(key: GSidebarKey): void {
   if (key === 'home') {
     router.push('/')
   } else if (key === 'projects') {
     router.push('/projects')
+  } else if (key === 'explore') {
+    router.push('/explore')
   }
 }
 </script>

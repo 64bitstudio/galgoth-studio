@@ -34,6 +34,7 @@ function testRouter(): Router {
     routes: [
       { path: '/', component: { template: '<div />' } },
       { path: '/projects', component: { template: '<div />' } },
+      { path: '/explore', component: { template: '<div />' } }, // ticket 088
       { path: '/projects/:id', component: { template: '<div />' } },
     ],
   })
@@ -309,5 +310,18 @@ describe('ProjectsDashboard.vue', () => {
     expect(pushSpy).toHaveBeenNthCalledWith(1, '/')
     expect(pushSpy).toHaveBeenNthCalledWith(2, '/projects')
     expect(pushSpy).toHaveBeenCalledTimes(2)
+  })
+
+  // Ticket 088 -- "Explorar" ya navega de verdad (antes era un no-op).
+  it('ticket 088 -- sidebar: "Explorar" navega a /explore', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])))
+    const router = testRouter()
+    const pushSpy = vi.spyOn(router, 'push')
+    const wrapper = mount(ProjectsDashboard, { global: { plugins: [router] } })
+    await flushPromises()
+
+    await wrapper.findAll('.g-sidebar__item')[2]!.trigger('click') // Explorar
+
+    expect(pushSpy).toHaveBeenCalledWith('/explore')
   })
 })

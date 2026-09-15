@@ -176,12 +176,14 @@ function openProject(projectId: string): void {
   router.push(`/projects/${projectId}`)
 }
 
-/** Ticket 071 -- "Inicio" ya NO es sinónimo de "Mis proyectos": navega a "/" (HomeView.vue), no a este dashboard. "Explorar"/"Plantillas" no tienen pantalla todavía (no-op deliberado). */
+/** Ticket 071 -- "Inicio" ya NO es sinónimo de "Mis proyectos": navega a "/" (HomeView.vue), no a este dashboard. Ticket 088 -- "Explorar" ya navega de verdad; "Plantillas" sigue sin pantalla (no-op deliberado). */
 function handleSidebarSelect(key: GSidebarKey): void {
   if (key === 'home') {
     router.push('/')
   } else if (key === 'projects') {
     router.push('/projects')
+  } else if (key === 'explore') {
+    router.push('/explore')
   }
 }
 </script>

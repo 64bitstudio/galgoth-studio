@@ -89,6 +89,11 @@ export function listProjects(): Promise<ProjectSummary[]> {
   return request<ProjectSummary[]>('/api/projects')
 }
 
+/** Ticket 088 -- HU-5, Explorar: proyectos PUBLIC de cualquier dueño, `permitAll()` en el backend. `request()` sigue usando `authenticatedFetch`, que simplemente no adjunta `Authorization` sin sesión (mismo mecanismo, ningún cliente HTTP nuevo). */
+export function listExploreProjects(): Promise<ProjectSummary[]> {
+  return request<ProjectSummary[]>('/api/explore/projects')
+}
+
 export function getProject(id: string): Promise<ProjectDetail> {
   return request<ProjectDetail>(`/api/projects/${id}`)
 }

@@ -56,6 +56,18 @@ const router = createRouter({
       component: () => import('../projects/ProjectDetail.vue'),
     },
     {
+      // Ticket 088, HU-5: galería pública, sin `meta.requiresAuth` a propósito -- mismo criterio que `project-detail`.
+      path: '/explore',
+      name: 'explore',
+      component: () => import('../explore/ExploreView.vue'),
+    },
+    {
+      // Ticket 088, HU-6: ficha pública de un proyecto ajeno, modo lectura -- sin `meta.requiresAuth`.
+      path: '/explore/:id',
+      name: 'explore-project-detail',
+      component: () => import('../explore/ExploreProjectDetail.vue'),
+    },
+    {
       // Ticket 027: wizard de generación IA, HU-10 -- pasos "Generación"/"Resultado"
       // son shells visuales sin job real todavía (VoBo del PO, 029/030 los conectan).
       path: '/projects/:projectId/mobs/new-ai',

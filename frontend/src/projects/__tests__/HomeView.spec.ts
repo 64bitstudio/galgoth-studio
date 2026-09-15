@@ -49,6 +49,7 @@ function testRouter(): Router {
     routes: [
       { path: '/', component: HomeView },
       { path: '/projects', component: { template: '<div />' } },
+      { path: '/explore', component: { template: '<div />' } }, // ticket 088
       { path: '/projects/:id', component: { template: '<div />' } },
       { path: '/projects/:projectId/mobs/new-ai', component: { template: '<div />' } },
       { path: '/projects/:projectId/mobs/:mobId/edit', component: { template: '<div />' } },
@@ -262,5 +263,18 @@ describe('HomeView.vue', () => {
     await wrapper.findAll('.g-sidebar__item')[1]!.trigger('click')
 
     expect(pushSpy).toHaveBeenCalledWith('/projects')
+  })
+
+  // Ticket 088 -- "Explorar" ya navega de verdad (antes era un no-op).
+  it('ticket 088 -- sidebar: "Explorar" navega a /explore', async () => {
+    vi.stubGlobal('fetch', stubRecentAndProjects([], []))
+    const router = testRouter()
+    const pushSpy = vi.spyOn(router, 'push')
+    const wrapper = mount(HomeView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    await wrapper.findAll('.g-sidebar__item')[2]!.trigger('click')
+
+    expect(pushSpy).toHaveBeenCalledWith('/explore')
   })
 })
