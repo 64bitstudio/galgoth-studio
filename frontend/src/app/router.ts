@@ -129,6 +129,15 @@ const router = createRouter({
       component: () => import('../auth/EmailChangeConfirmView.vue'),
     },
     {
+      // Ticket 094 -- ruta FIJA, mismo motivo: auth-core-mc#056 ya construye
+      // el link real de "confirma tu correo" (que /register dispara) como
+      // `{origin}/verify-email/confirm?token=...`. Hallazgo real de la
+      // verificación en vivo del ticket 093 -- faltaba desde siempre.
+      path: '/verify-email/confirm',
+      name: 'verify-email-confirm',
+      component: () => import('../auth/VerifyEmailConfirmView.vue'),
+    },
+    {
       // Ticket 093 -- pantalla "Usuario" (perfil, seguridad, preferencias,
       // eliminar cuenta). Ruta FIJA: auth-core-mc#063 ya redirige de
       // vuelta acá tras vincular una cuenta social

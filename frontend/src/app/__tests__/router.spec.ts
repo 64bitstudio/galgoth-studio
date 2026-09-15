@@ -79,4 +79,11 @@ describe('router (ticket 087 -- guard de rutas autenticadas)', () => {
 
     expect(router.currentRoute.value.path).toBe('/change-email/confirm')
   })
+
+  // Ticket 094 -- mismo motivo que /change-email/confirm: el usuario todavía no tiene sesión (cuenta recién registrada).
+  it('/verify-email/confirm NO exige sesión', async () => {
+    await router.push('/verify-email/confirm?token=abc')
+
+    expect(router.currentRoute.value.path).toBe('/verify-email/confirm')
+  })
 })
