@@ -79,6 +79,8 @@ onMounted(confirm)
         <img :src="logoUrl" alt="Galgoth Studio" class="auth-view__logo" />
         <h1 class="auth-view__title">No se pudo confirmar</h1>
         <p class="auth-view__message">{{ error }}</p>
+        <!-- Ticket 079: reenviar exige un userId real (mismo criterio de "confianza temporal" de auth-core-mc que /verify-email/request ya documenta) -- inalcanzable desde acá sin sesión. Iniciar sesión ya funciona sin correo verificado (decisión explícita del ticket), y ahí puede reenviarlo desde "Usuario". -->
+        <p class="auth-view__message">Inicia sesión para pedir un correo de verificación nuevo desde tu perfil.</p>
         <RouterLink class="auth-view__link" to="/login">Ir a iniciar sesión</RouterLink>
       </div>
     </section>
