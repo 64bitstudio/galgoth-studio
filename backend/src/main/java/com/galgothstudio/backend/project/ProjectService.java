@@ -93,6 +93,22 @@ public class ProjectService {
 		projectRepository.save(project);
 	}
 
+	/**
+	 * Ticket 091 -- llamado por {@code PurgeAccountDataService} al eliminar
+	 * una cuenta (ticket 064 de auth-core-mc, vía el endpoint interno). Se
+	 * lleva TODOS los proyectos del dueño, públicos o privados por igual --
+	 * eliminar la cuenta no debe dejar proyectos públicos huérfanos
+	 * visibles en Explorar (decisión de Marco, docs/definiciones/perfil-de-usuario.md).
+	 */
+	@Transactional
+	public void purgeAllForOwner(String ownerId) {
+		Instant now = Instant.now();
+		for (ProjectEntity project : projectRepository.findByOwnerRefAndDeletedAtIsNullOrderByUpdatedAtDesc(ownerId)) {
+			project.setDeletedAt(now);
+			projectRepository.save(project);
+		}
+	}
+
 	@Transactional
 	public ProjectDetail duplicate(UUID projectId) {
 		ProjectEntity original = requireProject(projectId);

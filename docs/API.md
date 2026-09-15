@@ -308,6 +308,31 @@ GET    /api/mobs/{mobId}/export/bbmodel   -- descarga el .bbmodel de la última 
 - `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe.
 - `404 Not Found` (`NO_SAVED_REVISION`) si el mob nunca tuvo ninguna revisión guardada (`current_revision_number=0`) -- nada que exportar todavía.
 
+### Perfil de producto: avatar, preferencias y purga interna (ticket `091`)
+
+Ver `docs/definiciones/perfil-de-usuario.md` (VoBo de Marco) -- HU-3/HU-9 y
+la mitad de galgoth-studio de HU-10. Implementados en
+`backend/.../account/api/AccountProfileController.java`,
+`AccountAvatarController.java` (paquete `account`) e
+`backend/.../internal/InternalPurgeController.java`. Nueva tabla
+`user_profile` (`V6__user_profile.sql`) -- `user_id` es el `sub` del JWT,
+sin FK (mismo criterio que `projects.owner_ref`, ticket 084): el
+"perfil de producto" es un dato propio de galgoth-studio, no de identidad.
+
+```text
+GET    /api/account/profile              -- avatar + las 3 preferencias, requiere sesión
+PATCH  /api/account/preferences          -- guarda las 3 preferencias (siempre explícitas), requiere sesión
+POST   /api/account/avatar               -- sube MI avatar (body crudo, Content-Type real), requiere sesión
+GET    /api/account/avatar/{userId}      -- descarga el avatar de CUALQUIER usuario, público
+POST   /api/internal/users/{userId}/purge-projects  -- borra en cascada al eliminar una cuenta, servidor-a-servidor
+```
+
+- **`GET /api/account/profile`** — `401 Unauthorized` (`UNAUTHENTICATED`) sin sesión. `200 OK` con `{avatarUrl, notifyEmail, notifyProductNews, notifySaveReminders}`. Un usuario sin fila en `user_profile` todavía (nunca subió avatar ni tocó preferencias) recibe los defaults (`avatarUrl: null`, las 3 en `true`) **sin que se cree ninguna fila** -- la fila nace en el primer `PATCH`/`POST` real.
+- **`PATCH /api/account/preferences`** — body con las 3 preferencias siempre explícitas (mismo criterio que `description` en `RenameProjectRequest`, ticket 073). **No cambia ningún envío real de correo todavía** (decisión explícita del documento de definición, ticket de seguimiento aparte) -- solo persiste el valor. `200 OK` con el `UserProfileResponse` actualizado.
+- **`POST /api/account/avatar`** — mismo estilo de body crudo (sin multipart) que `MobReferenceImageController` (024): el content-type real viaja en el header HTTP `Content-Type`. Solo PNG/JPEG, máximo 5MB (menor que el límite de imágenes de referencia, 10MB -- un avatar es una foto pequeña). `400 Bad Request` (`INVALID_AVATAR`) si el formato no está soportado, el archivo excede el tamaño, o los bytes no decodifican como imagen válida. `200 OK` con `{avatarUrl}`. Reemplaza cualquier avatar anterior (bytes huérfanos en MinIO bajo la key vieja, mismo costo aceptado que ya documenta `ThumbnailService`, ticket 023).
+- **`GET /api/account/avatar/{userId}`** — deliberadamente **público, sin `Authorization`**: el avatar de un usuario debe poder mostrarse a cualquiera (ej. como autor de un proyecto público en Explorar, ticket 092), igual que el thumbnail de un mob. `404 Not Found` si el usuario no tiene avatar subido.
+- **`POST /api/internal/users/{userId}/purge-projects`** — llamado por auth-core-mc (ticket 064, eliminar cuenta) **síncronamente antes de confirmar la baja**: si esta llamada falla, la cuenta NO se elimina (decisión de Marco, "se eliminan junto con la cuenta"). Autenticado por el header `X-Internal-Secret` contra `galgoth.internal.secret` (`GALGOTH_INTERNAL_SECRET`), **nunca por JWT** -- el caller es otro backend, no un navegador con sesión de usuario; comparado en tiempo constante (`MessageDigest.isEqual`). `401 Unauthorized` (`INVALID_INTERNAL_SECRET`) si falta o no coincide, sin tocar nada. Con el secreto correcto: soft-deletea TODOS los proyectos del usuario (públicos Y privados por igual -- ningún proyecto público debe quedar huérfano visible en Explorar) y borra su fila de `user_profile`. `204 No Content`, sea o no que el usuario tuviera algo que purgar (idempotente).
+
 ## Rutas previstas (según `docs/definiciones/galgoth-studio-mvp.md`, sección 19 del master prompt)
 
 ```text
