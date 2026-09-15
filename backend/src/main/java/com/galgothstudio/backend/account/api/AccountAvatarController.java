@@ -1,7 +1,6 @@
 package com.galgothstudio.backend.account.api;
 
 import com.galgothstudio.backend.account.AvatarResponse;
-import com.galgothstudio.backend.account.StoredAvatar;
 import com.galgothstudio.backend.account.UserProfileService;
 import com.galgothstudio.backend.project.UnauthenticatedRequestException;
 import java.util.UUID;
