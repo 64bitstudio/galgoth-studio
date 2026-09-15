@@ -118,3 +118,7 @@ corregidas y re-desplegadas (commit `ac91be1`):
 confirmado sin errores de consola. Sigue pendiente la misma
 verificación visual final de Marco -- el ticket se queda en
 `in-process/` hasta su VoBo.
+
+### VoBo visual -- Marco, en DEV
+"esta bien" -- confirmado en DEV tras la ronda 2 de fixes (PR #143).
+Ticket cerrado, movido a `done/`.
