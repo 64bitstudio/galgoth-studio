@@ -47,5 +47,11 @@ el uso normal de la app en dev no podía esperar a esa secuencia.
 - `projectsApi.ts`/`mobsApi.ts` migrados a `authenticatedFetch`.
 - 6 archivos de test actualizados con `setActivePinia(createPinia())`.
   Suite completa: 765/765 en verde.
-- **Verificación en vivo**: pendiente de confirmación de Marco tras el
-  deploy de este PR.
+- **Verificación en vivo** (contra `studio-dev.galgoth.64bitstudio.com`,
+  cuenta de prueba desechable creada y luego eliminada vía SQL):
+  inicio de sesión real con `authenticatedFetch` cableado → "Inicio" ya
+  no muestra "Esta operación requiere haber iniciado sesión.", "Continuar
+  trabajando" y "Proyectos recientes" muestran su estado vacío normal
+  ("Aún no has creado ningún mob." / "Todavía no tienes proyectos.");
+  "Mis proyectos" carga sin error. Confirmado sin necesitar que Marco lo
+  revise manualmente.
