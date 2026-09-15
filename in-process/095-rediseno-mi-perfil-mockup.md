@@ -101,3 +101,20 @@ dar esto por completamente cerrado en la práctica (el ticket se archiva
 a `done/` porque el trabajo descrito está completo y verificado por
 tests/build, no porque la fidelidad visual final ya fue confirmada por
 un humano).
+
+### Ronda 2 -- 4 hallazgos reales de Marco (PR #143, mergeado)
+Tras revisar PR #141 en DEV, Marco reportó 4 cosas puntuales, todas
+corregidas y re-desplegadas (commit `ac91be1`):
+1. Faltaban los logos de Google/Facebook en "Cuentas conectadas" --
+   `IconGoogle.vue`/`IconFacebook.vue` nuevos.
+2. Faltaban íconos de navegador en "Sesiones activas" -- 5 íconos de
+   marca nuevos (Chrome/Safari/Firefox/Edge/Opera) + fallback genérico.
+3. El contenido no ocupaba todo el ancho disponible -- se quitó el
+   `max-width: 960px` de `.user-view`.
+4. Los botones de Seguridad se veían recortados en `:hover` -- se
+   agregó padding horizontal con margin negativo a juego.
+
+875 tests en verde (2 nuevos), build y lint verdes, deploy a DEV
+confirmado sin errores de consola. Sigue pendiente la misma
+verificación visual final de Marco -- el ticket se queda en
+`in-process/` hasta su VoBo.
