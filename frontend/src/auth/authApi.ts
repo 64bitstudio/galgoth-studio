@@ -98,6 +98,19 @@ export function confirmEmailChange(token: string): Promise<void> {
   return requestJson<void>('/api/v1/change-email/confirm', { token }, false)
 }
 
+/**
+ * Hallazgo real (verificación en vivo de ticket 093): `/register` manda
+ * un correo de confirmación cuyo link apunta a `/verify-email/confirm?
+ * token=...` (mismo mecanismo de ticket 056 que ya usan `/change-email/
+ * confirm` y `/password-reset/confirm`), pero nunca existió la función/
+ * vista que lo consume -- una cuenta nueva no podía confirmar su correo
+ * desde la UI. `/api/v1/verify-email/confirm` tampoco exige `X-Client-Id`
+ * (mismo criterio que los otros `/confirm`, el token ya identifica todo).
+ */
+export function confirmEmailVerification(token: string): Promise<void> {
+  return requestJson<void>('/api/v1/verify-email/confirm', { token }, false)
+}
+
 async function requestJson<T>(path: string, body: unknown, withClientId = true): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (withClientId) {
