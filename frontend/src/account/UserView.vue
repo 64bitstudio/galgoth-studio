@@ -1,12 +1,22 @@
 <script setup lang="ts">
 /**
  * Pantalla "Usuario" (ticket 093, cierre de "Mi Perfil" del lado del
- * frontend) -- cabecera + Información personal + Cuentas conectadas +
- * Seguridad + Preferencias + Zona de peligro, cada sección conectada a
- * su endpoint real: auth-core-mc (`accountApi.ts`, tickets 060-064) y
- * el "perfil de producto" propio de galgoth-studio (`productProfileApi.ts`,
+ * frontend; ticket 095, rediseño para apegarse al mockup original) --
+ * cabecera + Información personal + Cuentas conectadas + Seguridad +
+ * Preferencias + Zona de peligro, cada sección conectada a su endpoint
+ * real: auth-core-mc (`accountApi.ts`, tickets 060-064, 069, 070) y el
+ * "perfil de producto" propio de galgoth-studio (`productProfileApi.ts`,
  * ticket 091). Sin datos de relleno -- cada dato que se muestra viene de
  * una llamada real.
+ *
+ * Ticket 095 -- 3 cambios de interacción sobre el 093, decididos por
+ * Marco vía `AskUserQuestion` (nunca asumidos): (1) "Cambiar contraseña"
+ * y "Sesiones activas" pasan de formularios/listas inline a modales
+ * aparte (`ChangePasswordModal.vue`/`SessionsModal.vue`), layout de 2
+ * columnas; (2) Nombre/Apellidos siguen siendo 2 campos separados (no se
+ * fusionan, evita tocar el modelo de datos de auth-core-mc); (3) cada
+ * proveedor conectado gana un menú "···" (`GMenu.vue`) con "Desvincular"
+ * (backend nuevo de auth-core-mc#069).
  *
  * "Verificación en dos pasos" y "Tema oscuro" se muestran deshabilitados
  * con indicación explícita ("Próximamente"/"Sin tema claro todavía") --
@@ -15,7 +25,7 @@
  * tiene tema claro implementado, así que ese toggle no tendría ningún
  * efecto real todavía.
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as accountApi from '../auth/accountApi'
 import { requestEmailChange, requestEmailVerification } from '../auth/authApi'
@@ -29,9 +39,18 @@ import { avatarUrl } from '../api/apiConfig'
 import ConfirmDialog from '../design-system/components/ConfirmDialog.vue'
 import GButton from '../design-system/components/GButton.vue'
 import GPanel from '../design-system/components/GPanel.vue'
+import GMenu, { type GMenuItem } from '../design-system/components/GMenu.vue'
 import GSidebar, { type GSidebarKey } from '../design-system/components/GSidebar.vue'
+import IconCalendar from '../design-system/icons/IconCalendar.vue'
 import IconChevron from '../design-system/icons/IconChevron.vue'
+import IconDevice from '../design-system/icons/IconDevice.vue'
+import IconLink from '../design-system/icons/IconLink.vue'
+import IconLock from '../design-system/icons/IconLock.vue'
+import IconShield from '../design-system/icons/IconShield.vue'
+import IconTrash from '../design-system/icons/IconTrash.vue'
 import ChangeEmailModal from './ChangeEmailModal.vue'
+import ChangePasswordModal from './ChangePasswordModal.vue'
+import SessionsModal from './SessionsModal.vue'
 import DeleteAccountDialog from './DeleteAccountDialog.vue'
 
 const route = useRoute()
@@ -157,9 +176,17 @@ const personalForm = ref({ nombre: '', apellidos: '', country: '', username: '' 
 const personalBusy = ref(false)
 const personalError = ref<string | null>(null)
 const personalSaved = ref(false)
+const nombreInputEl = ref<HTMLInputElement>()
 
 function syncPersonalForm(user: RegisteredUser): void {
   personalForm.value = { nombre: user.nombre, apellidos: user.apellidos, country: user.country ?? '', username: user.username ?? '' }
+}
+
+/** Botón "Editar perfil" de la cabecera -- la edición ya vive inline en "Información personal", esto solo lleva el foco ahí (sin duplicar el formulario en otro lado). */
+function focusPersonalInfo(): void {
+  // `scrollIntoView` no existe en jsdom (entorno de tests) -- nunca debe romper el foco real en el navegador.
+  nombreInputEl.value?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+  nextTick(() => nombreInputEl.value?.focus())
 }
 
 async function savePersonalInfo(): Promise<void> {
@@ -233,27 +260,24 @@ async function resendVerificationEmail(): Promise<void> {
   }
 }
 
-// -- Contraseña -----------------------------------------------------------
-const currentPassword = ref('')
-const newPassword = ref('')
+// -- Contraseña (ticket 095: modal aparte en vez de formulario inline) ----
+const showPasswordModal = ref(false)
 const passwordBusy = ref(false)
 const passwordError = ref<string | null>(null)
 const passwordSaved = ref(false)
 
-async function savePassword(): Promise<void> {
+async function savePassword(payload: { currentPassword: string; newPassword: string }): Promise<void> {
   if (passwordBusy.value || !authProfile.value) {
     return
   }
   passwordBusy.value = true
   passwordError.value = null
-  passwordSaved.value = false
   try {
     const updated = authProfile.value.hasPassword
-      ? await accountApi.changePassword(currentPassword.value, newPassword.value)
-      : await accountApi.setPassword(newPassword.value)
+      ? await accountApi.changePassword(payload.currentPassword, payload.newPassword)
+      : await accountApi.setPassword(payload.newPassword)
     authProfile.value = updated
-    currentPassword.value = ''
-    newPassword.value = ''
+    showPasswordModal.value = false
     passwordSaved.value = true
   } catch (error) {
     passwordError.value = error instanceof ApiError ? error.message : 'No se pudo actualizar la contraseña.'
@@ -264,6 +288,7 @@ async function savePassword(): Promise<void> {
 
 // -- Cuentas conectadas ---------------------------------------------------
 const linkingProvider = ref<string | null>(null)
+const unlinkingProvider = ref<string | null>(null)
 const linkError = ref<string | null>(null)
 
 async function connectProvider(provider: 'google' | 'facebook'): Promise<void> {
@@ -281,7 +306,35 @@ async function connectProvider(provider: 'google' | 'facebook'): Promise<void> {
   }
 }
 
-// -- Sesiones activas ---------------------------------------------------
+/** Ticket 095 / auth-core-mc#069 -- "Desvincular" del menú "···" de cada proveedor ya vinculado. */
+async function unlinkProviderAction(provider: string): Promise<void> {
+  if (unlinkingProvider.value) {
+    return
+  }
+  unlinkingProvider.value = provider
+  linkError.value = null
+  try {
+    await accountApi.unlinkProvider(provider)
+    providers.value = providers.value.map((p) => (p.provider === provider ? { ...p, linked: false } : p))
+  } catch (error) {
+    linkError.value = error instanceof ApiError ? error.message : 'No se pudo desvincular la cuenta.'
+  } finally {
+    unlinkingProvider.value = null
+  }
+}
+
+function providerMenuItems(): GMenuItem[] {
+  return [{ key: 'unlink', label: 'Desvincular', icon: IconTrash, danger: true }]
+}
+
+function handleProviderMenuSelect(provider: string, key: string): void {
+  if (key === 'unlink') {
+    unlinkProviderAction(provider)
+  }
+}
+
+// -- Sesiones activas (ticket 095: modal aparte en vez de sub-lista inline) --
+const showSessionsModal = ref(false)
 const revokingSessionId = ref<string | null>(null)
 const sessionsError = ref<string | null>(null)
 
@@ -388,8 +441,9 @@ async function confirmDeleteAccount(): Promise<void> {
       <template v-else-if="authProfile">
         <p v-if="linkBanner" class="user-view__banner">{{ linkBanner }}</p>
         <p v-if="changeEmailSent" class="user-view__banner">Te mandamos un link de confirmación a {{ changeEmailSent }}. Revisa esa bandeja para completar el cambio.</p>
+        <p v-if="passwordSaved" class="user-view__banner">Contraseña actualizada.</p>
 
-        <div class="user-view__header">
+        <GPanel elevated class="user-view__header">
           <button type="button" class="user-view__avatar" aria-label="Cambiar foto de perfil" :disabled="avatarBusy" @click="openAvatarPicker">
             <img v-if="avatarUrl(productProfile?.avatarUrl ?? null)" :src="avatarUrl(productProfile?.avatarUrl ?? null)!" alt="" />
             <span v-else class="user-view__avatar-initial" aria-hidden="true">{{ avatarInitial }}</span>
@@ -401,162 +455,171 @@ async function confirmDeleteAccount(): Promise<void> {
               <span class="user-view__badge">Creador</span>
             </div>
             <p class="user-view__meta">{{ authProfile.email ?? authProfile.phone }}</p>
-            <p v-if="memberSince" class="user-view__meta">Miembro desde {{ memberSince }}</p>
+            <p v-if="memberSince" class="user-view__meta user-view__meta--icon"><IconCalendar :size="14" />Miembro desde {{ memberSince }}</p>
           </div>
-        </div>
+          <div class="user-view__header-actions">
+            <GButton variant="secondary" @click="focusPersonalInfo">Editar perfil</GButton>
+            <GButton variant="primary" :disabled="avatarBusy" @click="openAvatarPicker">{{ avatarBusy ? 'Subiendo…' : 'Cambiar foto' }}</GButton>
+          </div>
+        </GPanel>
         <p v-if="avatarError" class="user-view__error">{{ avatarError }}</p>
 
-        <!-- Información personal -->
-        <GPanel class="user-view__section">
-          <h2 class="user-view__section-title">Información personal</h2>
-          <div class="user-view__grid">
-            <label class="user-view__field">
-              Nombre
-              <input v-model="personalForm.nombre" type="text" class="user-view__input" aria-label="Nombre" />
-            </label>
-            <label class="user-view__field">
-              Apellidos
-              <input v-model="personalForm.apellidos" type="text" class="user-view__input" aria-label="Apellidos" />
-            </label>
-            <label class="user-view__field">
-              País / Región
-              <input v-model="personalForm.country" type="text" class="user-view__input" aria-label="País o región" />
-            </label>
-            <label class="user-view__field">
-              Nombre de usuario
-              <input v-model="personalForm.username" type="text" class="user-view__input" aria-label="Nombre de usuario" />
-            </label>
+        <div class="user-view__columns">
+          <div class="user-view__column">
+            <!-- Información personal -->
+            <GPanel class="user-view__section">
+              <h2 class="user-view__section-title">Información personal</h2>
+              <div class="user-view__grid">
+                <label class="user-view__field">
+                  Nombre
+                  <input ref="nombreInputEl" v-model="personalForm.nombre" type="text" class="user-view__input" aria-label="Nombre" />
+                </label>
+                <label class="user-view__field">
+                  Apellidos
+                  <input v-model="personalForm.apellidos" type="text" class="user-view__input" aria-label="Apellidos" />
+                </label>
+                <label class="user-view__field">
+                  País / Región
+                  <input v-model="personalForm.country" type="text" class="user-view__input" aria-label="País o región" />
+                </label>
+                <label class="user-view__field">
+                  Nombre de usuario
+                  <input v-model="personalForm.username" type="text" class="user-view__input" aria-label="Nombre de usuario" />
+                </label>
+              </div>
+              <div class="user-view__field user-view__field--email">
+                <span class="user-view__field-label">Correo</span>
+                <div class="user-view__email-row">
+                  <span class="user-view__email-value">
+                    <span>{{ authProfile.email ?? 'Sin correo' }}</span>
+                    <span
+                      v-if="authProfile.email"
+                      class="user-view__badge"
+                      :class="authProfile.emailVerified ? 'user-view__badge--verified' : 'user-view__badge--unverified'"
+                    >
+                      {{ authProfile.emailVerified ? 'Verificado' : 'Sin verificar' }}
+                    </span>
+                  </span>
+                  <GButton variant="ghost" @click="showChangeEmail = true">Cambiar</GButton>
+                </div>
+                <!-- Ticket 079: solo tiene sentido reenviar si hay un correo real y todavía no está verificado. -->
+                <div v-if="authProfile.email && !authProfile.emailVerified" class="user-view__verify-row">
+                  <p v-if="resendVerificationSent" class="user-view__success">Te enviamos un correo nuevo de verificación.</p>
+                  <template v-else>
+                    <GButton variant="ghost" :disabled="resendVerificationBusy" @click="resendVerificationEmail">
+                      {{ resendVerificationBusy ? 'Enviando…' : 'Reenviar correo de verificación' }}
+                    </GButton>
+                    <p v-if="resendVerificationError" class="user-view__error">{{ resendVerificationError }}</p>
+                  </template>
+                </div>
+              </div>
+              <p v-if="personalError" class="user-view__error">{{ personalError }}</p>
+              <p v-if="personalSaved" class="user-view__success">Información guardada.</p>
+              <GButton variant="primary" :disabled="personalBusy" @click="savePersonalInfo">{{ personalBusy ? 'Guardando…' : 'Guardar cambios' }}</GButton>
+            </GPanel>
+
+            <!-- Cuentas conectadas -->
+            <GPanel class="user-view__section">
+              <h2 class="user-view__section-title"><IconLink :size="16" />Cuentas conectadas</h2>
+              <p v-if="linkError" class="user-view__error">{{ linkError }}</p>
+              <ul class="user-view__list">
+                <li v-for="provider in providers" :key="provider.provider" class="user-view__row">
+                  <span>{{ providerLabel(provider.provider) }}</span>
+                  <template v-if="provider.linked">
+                    <span v-if="unlinkingProvider === provider.provider" class="user-view__pending">Desvinculando…</span>
+                    <div v-else class="user-view__row-actions">
+                      <span class="user-view__pill user-view__pill--linked">Vinculada</span>
+                      <GMenu :items="providerMenuItems()" :label="`Acciones de ${providerLabel(provider.provider)}`" @select="(key) => handleProviderMenuSelect(provider.provider, key)" />
+                    </div>
+                  </template>
+                  <GButton v-else variant="secondary" :disabled="linkingProvider !== null" @click="connectProvider(provider.provider.toLowerCase() as 'google' | 'facebook')">
+                    {{ linkingProvider === provider.provider.toLowerCase() ? 'Redirigiendo…' : 'Conectar' }}
+                  </GButton>
+                </li>
+              </ul>
+            </GPanel>
           </div>
-          <div class="user-view__field user-view__field--email">
-            <span class="user-view__field-label">Correo</span>
-            <div class="user-view__email-row">
-              <span class="user-view__email-value">
-                <span>{{ authProfile.email ?? 'Sin correo' }}</span>
-                <span
-                  v-if="authProfile.email"
-                  class="user-view__badge"
-                  :class="authProfile.emailVerified ? 'user-view__badge--verified' : 'user-view__badge--unverified'"
-                >
-                  {{ authProfile.emailVerified ? 'Verificado' : 'Sin verificar' }}
+
+          <div class="user-view__column">
+            <!-- Seguridad -->
+            <GPanel class="user-view__section">
+              <h2 class="user-view__section-title">Seguridad</h2>
+
+              <button type="button" class="user-view__action-row" @click="showPasswordModal = true">
+                <IconLock :size="18" class="user-view__row-icon" />
+                <span class="user-view__action-row-text">
+                  <span>{{ authProfile.hasPassword ? 'Cambiar contraseña' : 'Establecer contraseña' }}</span>
+                  <span class="user-view__action-row-subtitle">Actualiza tu contraseña de acceso</span>
                 </span>
-              </span>
-              <GButton variant="ghost" @click="showChangeEmail = true">Cambiar</GButton>
-            </div>
-            <!-- Ticket 079: solo tiene sentido reenviar si hay un correo real y todavía no está verificado. -->
-            <div v-if="authProfile.email && !authProfile.emailVerified" class="user-view__verify-row">
-              <p v-if="resendVerificationSent" class="user-view__success">Te enviamos un correo nuevo de verificación.</p>
-              <template v-else>
-                <GButton variant="ghost" :disabled="resendVerificationBusy" @click="resendVerificationEmail">
-                  {{ resendVerificationBusy ? 'Enviando…' : 'Reenviar correo de verificación' }}
-                </GButton>
-                <p v-if="resendVerificationError" class="user-view__error">{{ resendVerificationError }}</p>
-              </template>
-            </div>
-          </div>
-          <p v-if="personalError" class="user-view__error">{{ personalError }}</p>
-          <p v-if="personalSaved" class="user-view__success">Información guardada.</p>
-          <GButton variant="primary" :disabled="personalBusy" @click="savePersonalInfo">{{ personalBusy ? 'Guardando…' : 'Guardar cambios' }}</GButton>
-        </GPanel>
+                <span class="user-view__action-row-cta">Cambiar →</span>
+              </button>
 
-        <!-- Cuentas conectadas -->
-        <GPanel class="user-view__section">
-          <h2 class="user-view__section-title">Cuentas conectadas</h2>
-          <p v-if="linkError" class="user-view__error">{{ linkError }}</p>
-          <ul class="user-view__list">
-            <li v-for="provider in providers" :key="provider.provider" class="user-view__row">
-              <span>{{ providerLabel(provider.provider) }}</span>
-              <span v-if="provider.linked" class="user-view__pill user-view__pill--linked">Conectada</span>
-              <GButton v-else variant="secondary" :disabled="linkingProvider !== null" @click="connectProvider(provider.provider.toLowerCase() as 'google' | 'facebook')">
-                {{ linkingProvider === provider.provider.toLowerCase() ? 'Redirigiendo…' : 'Conectar' }}
-              </GButton>
-            </li>
-          </ul>
-        </GPanel>
+              <div class="user-view__row user-view__row--disabled">
+                <IconShield :size="18" class="user-view__row-icon" />
+                <span class="user-view__action-row-text"><span>Verificación en dos pasos</span></span>
+                <span class="user-view__pill">Próximamente</span>
+              </div>
 
-        <!-- Seguridad -->
-        <GPanel class="user-view__section">
-          <h2 class="user-view__section-title">Seguridad</h2>
+              <button type="button" class="user-view__action-row" @click="showSessionsModal = true">
+                <IconDevice :size="18" class="user-view__row-icon" />
+                <span class="user-view__action-row-text">
+                  <span>Sesiones activas</span>
+                  <span class="user-view__action-row-subtitle">{{ sessions.length }} {{ sessions.length === 1 ? 'sesión' : 'sesiones' }}</span>
+                </span>
+                <span class="user-view__action-row-cta">Ver sesiones →</span>
+              </button>
+            </GPanel>
 
-          <h3 class="user-view__subsection-title">{{ authProfile.hasPassword ? 'Cambiar contraseña' : 'Establecer contraseña' }}</h3>
-          <div class="user-view__grid">
-            <label v-if="authProfile.hasPassword" class="user-view__field">
-              Contraseña actual
-              <input v-model="currentPassword" type="password" class="user-view__input" autocomplete="current-password" aria-label="Contraseña actual" />
-            </label>
-            <label class="user-view__field">
-              Nueva contraseña
-              <input v-model="newPassword" type="password" class="user-view__input" autocomplete="new-password" minlength="8" aria-label="Nueva contraseña" />
-            </label>
+            <!-- Preferencias -->
+            <GPanel class="user-view__section">
+              <h2 class="user-view__section-title">Preferencias</h2>
+              <p v-if="preferencesError" class="user-view__error">{{ preferencesError }}</p>
+              <div v-if="productProfile" class="user-view__row">
+                <span>Notificaciones por correo</span>
+                <button
+                  type="button"
+                  aria-label="Notificaciones por correo"
+                  class="user-view__switch"
+                  :class="{ 'user-view__switch--on': productProfile.notifyEmail }"
+                  role="switch"
+                  :aria-checked="productProfile.notifyEmail"
+                  :disabled="preferencesBusy"
+                  @click="togglePreference('notifyEmail')"
+                ></button>
+              </div>
+              <div v-if="productProfile" class="user-view__row">
+                <span>Novedades del producto</span>
+                <button
+                  type="button"
+                  aria-label="Novedades del producto"
+                  class="user-view__switch"
+                  :class="{ 'user-view__switch--on': productProfile.notifyProductNews }"
+                  role="switch"
+                  :aria-checked="productProfile.notifyProductNews"
+                  :disabled="preferencesBusy"
+                  @click="togglePreference('notifyProductNews')"
+                ></button>
+              </div>
+              <div v-if="productProfile" class="user-view__row">
+                <span>Recordatorios de guardado</span>
+                <button
+                  type="button"
+                  aria-label="Recordatorios de guardado"
+                  class="user-view__switch"
+                  :class="{ 'user-view__switch--on': productProfile.notifySaveReminders }"
+                  role="switch"
+                  :aria-checked="productProfile.notifySaveReminders"
+                  :disabled="preferencesBusy"
+                  @click="togglePreference('notifySaveReminders')"
+                ></button>
+              </div>
+              <div class="user-view__row user-view__row--disabled">
+                <span>Tema oscuro</span>
+                <span class="user-view__pill">Sin tema claro todavía</span>
+              </div>
+            </GPanel>
           </div>
-          <p v-if="passwordError" class="user-view__error">{{ passwordError }}</p>
-          <p v-if="passwordSaved" class="user-view__success">Contraseña actualizada.</p>
-          <GButton variant="secondary" :disabled="passwordBusy" @click="savePassword">{{ passwordBusy ? 'Guardando…' : 'Actualizar contraseña' }}</GButton>
-
-          <div class="user-view__row user-view__row--disabled">
-            <span>Verificación en dos pasos</span>
-            <span class="user-view__pill">Próximamente</span>
-          </div>
-
-          <h3 class="user-view__subsection-title">Sesiones activas</h3>
-          <p v-if="sessionsError" class="user-view__error">{{ sessionsError }}</p>
-          <ul class="user-view__list">
-            <li v-for="s in sessions" :key="s.id" class="user-view__row">
-              <span>{{ s.browser }} · {{ s.os }}<span v-if="s.current" class="user-view__pill user-view__pill--linked">Actual</span></span>
-              <GButton v-if="!s.current" variant="ghost" :disabled="revokingSessionId === s.id" @click="revokeSession(s.id)">
-                {{ revokingSessionId === s.id ? 'Cerrando…' : 'Cerrar sesión' }}
-              </GButton>
-            </li>
-          </ul>
-        </GPanel>
-
-        <!-- Preferencias -->
-        <GPanel class="user-view__section">
-          <h2 class="user-view__section-title">Preferencias</h2>
-          <p v-if="preferencesError" class="user-view__error">{{ preferencesError }}</p>
-          <div v-if="productProfile" class="user-view__row">
-            <span>Notificaciones por correo</span>
-            <button
-              type="button"
-              aria-label="Notificaciones por correo"
-              class="user-view__switch"
-              :class="{ 'user-view__switch--on': productProfile.notifyEmail }"
-              role="switch"
-              :aria-checked="productProfile.notifyEmail"
-              :disabled="preferencesBusy"
-              @click="togglePreference('notifyEmail')"
-            ></button>
-          </div>
-          <div v-if="productProfile" class="user-view__row">
-            <span>Novedades del producto</span>
-            <button
-              type="button"
-              aria-label="Novedades del producto"
-              class="user-view__switch"
-              :class="{ 'user-view__switch--on': productProfile.notifyProductNews }"
-              role="switch"
-              :aria-checked="productProfile.notifyProductNews"
-              :disabled="preferencesBusy"
-              @click="togglePreference('notifyProductNews')"
-            ></button>
-          </div>
-          <div v-if="productProfile" class="user-view__row">
-            <span>Recordatorios de guardado</span>
-            <button
-              type="button"
-              aria-label="Recordatorios de guardado"
-              class="user-view__switch"
-              :class="{ 'user-view__switch--on': productProfile.notifySaveReminders }"
-              role="switch"
-              :aria-checked="productProfile.notifySaveReminders"
-              :disabled="preferencesBusy"
-              @click="togglePreference('notifySaveReminders')"
-            ></button>
-          </div>
-          <div class="user-view__row user-view__row--disabled">
-            <span>Tema oscuro</span>
-            <span class="user-view__pill">Sin tema claro todavía</span>
-          </div>
-        </GPanel>
+        </div>
 
         <!-- Zona de peligro -->
         <GPanel class="user-view__section user-view__section--danger">
@@ -575,6 +638,28 @@ async function confirmDeleteAccount(): Promise<void> {
 
     <Transition name="app-dialog">
       <ChangeEmailModal v-if="showChangeEmail" :busy="changeEmailBusy" :error="changeEmailError" @confirm="confirmChangeEmail" @cancel="showChangeEmail = false" />
+    </Transition>
+
+    <Transition name="app-dialog">
+      <ChangePasswordModal
+        v-if="showPasswordModal"
+        :has-password="authProfile?.hasPassword ?? false"
+        :busy="passwordBusy"
+        :error="passwordError"
+        @confirm="savePassword"
+        @cancel="showPasswordModal = false"
+      />
+    </Transition>
+
+    <Transition name="app-dialog">
+      <SessionsModal
+        v-if="showSessionsModal"
+        :sessions="sessions"
+        :revoking-session-id="revokingSessionId"
+        :error="sessionsError"
+        @revoke="revokeSession"
+        @cancel="showSessionsModal = false"
+      />
     </Transition>
 
     <Transition name="app-dialog">
@@ -617,7 +702,7 @@ async function confirmDeleteAccount(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  max-width: 720px;
+  max-width: 960px;
 }
 
 .user-view__breadcrumb {
@@ -655,6 +740,7 @@ async function confirmDeleteAccount(): Promise<void> {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+  flex-wrap: wrap;
 }
 
 .user-view__avatar {
@@ -689,10 +775,21 @@ async function confirmDeleteAccount(): Promise<void> {
   clip: rect(0 0 0 0);
 }
 
+.user-view__header-info {
+  flex: 1;
+  min-width: 200px;
+}
+
 .user-view__header-name {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.user-view__header-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
 }
 
 .user-view__title {
@@ -716,6 +813,31 @@ async function confirmDeleteAccount(): Promise<void> {
   font-size: var(--text-sm);
 }
 
+.user-view__meta--icon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.user-view__columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.user-view__column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+@media (max-width: 800px) {
+  .user-view__columns {
+    grid-template-columns: 1fr;
+  }
+}
+
 .user-view__section {
   display: flex;
   flex-direction: column;
@@ -728,15 +850,11 @@ async function confirmDeleteAccount(): Promise<void> {
 
 .user-view__section-title {
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--text-md);
   font-weight: 700;
-}
-
-.user-view__subsection-title {
-  margin: var(--space-2) 0 0;
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--muted);
 }
 
 .user-view__grid {
@@ -835,8 +953,64 @@ async function confirmDeleteAccount(): Promise<void> {
   font-size: var(--text-sm);
 }
 
+.user-view__row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.user-view__row-icon {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
 .user-view__row--disabled {
   color: var(--muted);
+}
+
+/* Ticket 095 -- filas de Seguridad que abren un modal (mockup: "Cambiar contraseña"/"Sesiones activas"), mismo tratamiento visual que `.user-view__row` pero como <button> completo (área de clic más grande) con subtítulo + CTA a la derecha. */
+.user-view__action-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--hit-target-min);
+  padding: var(--space-2) 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.user-view__action-row:hover {
+  background: var(--surface-2);
+}
+
+.user-view__action-row-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.user-view__action-row-subtitle {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.user-view__action-row-cta {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.user-view__pending {
+  color: var(--muted);
+  font-size: var(--text-xs);
 }
 
 .user-view__pill {

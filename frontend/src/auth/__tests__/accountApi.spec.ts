@@ -138,6 +138,31 @@ describe('accountApi', () => {
     expect(init?.credentials).toBe('include')
   })
 
+  it('unlinkProvider hace DELETE a /account/connected-providers/{provider} en minúscula', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await accountApi.unlinkProvider('GOOGLE')
+
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/v1/account/connected-providers/google')
+    expect(init?.method).toBe('DELETE')
+  })
+
+  it('unlinkProvider propaga el 409 de "único método de acceso" como ApiError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () =>
+        jsonResponse({ error: 'cannot_unlink_last_login_method', message: 'Cannot unlink your only way to sign in' }, 409),
+      ),
+    )
+
+    await expect(accountApi.unlinkProvider('google')).rejects.toMatchObject({
+      status: 409,
+      code: 'cannot_unlink_last_login_method',
+    })
+  })
+
   it('deleteAccount hace DELETE a /api/v1/account con confirmIdentifier', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchMock)
