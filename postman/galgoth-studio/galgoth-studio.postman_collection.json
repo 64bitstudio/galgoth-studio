@@ -20,6 +20,18 @@
     {
       "key": "referenceId",
       "value": ""
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "internalSecret",
+      "value": ""
     }
   ],
   "item": [
@@ -993,6 +1005,145 @@
               ]
             },
             "description": "200 con { model, draftVersion } -- mismas reglas del ticket 041 (si el cuboid removido tenía caras PAINTED, sus 6 filas de UvRegion pasan a ORPHAN)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Perfil de producto (ticket 091)",
+      "item": [
+        {
+          "name": "Obtener mi perfil (avatar + preferencias)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/account/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "profile"
+              ]
+            },
+            "description": "200 con {avatarUrl, notifyEmail, notifyProductNews, notifySaveReminders}. Sin fila en user_profile todavia -> defaults (avatarUrl null, las 3 en true), sin crear ninguna fila. 401 (UNAUTHENTICATED) sin Authorization."
+          }
+        },
+        {
+          "name": "Guardar mis preferencias",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notifyEmail\": true,\n  \"notifyProductNews\": false,\n  \"notifySaveReminders\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/account/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "preferences"
+              ]
+            },
+            "description": "Las 3 preferencias siempre explicitas en el body. 200 con el UserProfileResponse actualizado. Todavia NO cambia ningun envio real de correo (solo persiste el valor). 401 (UNAUTHENTICATED) sin Authorization."
+          }
+        },
+        {
+          "name": "Subir mi avatar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "image/png"
+              }
+            ],
+            "body": {
+              "mode": "file",
+              "file": {}
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/account/avatar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "avatar"
+              ]
+            },
+            "description": "Body: bytes crudos de una imagen (Body > binary en Postman) -- solo image/png o image/jpeg, max 5MB. 200 con {avatarUrl}. Reemplaza cualquier avatar anterior. 400 (INVALID_AVATAR) si el formato/tamano no es soportado o no decodifica como imagen valida. 401 (UNAUTHENTICATED) sin Authorization."
+          }
+        },
+        {
+          "name": "Obtener el avatar de un usuario",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/account/avatar/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "account",
+                "avatar",
+                "{{userId}}"
+              ]
+            },
+            "description": "Publico a proposito, sin Authorization -- el avatar de un usuario debe poder mostrarse a cualquiera (ej. autor de un proyecto publico en Explorar, ticket 092). 404 si el usuario no tiene avatar subido."
+          }
+        },
+        {
+          "name": "[Interno] Purgar proyectos y perfil de un usuario",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Internal-Secret",
+                "value": "{{internalSecret}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/internal/users/{{userId}}/purge-projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "internal",
+                "users",
+                "{{userId}}",
+                "purge-projects"
+              ]
+            },
+            "description": "Servidor-a-servidor (auth-core-mc, ticket 064, al eliminar una cuenta) -- NUNCA JWT de usuario, autenticado por X-Internal-Secret contra galgoth.internal.secret. Soft-deletea TODOS los proyectos del usuario (publicos y privados) y borra su fila de user_profile. 204 siempre que el secreto sea correcto (idempotente). 401 (INVALID_INTERNAL_SECRET) si falta o no coincide."
           }
         }
       ]
