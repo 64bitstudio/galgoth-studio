@@ -69,6 +69,9 @@ describe('projectsApi', () => {
       emailVerified: true,
       phoneVerified: false,
       hasPassword: true,
+      country: null,
+      username: null,
+      createdAt: '2026-01-01T00:00:00Z',
     }
     const detail = { id: '1', name: 'Nuevo', mobCount: 0, createdAt: '', updatedAt: '' }
     const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(detail, 201))

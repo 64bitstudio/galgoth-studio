@@ -121,6 +121,24 @@ const router = createRouter({
       component: () => import('../auth/ResetPasswordView.vue'),
     },
     {
+      // Ticket 093 -- ruta FIJA, mismo motivo que 'password-reset-confirm':
+      // auth-core-mc#056 ya construye el link real de "cambiar correo" como
+      // `{origin}/change-email/confirm?token=...`.
+      path: '/change-email/confirm',
+      name: 'change-email-confirm',
+      component: () => import('../auth/EmailChangeConfirmView.vue'),
+    },
+    {
+      // Ticket 093 -- pantalla "Usuario" (perfil, seguridad, preferencias,
+      // eliminar cuenta). Ruta FIJA: auth-core-mc#063 ya redirige de
+      // vuelta acá tras vincular una cuenta social
+      // (`{origin}/usuario?linked={provider}` / `?link_error={...}`).
+      path: '/usuario',
+      name: 'user-profile',
+      component: () => import('../account/UserView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       // Ticket 083: página estática de términos y condiciones -- también
       // el destino real del link en el checkbox de RegisterView.vue.
       path: '/terms',

@@ -55,4 +55,28 @@ describe('router (ticket 087 -- guard de rutas autenticadas)', () => {
 
     expect(router.currentRoute.value.path).toBe('/explore/p1')
   })
+
+  // Ticket 093 -- "Usuario" SÍ exige sesión (a diferencia de Explorar): son los datos propios del usuario autenticado.
+  it('/usuario exige sesión, redirige a /login preservando la ruta de vuelta', async () => {
+    await router.push('/usuario')
+
+    expect(router.currentRoute.value.fullPath).toBe('/login?redirect=/usuario')
+  })
+
+  it('/usuario con sesión activa navega normalmente', async () => {
+    const session = useSessionStore()
+    session.accessToken = 'token'
+    session.refreshToken = 'refresh'
+
+    await router.push('/usuario')
+
+    expect(router.currentRoute.value.path).toBe('/usuario')
+  })
+
+  // Ticket 093 -- ruta FIJA para el link real que auth-core-mc manda por correo, nunca debe exigir sesión (el usuario todavía no confirmó el correo nuevo).
+  it('/change-email/confirm NO exige sesión', async () => {
+    await router.push('/change-email/confirm?token=abc')
+
+    expect(router.currentRoute.value.path).toBe('/change-email/confirm')
+  })
 })

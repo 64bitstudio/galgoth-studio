@@ -224,6 +224,8 @@ function handleSidebarSelect(key: GSidebarKey): void {
     router.push('/projects')
   } else if (key === 'explore') {
     router.push('/explore')
+  } else if (key === 'user') {
+    router.push('/usuario')
   }
 }
 

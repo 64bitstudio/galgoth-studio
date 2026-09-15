@@ -17,6 +17,9 @@ const user: authApi.RegisteredUser = {
   emailVerified: false,
   phoneVerified: false,
   hasPassword: true,
+  country: null,
+  username: null,
+  createdAt: '2026-01-01T00:00:00Z',
 }
 
 describe('sessionStore', () => {

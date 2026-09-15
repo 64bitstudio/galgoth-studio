@@ -1,17 +1,18 @@
 /**
  * Ticket 078, `PROP-GS-AUTH-01` Fig. 06: adjunta `Authorization: Bearer`
- * a las llamadas a la API PROPIA de galgoth-studio (nunca a auth-core-mc
- * -- `authApi.ts` no pasa por acá) y, ante un `401`, intenta refrescar
- * la sesión UNA vez y reintenta la request original. No es solo un
- * temporizador de "ya casi expira": auth-core-mc regenera su llave RSA
- * de firma en cada reinicio (limitación conocida de ese proyecto), así
- * que un `accessToken` vigente puede invalidarse al instante sin previo
- * aviso -- reaccionar al `401` real es lo único confiable.
+ * a cualquier request y, ante un `401`, intenta refrescar la sesión UNA
+ * vez y reintenta la request original. No es solo un temporizador de "ya
+ * casi expira": auth-core-mc regenera su llave RSA de firma en cada
+ * reinicio (limitación conocida de ese proyecto), así que un
+ * `accessToken` vigente puede invalidarse al instante sin previo aviso
+ * -- reaccionar al `401` real es lo único confiable.
  *
- * Ninguna ruta de este backend exige autenticación todavía (ticket 077,
- * decisión explícita de Marco) -- este wrapper no tiene ningún efecto
- * observable hoy, queda listo para cuando la primera ruta protegida
- * exista.
+ * Hasta el ticket 085 solo se usaba para la API PROPIA de galgoth-studio
+ * (`authApi.ts`, contra auth-core-mc, nunca pasaba por acá). Ticket 093
+ * -- `accountApi.ts` reutiliza este mismo wrapper para las rutas
+ * `/api/v1/account/**` de auth-core-mc: es agnóstico al origen (recibe
+ * la URL completa), y el refresh-on-401 funciona igual sin importar cuál
+ * de los dos backends devolvió el 401 (el token nuevo sirve para ambos).
  */
 import { useSessionStore } from './sessionStore'
 
