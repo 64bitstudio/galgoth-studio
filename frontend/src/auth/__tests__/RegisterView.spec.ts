@@ -8,7 +8,7 @@ import RegisterView from '../RegisterView.vue'
 
 vi.mock('../authApi', async () => {
   const actual = await vi.importActual<typeof authApi>('../authApi')
-  return { ...actual, register: vi.fn() }
+  return { ...actual, register: vi.fn(), requestEmailVerification: vi.fn() }
 })
 
 function testRouter(): Router {
@@ -54,6 +54,7 @@ describe('RegisterView.vue', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    vi.mocked(authApi.requestEmailVerification).mockResolvedValue(undefined)
   })
 
   it('envía nombre/apellidos/email/password y muestra "revisa tu correo" en éxito', async () => {
@@ -79,6 +80,32 @@ describe('RegisterView.vue', () => {
     expect(authApi.register).toHaveBeenCalledWith({ email: 'ada@example.com', nombre: 'Ada', apellidos: 'Lovelace', password: 'abcd1234' })
     expect(wrapper.text()).toContain('Revisa tu correo')
     expect(wrapper.text()).toContain('ada@example.com')
+    // Hallazgo real (verificación en vivo de ticket 093/094): sin esta llamada, "Revisa tu correo" mentía -- auth-core-mc nunca manda el correo por sí solo.
+    expect(authApi.requestEmailVerification).toHaveBeenCalledWith('u1')
+  })
+
+  it('si pedir el correo de verificación falla, igual muestra "revisa tu correo" (el registro ya fue exitoso)', async () => {
+    vi.mocked(authApi.register).mockResolvedValue({
+      id: 'u1',
+      email: 'ada@example.com',
+      phone: null,
+      nombre: 'Ada',
+      apellidos: 'Lovelace',
+      emailVerified: false,
+      phoneVerified: false,
+      hasPassword: true,
+      country: null,
+      username: null,
+      createdAt: '2026-01-01T00:00:00Z',
+    })
+    vi.mocked(authApi.requestEmailVerification).mockRejectedValue(new ApiError('Error HTTP 500', 500))
+    const wrapper = await mountAtRegister()
+
+    await fillForm(wrapper)
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Revisa tu correo')
   })
 
   it('no entrega sesión -- la pantalla de éxito no navega sola', async () => {
