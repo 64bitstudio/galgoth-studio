@@ -526,6 +526,90 @@ class ProjectControllerTest {
 		mockMvc.perform(delete("/api/projects/{id}", projectId).with(authenticated())).andExpect(status().isNoContent());
 	}
 
+	// -- Ticket 086: cambio de visibilidad + owner_display_name ----------------
+
+	@Test
+	void crear_un_proyecto_con_ownerDisplayName_lo_graba_y_lo_devuelve_en_el_detalle() throws Exception {
+		mockMvc.perform(post("/api/projects").with(authenticated())
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"name\":\"Con autor\",\"ownerDisplayName\":\"Ada Lovelace\"}"))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.ownerDisplayName", is("Ada Lovelace")));
+	}
+
+	@Test
+	void crear_un_proyecto_sin_ownerDisplayName_lo_deja_null() throws Exception {
+		mockMvc.perform(post("/api/projects").with(authenticated())
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Sin autor")))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.ownerDisplayName", is(nullValue())));
+	}
+
+	@Test
+	void el_dueno_puede_publicar_y_despublicar_su_proyecto() throws Exception {
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Publicable")))
+				.andReturn();
+		String projectId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
+
+		mockMvc.perform(patch("/api/projects/{id}/visibility", projectId).with(authenticated())
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"visibility\":\"PUBLIC\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.visibility", is("PUBLIC")));
+		mockMvc.perform(get("/api/projects/{id}", projectId)).andExpect(status().isOk()); // ahora legible sin sesión
+
+		mockMvc.perform(patch("/api/projects/{id}/visibility", projectId).with(authenticated())
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"visibility\":\"PRIVATE\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.visibility", is("PRIVATE")));
+		mockMvc.perform(get("/api/projects/{id}", projectId)).andExpect(status().isNotFound()); // vuelve a ocultarse
+	}
+
+	@Test
+	void un_usuario_distinto_al_dueno_no_puede_cambiar_la_visibilidad_de_un_proyecto_ajeno() throws Exception {
+		String ownerId = UUID.randomUUID().toString();
+		String otroOwnerId = "9c3e3b1a-2222-4d3d-8888-0f1a2b3c4d5e";
+		UUID projectId = aProjectOf(ownerId, "PRIVATE");
+
+		mockMvc.perform(patch("/api/projects/{id}/visibility", projectId).with(authenticated(otroOwnerId))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"visibility\":\"PUBLIC\"}"))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
+	void cambiar_visibilidad_sin_autenticacion_responde_401() throws Exception {
+		String ownerId = UUID.randomUUID().toString();
+		UUID projectId = aProjectOf(ownerId, "PRIVATE");
+
+		mockMvc.perform(patch("/api/projects/{id}/visibility", projectId)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"visibility\":\"PUBLIC\"}"))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void un_valor_de_visibilidad_invalido_es_rechazado_sin_cambiar_nada() throws Exception {
+		MvcResult created = mockMvc.perform(post("/api/projects").with(authenticated())
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(createBody("Original")))
+				.andReturn();
+		String projectId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
+
+		mockMvc.perform(patch("/api/projects/{id}/visibility", projectId).with(authenticated())
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"visibility\":\"HIDDEN\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.error", is("INVALID_VISIBILITY")));
+
+		mockMvc.perform(get("/api/projects/{id}", projectId).with(authenticated()))
+				.andExpect(jsonPath("$.visibility", is("PRIVATE")));
+	}
+
 	// -- CORS (docs/definiciones/galgoth-studio-mvp.md §9 -- origen local de desarrollo) --
 
 	@Test

@@ -14,6 +14,7 @@
  * hasta este ticket.
  */
 import { authenticatedFetch } from '../auth/authenticatedFetch'
+import { useSessionStore } from '../auth/sessionStore'
 import { API_BASE_URL } from '../api/apiConfig'
 import { ApiError } from '../api/ApiError'
 
@@ -33,6 +34,8 @@ export interface ProjectSummary {
   mobCount: number
   mobThumbnails: MobThumbnail[]
   status: ProjectStatus
+  /** Ticket 086 -- nombre completo capturado al crear el proyecto (`sessionStore.user.nombre`/`apellidos` en ese momento), `null` si no se envió. Usado por Explorar (ticket 088) para mostrar "por Fulano Pérez"; puede quedar desactualizado si el usuario cambia su nombre después (tradeoff aceptado, documento de definición). */
+  ownerDisplayName: string | null
   createdAt: string
   updatedAt: string
 }
@@ -42,6 +45,8 @@ export interface ProjectDetail {
   name: string
   description: string | null
   mobCount: number
+  /** Ticket 086 -- ver docstring de `ProjectSummary.ownerDisplayName`. */
+  ownerDisplayName: string | null
   createdAt: string
   updatedAt: string
 }
@@ -83,8 +88,19 @@ export function getProject(id: string): Promise<ProjectDetail> {
   return request<ProjectDetail>(`/api/projects/${id}`)
 }
 
+/**
+ * Ticket 086 -- `ownerDisplayName` viaja al crear porque el frontend ya
+ * conoce `sessionStore.user.nombre`/`apellidos` en este momento (auth-core-mc
+ * no expone un endpoint público de perfil); se graba tal cual en
+ * `projects.owner_display_name` para mostrarlo en Explorar sin una
+ * integración nueva. `null` (sesión sin `user`, caso que no debería darse
+ * en la práctica ya que crear un proyecto ya exige sesión) se envía tal
+ * cual -- el backend lo acepta y lo deja sin autor visible en ese caso.
+ */
 export function createProject(name: string): Promise<ProjectDetail> {
-  return request<ProjectDetail>('/api/projects', { method: 'POST', body: JSON.stringify({ name }) })
+  const user = useSessionStore().user
+  const ownerDisplayName = user ? `${user.nombre} ${user.apellidos}`.trim() : null
+  return request<ProjectDetail>('/api/projects', { method: 'POST', body: JSON.stringify({ name, ownerDisplayName }) })
 }
 
 /** Ticket 073 -- `description` siempre explícita (nunca omitida): el caller reenvía el valor actual tal cual si no lo está cambiando (ver docstring del backend, `RenameProjectRequest`) -- omitirla la borraría. */

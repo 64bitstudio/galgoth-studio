@@ -54,15 +54,17 @@ GET    /api/projects/{id}         -- detalle mínimo (HU-01 AC #1)
 PATCH  /api/projects/{id}         -- Rename
 DELETE /api/projects/{id}         -- soft-delete (projects.deleted_at)
 POST   /api/projects/{id}/duplicate -- Duplicate (copia PROFUNDA: proyecto + todos sus mobs + su historial completo de mob_revisions + su mob_drafts actual, si tiene)
+PATCH  /api/projects/{id}/visibility -- Cambiar PRIVATE ↔ PUBLIC (ticket 086)
 ```
 
-- **`POST /api/projects`** — requiere `Authorization: Bearer` (ticket 084, ver "Ownership real de proyectos" abajo); `401 Unauthorized` (`UNAUTHENTICATED`) sin él. body `{name}`. `201 Created` con el `ProjectDetail` si el nombre es válido; `400 Bad Request` (`error: "INVALID_PROJECT_NAME"`) si está vacío/en blanco (AC #2) -- ningún proyecto se crea. El proyecto queda ligado al `sub` del JWT (`owner_ref`) y nace `visibility = "PRIVATE"`.
+- **`POST /api/projects`** — requiere `Authorization: Bearer` (ticket 084, ver "Ownership real de proyectos" abajo); `401 Unauthorized` (`UNAUTHENTICATED`) sin él. body `{name, ownerDisplayName}` (`ownerDisplayName` opcional, ticket 086 -- ver abajo). `201 Created` con el `ProjectDetail` si el nombre es válido; `400 Bad Request` (`error: "INVALID_PROJECT_NAME"`) si está vacío/en blanco (AC #2) -- ningún proyecto se crea. El proyecto queda ligado al `sub` del JWT (`owner_ref`) y nace `visibility = "PRIVATE"`.
 - **`GET /api/projects`** — requiere `Authorization: Bearer`; `401 Unauthorized` (`UNAUTHENTICATED`) sin él. Devuelve `ProjectSummary[]` **solo del dueño autenticado** (ticket 084 -- hasta entonces era un listado global sin filtrar, hallazgo real corregido por ese ticket), sin los soft-deleted, ordenados por `updatedAt` descendente. Campos: id, name, description, mobCount, mobThumbnails ≤3, status, visibility, createdAt, updatedAt. `mobThumbnails[].thumbnailKey` es `null` mientras no exista pipeline de thumbnails (ticket futuro) -- el frontend renderiza un placeholder genérico, nunca bloquea el listado (AC #5). El frontend calcula el indicador "+N" como `mobCount - 3` cuando `mobCount > 3` (AC #3). `status` (ticket 072, `"active"`/`"draft"`) es DERIVADO, no una columna real de `projects` -- `"active"` si el proyecto tiene al menos un mob fuera de `draft` (`in_progress`/`ready`), `"draft"` si todos sus mobs están en draft o no tiene ninguno.
 - **`GET /api/projects/{id}`** — lectura: dueño real o proyecto `PUBLIC` (ticket 085, ver abajo); `401`/`403` nunca -- siempre `404` cuando el caller no puede verlo. `ProjectDetail` (id, name, description, mobCount, visibility, createdAt, updatedAt; sin el grid completo de mobs, eso es HU-04/ticket 022); `404 Not Found` (`PROJECT_NOT_FOUND`) si no existe, está soft-deleted, o el caller no tiene acceso. `description` (ticket 073) es opcional, `null` si el proyecto no tiene.
 - **`PATCH /api/projects/{id}`** — requiere `Authorization: Bearer` y ser el dueño real (ticket 085) -- `404 Not Found` (`PROJECT_NOT_FOUND`) si no, nunca revela que el proyecto existe. body `{name, description}`. Mismo criterio de validación de `name` que crear. `description` (ticket 073) SIEMPRE explícita en el body -- el contrato espera que todo caller la reenvíe tal cual si no la está cambiando (viaja tanto en `ProjectSummary` como en `ProjectDetail` para que cualquier pantalla pueda reenviarla sin conocerla de antemano). Un body que la omita la deja en `null` -- comportamiento intencional y documentado, no una ambigüedad oculta.
 - **`DELETE /api/projects/{id}`** — requiere ser el dueño real (ticket 085). `204 No Content`. Soft-delete -- el proyecto deja de aparecer en cualquier consulta, tratado como "no existe" en adelante.
 - **`POST /api/projects/{id}/duplicate`** — requiere ser el dueño real (ticket 085). `201 Created` con el `ProjectDetail` de la copia (`name` = original + `" (copia)"`). Copia profunda real: cada mob del original se recrea con nuevo id, y se copian TODAS sus `mob_revisions` (mismo `revision_number`, mismo `model_jsonb`) más su `mob_drafts` actual si existe -- decisión explícita del Product Owner (ticket 021).
 - **"Export"** del menú de acciones del dashboard (mockup 01) está deshabilitado en el frontend -- no existe ningún endpoint de exportación de proyecto expuesto todavía (decisión del Product Owner, ticket 021; el export de un MOB individual vía `BBModelExporterV5`/V4 es un servicio de dominio interno sin controlador REST, épica futura).
+- **`PATCH /api/projects/{id}/visibility`** (ticket 086) — requiere `Authorization: Bearer` y ser el dueño real (`404` si no). body `{visibility}` ("PRIVATE" o "PUBLIC", cualquier otro valor -- `400 Bad Request`, `error: "INVALID_VISIBILITY"`, no cambia nada). `200 OK` con el `ProjectDetail` actualizado. Publicar/despublicar es inmediato -- el próximo `GET /api/explore/projects` refleja el cambio sin ningún paso adicional.
 
 #### Ownership real de proyectos (ticket `084`)
 
@@ -123,6 +125,31 @@ son parte de los 9 en alcance.
 
 Un cambio de visibilidad (`PATCH .../visibility`) y la sección Explorar
 en sí llegan en el ticket `086`.
+
+### Cambiar visibilidad + Explorar (ticket `086`, HU-4/HU-5)
+
+Ver `docs/definiciones/proyectos-por-usuario-y-explorar.md` (VoBo de
+Marco) -- la pieza que le da valor de producto a ownership (084) +
+enforcement (085): el dueño puede publicar un proyecto, y existe una API
+de lectura pública para listarlos. `PATCH /api/projects/{id}/visibility`
+está documentado arriba, junto al resto del CRUD de proyectos.
+
+```text
+GET    /api/explore/projects   -- proyectos PUBLIC de cualquier dueño, permitAll()
+```
+
+Implementado en `backend/.../project/api/ExploreProjectController.java`
+-- reutiliza `ProjectService.listPublic()` y el mismo DTO
+`ProjectSummary` que "Mis proyectos" (mismos campos: miniaturas, conteo
+de mobs, `status` derivado, `visibility`, `ownerDisplayName`) -- sin un
+shape nuevo. Sin búsqueda/filtros/paginación en esta primera pasada
+(decisión explícita del documento de definición).
+
+- **`GET /api/explore/projects`** — sin `Authorization`, nunca la exige. `200 OK` -- `ProjectSummary[]` de TODOS los proyectos con `visibility = "PUBLIC"` y no soft-deleted, de cualquier dueño, ordenados por `updatedAt` descendente (mismo orden que "Mis proyectos"). Nunca incluye un proyecto `PRIVATE` -- el filtro es a nivel de columna, no depende del guard (que de todas formas seguiría bloqueando el detalle si alguien intentara `GET /api/projects/{id}` de uno privado ajeno).
+
+**`owner_display_name`** (migración `V7`, columna nueva en `projects`) -- galgoth-studio no tiene tabla de usuarios propia y el JWT no trae un nombre, así que se denormaliza: el frontend real (`projectsApi.ts#createProject`) manda `sessionStore.user.nombre`/`apellidos` como `ownerDisplayName` al crear, se graba tal cual (nunca se resuelve después contra auth-core-mc) y viaja en `ProjectSummary`/`ProjectDetail`. Puede quedar desactualizado si el usuario cambia su nombre después -- tradeoff aceptado por simplicidad, documentado en el documento de definición. `null` si el proyecto se creó sin ese campo (cualquier caller que no sea el frontend real, ej. Postman).
+
+**Simplificación real respecto al documento de definición**: la sección "Diseño técnico" original describía extender `ProjectController.get` para inlinear también la lista de mobs (nombre + miniatura + estado) en la respuesta de un proyecto público ajeno. No hizo falta: desde el ticket 085, `GET /api/projects/{id}/mobs` ya es de lectura pública para un proyecto `PUBLIC` (mismo guard, `requireViewable`) -- la pantalla de detalle de Explorar (ticket 088) puede reusar exactamente los mismos 2 endpoints que ya usa "Mis proyectos" (`GET /api/projects/{id}` + `GET /api/projects/{id}/mobs`), sin inventar un shape combinado nuevo.
 
 ### Draft persistence + autosave + Guardar (ticket `020`)
 

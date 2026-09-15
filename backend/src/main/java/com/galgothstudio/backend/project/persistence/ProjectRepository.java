@@ -20,4 +20,7 @@ public interface ProjectRepository extends JpaRepository<ProjectEntity, UUID> {
 
 	Optional<ProjectEntity> findByIdAndDeletedAtIsNull(UUID id);
 
+	/** Ticket 086 -- Explorar: proyectos `PUBLIC` de CUALQUIER dueño, mismo orden que "Mis proyectos". */
+	List<ProjectEntity> findByVisibilityAndDeletedAtIsNullOrderByUpdatedAtDesc(String visibility);
+
 }

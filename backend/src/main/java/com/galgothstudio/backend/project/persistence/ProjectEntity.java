@@ -29,6 +29,10 @@ public class ProjectEntity {
 	@Column(name = "visibility", nullable = false)
 	private String visibility;
 
+	/** Ticket 086 -- nombre a mostrar en Explorar, denormalizado desde la sesión del frontend al crear (`V7`). `null` si no se envió (ej. un caller que no sea el frontend real, como Postman). */
+	@Column(name = "owner_display_name")
+	private String ownerDisplayName;
+
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
 
@@ -81,6 +85,14 @@ public class ProjectEntity {
 
 	public void setVisibility(String visibility) {
 		this.visibility = visibility;
+	}
+
+	public String getOwnerDisplayName() {
+		return ownerDisplayName;
+	}
+
+	public void setOwnerDisplayName(String ownerDisplayName) {
+		this.ownerDisplayName = ownerDisplayName;
 	}
 
 	public Instant getCreatedAt() {

@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useSessionStore } from '../../auth/sessionStore'
 import { ApiError, createProject, deleteProject, duplicateProject, listProjects, renameProject } from '../projectsApi'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -31,7 +32,7 @@ describe('projectsApi', () => {
     expect(init?.method).toBeUndefined() // GET por defecto
   })
 
-  it('createProject hace POST con el nombre en el body', async () => {
+  it('createProject hace POST con el nombre en el body, sin sesión ownerDisplayName es null', async () => {
     const detail = { id: '1', name: 'Nuevo', mobCount: 0, createdAt: '', updatedAt: '' }
     const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(detail, 201))
     vi.stubGlobal('fetch', fetchMock)
@@ -41,7 +42,28 @@ describe('projectsApi', () => {
     expect(result).toEqual(detail)
     const [, init] = fetchMock.mock.calls[0]!
     expect(init?.method).toBe('POST')
-    expect(init?.body).toBe(JSON.stringify({ name: 'Nuevo' }))
+    expect(init?.body).toBe(JSON.stringify({ name: 'Nuevo', ownerDisplayName: null }))
+  })
+
+  it('createProject manda el nombre completo de la sesión activa como ownerDisplayName', async () => {
+    useSessionStore().user = {
+      id: 'u1',
+      email: 'ada@example.com',
+      phone: null,
+      nombre: 'Ada',
+      apellidos: 'Lovelace',
+      emailVerified: true,
+      phoneVerified: false,
+      hasPassword: true,
+    }
+    const detail = { id: '1', name: 'Nuevo', mobCount: 0, createdAt: '', updatedAt: '' }
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(detail, 201))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await createProject('Nuevo')
+
+    const [, init] = fetchMock.mock.calls[0]!
+    expect(init?.body).toBe(JSON.stringify({ name: 'Nuevo', ownerDisplayName: 'Ada Lovelace' }))
   })
 
   it('renameProject hace PATCH a /api/projects/{id}', async () => {

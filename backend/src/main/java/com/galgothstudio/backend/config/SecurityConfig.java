@@ -38,6 +38,12 @@ import org.springframework.security.web.SecurityFilterChain;
  * textura) -- esos controladores no son parte de los 9 que este ticket
  * enumera.
  *
+ * <p>Ticket 086 (HU-4/HU-5) -- agrega {@code PATCH /api/projects/{id}/visibility}
+ * (mutación, {@code authenticated()}) y {@code GET /api/explore/projects}
+ * (lectura pública, cae en el {@code anyRequest().permitAll()} de abajo --
+ * ninguna regla explícita nueva hace falta, es un escaparate sin sesión
+ * por diseño).
+ *
  * <p><b>Security Hotspot de Sonar, revisado -- CSRF deshabilitado a
  * propósito, no un descuido:</b> esta API nunca usa autenticación basada
  * en cookies/sesión de navegador (el vector que CSRF protege) -- la
@@ -67,6 +73,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PATCH, "/api/projects/*").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/projects/*").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/projects/*/duplicate").authenticated()
+                        // Cambiar visibilidad (086) -- dos segmentos tras /api/projects/, no lo
+                        // cubre el patrón de un solo "*" de la línea de arriba.
+                        .requestMatchers(HttpMethod.PATCH, "/api/projects/*/visibility").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/projects/*/mobs").authenticated()
                         // "Continuar trabajando" (071/084) -- filtra por dueño, exige sesión.
                         .requestMatchers(HttpMethod.GET, "/api/mobs/recent").authenticated()
