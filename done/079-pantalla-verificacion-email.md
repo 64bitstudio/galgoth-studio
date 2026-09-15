@@ -32,4 +32,6 @@ auth-core-mc ya envía un correo real de verificación al registrarse (ticket 07
 
 Tests: 857/857 en verde (+3 nuevos en `UserView.spec.ts`). `vue-tsc -b` y `eslint --max-warnings 0` limpios.
 
-CI de Jenkins verde (ver PR). [Pendiente: verificación en vivo contra dev antes de cerrar -- ver sección de cierre.]
+CI de Jenkins verde (ver PR). Verificado en vivo contra dev con una cuenta de prueba real (`ticket079`): tras registrarse, "Sin verificar" (badge amarillo) y el botón de reenvío visibles de inmediato; un primer clic en "Reenviar" mostró el error real del backend (`429`, "ya se pidió hace menos de 60s" -- confirma que el envío automático al registrarse, ticket 094, de verdad corrió); pasado el cooldown, un segundo clic sí mandó un correo real nuevo ("Te enviamos un correo nuevo de verificación."); se hizo clic en el link real de ESE correo (no uno viejo de un intento anterior, ni copiado/pegado a mano) → "Correo confirmado"; sin recargar la pestaña de "Usuario", el badge ya mostraba "Verificado" y el botón de reenvío había desaparecido. Cuenta de prueba eliminada al final.
+
+No rompe compatibilidad — puramente aditivo sobre lo que ya trajo el 094.
