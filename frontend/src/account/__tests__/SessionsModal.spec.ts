@@ -1,6 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { beforeAll, describe, expect, it } from 'vitest'
 import SessionsModal from '../SessionsModal.vue'
+import IconBrowserChrome from '../../design-system/icons/IconBrowserChrome.vue'
+import IconBrowserSafari from '../../design-system/icons/IconBrowserSafari.vue'
+import IconDevice from '../../design-system/icons/IconDevice.vue'
 import type { SessionSummary } from '../../auth/accountApi'
 
 beforeAll(() => {
@@ -71,6 +74,22 @@ describe('SessionsModal.vue', () => {
     const item = wrapper.findAll('button[role="menuitem"]').find((b) => b.text().includes('Cerrar sesión'))!
     expect(item.attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('No puedes cerrar la sesión que estás usando ahora.')
+  })
+
+  // Ticket 095 (hallazgo real reportado en vivo: faltaban los íconos de navegador) -- `UserAgentParser.browser()` solo devuelve un puñado de valores reconocidos; cualquier otro cae al ícono genérico.
+  it('muestra el ícono de marca del navegador cuando lo reconoce (Chrome/Safari)', () => {
+    const wrapper = mount(SessionsModal, { props: { sessions: [recentSession, oldSession], revokingSessionId: null } })
+
+    expect(wrapper.findComponent(IconBrowserChrome).exists()).toBe(true)
+    expect(wrapper.findComponent(IconBrowserSafari).exists()).toBe(true)
+  })
+
+  it('un navegador no reconocido cae al ícono genérico de dispositivo', () => {
+    const wrapper = mount(SessionsModal, {
+      props: { sessions: [{ ...oldSession, browser: 'Internet Explorer' }], revokingSessionId: null },
+    })
+
+    expect(wrapper.findComponent(IconDevice).exists()).toBe(true)
   })
 
   it('"Cerrar" emite cancel', async () => {

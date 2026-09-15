@@ -44,6 +44,8 @@ import GSidebar, { type GSidebarKey } from '../design-system/components/GSidebar
 import IconCalendar from '../design-system/icons/IconCalendar.vue'
 import IconChevron from '../design-system/icons/IconChevron.vue'
 import IconDevice from '../design-system/icons/IconDevice.vue'
+import IconFacebook from '../design-system/icons/IconFacebook.vue'
+import IconGoogle from '../design-system/icons/IconGoogle.vue'
 import IconLink from '../design-system/icons/IconLink.vue'
 import IconLock from '../design-system/icons/IconLock.vue'
 import IconShield from '../design-system/icons/IconShield.vue'
@@ -113,6 +115,11 @@ function readLinkResultFromQuery(): void {
 
 function providerLabel(provider: string): string {
   return provider.toLowerCase() === 'google' ? 'Google' : provider.toLowerCase() === 'facebook' ? 'Facebook' : provider
+}
+
+/** Ver `IconGoogle.vue`/`IconFacebook.vue` -- ambos son los únicos proveedores soportados hoy (`ExternalIdentityLinkService.isSupported`). */
+function providerIcon(provider: string): unknown {
+  return provider.toLowerCase() === 'google' ? IconGoogle : provider.toLowerCase() === 'facebook' ? IconFacebook : null
 }
 
 function linkErrorMessage(code: string): string {
@@ -524,7 +531,8 @@ async function confirmDeleteAccount(): Promise<void> {
               <p v-if="linkError" class="user-view__error">{{ linkError }}</p>
               <ul class="user-view__list">
                 <li v-for="provider in providers" :key="provider.provider" class="user-view__row">
-                  <span>{{ providerLabel(provider.provider) }}</span>
+                  <component :is="providerIcon(provider.provider)" :size="20" class="user-view__row-icon" />
+                  <span class="user-view__row-label">{{ providerLabel(provider.provider) }}</span>
                   <template v-if="provider.linked">
                     <span v-if="unlinkingProvider === provider.provider" class="user-view__pending">Desvinculando…</span>
                     <div v-else class="user-view__row-actions">
@@ -554,9 +562,9 @@ async function confirmDeleteAccount(): Promise<void> {
                 <span class="user-view__action-row-cta">Cambiar →</span>
               </button>
 
-              <div class="user-view__row user-view__row--disabled">
+              <div class="user-view__row user-view__row--disabled user-view__row--padded">
                 <IconShield :size="18" class="user-view__row-icon" />
-                <span class="user-view__action-row-text"><span>Verificación en dos pasos</span></span>
+                <span class="user-view__row-label">Verificación en dos pasos</span>
                 <span class="user-view__pill">Próximamente</span>
               </div>
 
@@ -702,7 +710,6 @@ async function confirmDeleteAccount(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  max-width: 960px;
 }
 
 .user-view__breadcrumb {
@@ -964,18 +971,31 @@ async function confirmDeleteAccount(): Promise<void> {
   color: var(--muted);
 }
 
+.user-view__row-label {
+  flex: 1;
+  min-width: 0;
+}
+
 .user-view__row--disabled {
   color: var(--muted);
 }
 
-/* Ticket 095 -- filas de Seguridad que abren un modal (mockup: "Cambiar contraseña"/"Sesiones activas"), mismo tratamiento visual que `.user-view__row` pero como <button> completo (área de clic más grande) con subtítulo + CTA a la derecha. */
+/* Ticket 095 (hallazgo real reportado en vivo): alinea el ícono/texto de la fila deshabilitada de 2FA con el mismo padding horizontal que ganaron las filas-botón de abajo, para que las 3 filas de Seguridad queden a la misma altura. */
+.user-view__row--padded {
+  padding: var(--space-2) var(--space-3);
+  margin: 0 calc(-1 * var(--space-3));
+}
+
+/* Ticket 095 -- filas de Seguridad que abren un modal (mockup: "Cambiar contraseña"/"Sesiones activas"), mismo tratamiento visual que `.user-view__row` pero como <button> completo (área de clic más grande) con subtítulo + CTA a la derecha.
+   Hallazgo real reportado en vivo: sin padding horizontal, el ícono y el CTA quedaban pegados al borde del fondo que aparece en :hover -- se veía "recortado". `var(--space-3)` a los lados es el mismo valor que usan filas equivalentes del design system (`.g-menu__item`/`.sessions-modal__row`). */
 .user-view__action-row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   width: 100%;
   min-height: var(--hit-target-min);
-  padding: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  margin: 0 calc(-1 * var(--space-3));
   background: transparent;
   border: none;
   border-radius: var(--radius-md);

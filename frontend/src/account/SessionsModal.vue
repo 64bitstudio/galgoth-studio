@@ -18,7 +18,13 @@
 import GButton from '../design-system/components/GButton.vue'
 import AppDialog from '../design-system/components/AppDialog.vue'
 import GMenu, { type GMenuItem } from '../design-system/components/GMenu.vue'
+import IconDevice from '../design-system/icons/IconDevice.vue'
 import IconTrash from '../design-system/icons/IconTrash.vue'
+import IconBrowserChrome from '../design-system/icons/IconBrowserChrome.vue'
+import IconBrowserEdge from '../design-system/icons/IconBrowserEdge.vue'
+import IconBrowserFirefox from '../design-system/icons/IconBrowserFirefox.vue'
+import IconBrowserOpera from '../design-system/icons/IconBrowserOpera.vue'
+import IconBrowserSafari from '../design-system/icons/IconBrowserSafari.vue'
 import type { SessionSummary } from '../auth/accountApi'
 
 defineProps<{
@@ -41,6 +47,19 @@ function lastUsedLabel(session: SessionSummary): string {
     return 'Activa ahora'
   }
   return new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(parsed)
+}
+
+/** `UserAgentParser.browser()` de auth-core-mc solo devuelve estos 5 valores reconocidos -- cualquier otro ("Desconocido" incluido) cae al ícono genérico de dispositivo. */
+const BROWSER_ICONS: Record<string, unknown> = {
+  Chrome: IconBrowserChrome,
+  Safari: IconBrowserSafari,
+  Firefox: IconBrowserFirefox,
+  Edge: IconBrowserEdge,
+  Opera: IconBrowserOpera,
+}
+
+function browserIcon(browser: string): unknown {
+  return BROWSER_ICONS[browser] ?? IconDevice
 }
 
 function locationLabel(session: SessionSummary): string | null {
@@ -77,6 +96,7 @@ function handleMenuSelect(sessionId: string, key: string): void {
       <li v-for="s in sessions" :key="s.id" class="sessions-modal__row">
         <div class="sessions-modal__info">
           <div class="sessions-modal__device">
+            <component :is="browserIcon(s.browser)" :size="20" class="sessions-modal__browser-icon" />
             <span>{{ s.browser }} · {{ s.os }}</span>
             <span v-if="s.current" class="sessions-modal__pill sessions-modal__pill--current">Actual</span>
           </div>
@@ -137,6 +157,10 @@ function handleMenuSelect(sessionId: string, key: string): void {
   gap: var(--space-2);
   color: var(--text);
   font-size: var(--text-sm);
+}
+
+.sessions-modal__browser-icon {
+  flex-shrink: 0;
 }
 
 .sessions-modal__meta {
