@@ -134,6 +134,8 @@ describe('accountApi', () => {
     const [url, init] = fetchMock.mock.calls[0]!
     expect(String(url)).toContain('/api/v1/account/link-provider/google')
     expect(init?.method).toBe('POST')
+    // Hallazgo real (ticket 093): sin esto el navegador descarta la cookie de sesión que correlaciona el vínculo -- ver docstring de `linkProvider`.
+    expect(init?.credentials).toBe('include')
   })
 
   it('deleteAccount hace DELETE a /api/v1/account con confirmIdentifier', async () => {
