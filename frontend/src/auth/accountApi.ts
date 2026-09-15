@@ -46,7 +46,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const body: ApiErrorBody | null = await response.json().catch(() => null)
     throw new ApiError(body?.message ?? `Error HTTP ${response.status}`, response.status, body?.error)
   }
-  if (response.status === 204) {
+  // 204: nunca hay body. 202 tampoco lo trae en ningún endpoint de este archivo hoy
+  // (`requestEmailChange` -- auth-core-mc responde `ResponseEntity.accepted().build()`,
+  // sin JSON) -- sin este caso, `.json()` revienta contra un body vacío real.
+  if (response.status === 204 || response.status === 202) {
     return undefined as T
   }
   return (await response.json()) as T
@@ -54,6 +57,24 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export function getProfile(): Promise<RegisteredUser> {
   return request<RegisteredUser>('/api/v1/account/profile')
+}
+
+/**
+ * Ticket 093, movido de `authApi.ts` por auth-core-mc#071 (hallazgo real
+ * de seguridad, 2026-09-15): antes mandaba `userId` en el body sin
+ * autenticación real -- cualquiera que lo adivinara/filtrara (p. ej. vía
+ * `avatarUrl` de un proyecto público en Explorar) podía redirigir el
+ * correo de OTRA cuenta a una dirección propia, sin ningún aviso al
+ * correo real. Ahora exige el Bearer real (como el resto de este
+ * archivo) -- el usuario sale del JWT, nunca de un parámetro. Siempre
+ * `202`, nunca revela si `newEmail` ya está en uso (auth-core-mc lo
+ * valida al confirmar, no aquí).
+ */
+export function requestEmailChange(newEmail: string): Promise<void> {
+  return request<void>('/api/v1/change-email/request', {
+    method: 'POST',
+    body: JSON.stringify({ newEmail }),
+  })
 }
 
 /** `country`/`username` opcionales -- `null`/vacío los borra (mismo criterio que el backend). */
