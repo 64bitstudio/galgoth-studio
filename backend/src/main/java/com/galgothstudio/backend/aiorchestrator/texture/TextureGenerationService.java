@@ -256,9 +256,12 @@ public class TextureGenerationService {
 							new AiProviderResponse(null, imageGenerationProvider.provider(), imageGenerationProvider.model(), PROMPT_VERSION_SHEET, SCHEMA_VERSION_SHEET));
 
 					List<TextureSlice> slices = textureSheetSlicer.slice(sheetBytes, sheet, inflatedSize[0], inflatedSize[1]);
-					fillEdgesAndLog(jobId, slices);
 					logContentFindings(jobId, slices, context.detailLevel(), planResult.texturePlan().palette());
 					currentAtlas = textureCompositorService.compose(currentAtlas, slices);
+					// Ticket 114 -- después de componer, no antes: ver Javadoc de
+					// `fillEdgesAndLog`. El validador de contenido de arriba sigue
+					// viendo el slice CRUDO, que es lo que el generador produjo.
+					currentAtlas = fillEdgesAndLog(jobId, currentAtlas, sheet.placements());
 
 					for (CuboidFacePlacement placement : sheet.placements()) {
 						boolean handOverwrite = isHandPaintedOrUnknownOrigin(context.model().uv(), placement.cuboidId(), placement.face());
@@ -352,30 +355,82 @@ public class TextureGenerationService {
 	}
 
 	/**
-	 * Ticket 114 -- rellena las bandas negras del borde de cada cara ANTES
-	 * de componerla sobre el atlas. Determinista: no depende de que el
-	 * generador de imagen obedezca la instrucción de llenar el rectángulo
-	 * (el ticket 113 midió que obedece a medias: bajó las bandas ~45% y
-	 * dejó 37% de las caras con banda igual).
+	 * Ticket 114 -- rellena las bandas negras del borde de cada cara YA
+	 * COMPUESTA sobre el atlas. Determinista: no depende de que el generador
+	 * de imagen obedezca la instrucción de llenar el rectángulo (el ticket
+	 * 113 midió que obedece a medias: bajó las bandas ~45% y dejó 37% de las
+	 * caras con banda igual).
+	 *
+	 * <p><b>Por qué DESPUÉS de componer y no sobre el slice</b> (corregido
+	 * con medición en vivo, no por diseño previo): la primera versión
+	 * rellenaba {@link TextureSlice#image()}, es decir el recorte a
+	 * resolución INFLADA -- un slice de una cara de 16x16 del atlas llega
+	 * acá midiendo ~100x100 px, porque {@link TextureSheetSlicer} recorta
+	 * contra el tamaño real que se le pidió a la API. Medido contra el atlas
+	 * real de `Carcomido v3`: bajó las caras con banda de 75/202 a 39/202,
+	 * pero dejó <b>20 caras con banda ESTRECHA</b> (2 px de 16 = 12.5%, muy
+	 * por debajo del umbral que debería haberlas rellenado). Causa: a
+	 * resolución inflada el filo oscuro es un degradado, no una columna
+	 * uniformemente negra, así que no calificaba como banda; recién al
+	 * reducirlo {@link TextureCompositorService} con bilinear al rect del
+	 * atlas colapsa en una columna negra sólida. El defecto nace en el
+	 * reescalado, o sea DESPUÉS del punto donde se estaba corrigiendo.
+	 * Ahora el relleno corre en el espacio donde el defecto existe y donde
+	 * se lo mide, y los umbrales de {@link TextureEdgeFiller} están en
+	 * píxeles de atlas, que es lo que el ticket dice.
+	 *
+	 * <p>Solo toca los {@code atlasUvRect} de los placements de ESTE sheet
+	 * -- nunca una región pintada por otro bone o por el usuario.
 	 *
 	 * <p>El conteo se loguea acá y no en {@code ModelGenerationQualityReport}:
 	 * ese reporte se calcula en el pipeline de GEOMETRÍA y no tiene forma de
 	 * saber qué pasó al texturizar. Mismo criterio que las advertencias de
 	 * {@link TextureContentValidator} (102).
+	 *
+	 * @return el atlas con los bordes rellenados, o el mismo {@code atlasBytes}
+	 *         recibido si no hubo una sola escritura (no se re-codifica de gusto).
 	 */
-	private void fillEdgesAndLog(UUID jobId, List<TextureSlice> slices) {
+	private byte[] fillEdgesAndLog(UUID jobId, byte[] atlasBytes, List<CuboidFacePlacement> placements) {
+		BufferedImage atlas = decodePng(atlasBytes);
 		int rellenadas = 0;
 		int anchas = 0;
-		for (TextureSlice slice : slices) {
-			TextureEdgeFiller.Result result = textureEdgeFiller.fillBlackEdges(slice.image());
+		for (CuboidFacePlacement placement : placements) {
+			BufferedImage face = faceView(atlas, placement.atlasUvRect());
+			if (face == null) {
+				continue;
+			}
+			TextureEdgeFiller.Result result = textureEdgeFiller.fillBlackEdges(face);
 			rellenadas += result.touched() ? 1 : 0;
 			anchas += result.edgesSkipped() > 0 ? 1 : 0;
 		}
 		if (rellenadas > 0 || anchas > 0) {
 			log.info(
 					"Job {}: bordes negros rellenados en {} de {} caras; {} cara(s) con banda demasiado ancha, dejadas como están",
-					jobId, rellenadas, slices.size(), anchas);
+					jobId, rellenadas, placements.size(), anchas);
 		}
+		return rellenadas > 0 ? encodePng(atlas) : atlasBytes;
+	}
+
+	/**
+	 * Vista ESCRIBIBLE de una cara dentro del atlas: {@code getSubimage}
+	 * comparte el raster con la imagen padre, así que lo que el filler
+	 * escriba acá queda escrito en el atlas. Es lo contrario de lo que hace
+	 * {@link TextureSheetSlicer} (que copia a propósito para que nadie mute
+	 * su fuente) -- acá mutar el padre ES el objetivo, y el recorte al rect
+	 * es justamente lo que garantiza que no se pueda tocar la cara vecina.
+	 *
+	 * @return {@code null} si el rect es degenerado o se sale del atlas --
+	 *         un rect inválido no puede corromper el atlas ni tumbar el job.
+	 */
+	private static BufferedImage faceView(BufferedImage atlas, Vec4 rect) {
+		int x = (int) Math.round(rect.a());
+		int y = (int) Math.round(rect.b());
+		int width = (int) Math.round(rect.c() - rect.a());
+		int height = (int) Math.round(rect.d() - rect.b());
+		if (width <= 0 || height <= 0 || x < 0 || y < 0 || x + width > atlas.getWidth() || y + height > atlas.getHeight()) {
+			return null;
+		}
+		return atlas.getSubimage(x, y, width, height);
 	}
 
 	/**
@@ -557,13 +612,21 @@ public class TextureGenerationService {
 		return new Vec4(x0, y0, x1, y1);
 	}
 
-	private static byte[] cropPng(byte[] pngBytes, int x, int y, int width, int height) {
-		BufferedImage source;
+	private static BufferedImage decodePng(byte[] pngBytes) {
+		BufferedImage decoded;
 		try {
-			source = ImageIO.read(new ByteArrayInputStream(pngBytes));
+			decoded = ImageIO.read(new ByteArrayInputStream(pngBytes));
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
 		}
+		if (decoded == null) {
+			throw new TextureGenerationFailedException("No se pudo decodificar el atlas -- formato no reconocido o bytes corruptos.");
+		}
+		return decoded;
+	}
+
+	private static byte[] cropPng(byte[] pngBytes, int x, int y, int width, int height) {
+		BufferedImage source = decodePng(pngBytes);
 		BufferedImage crop = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g = crop.createGraphics();
 		try {

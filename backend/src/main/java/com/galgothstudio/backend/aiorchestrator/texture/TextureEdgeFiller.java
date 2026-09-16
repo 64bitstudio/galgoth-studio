@@ -16,6 +16,16 @@ import org.springframework.stereotype.Component;
  * modelo ayuda y no alcanza, porque depende de que obedezca. Esto no
  * depende: es determinista y corre siempre.
  *
+ * <p><b>Dónde corre</b>: sobre el atlas YA COMPUESTO, una vista por cara
+ * acotada a su {@code atlasUvRect} -- ver el Javadoc de
+ * {@code TextureGenerationService.fillEdgesAndLog}, que documenta la
+ * medición en vivo por la que se movió hasta acá. En consecuencia, los
+ * umbrales de abajo están en <b>píxeles de atlas</b>: en una cara de
+ * 16x16, {@link #MAX_BAND_RATIO} son 4 px. La imagen que recibe puede
+ * compartir raster con el atlas padre: escribe EN SITIO y nunca fuera de
+ * los límites de la imagen recibida, que es lo que garantiza que no
+ * pueda pisar la cara vecina.
+ *
  * <p><b>Qué NO hace, a propósito</b>:
  * <ul>
  *   <li>No toca el negro del INTERIOR de la cara -- solo bandas que

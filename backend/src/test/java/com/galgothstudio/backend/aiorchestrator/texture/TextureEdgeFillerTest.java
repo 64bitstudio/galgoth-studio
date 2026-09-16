@@ -131,6 +131,60 @@ class TextureEdgeFillerTest {
 		assertThat(img.getRGB(10, 10)).isEqualTo(NEGRO);
 	}
 
+	/**
+	 * AC explícito del 114 después de la medición en vivo: el relleno corre
+	 * sobre el atlas YA COMPUESTO, a través de una vista {@code getSubimage}
+	 * que comparte raster con el padre. Dos cosas tienen que ser ciertas a la
+	 * vez: que lo escrito llegue al atlas, y que NO se derrame un solo píxel
+	 * sobre la cara de al lado.
+	 */
+	@Test
+	void rellenarUnaCaraDelAtlasEscribeEnElAtlasYNoTocaLaCaraVecina_AC() {
+		BufferedImage atlas = lleno(32, 16, VERDE);
+		for (int y = 0; y < 16; y++) { // banda negra en el borde izquierdo de la cara IZQUIERDA
+			atlas.setRGB(0, y, NEGRO);
+			atlas.setRGB(1, y, NEGRO);
+		}
+		for (int y = 0; y < 16; y++) { // la cara DERECHA (x 16..31) es violeta entera
+			for (int x = 16; x < 32; x++) {
+				atlas.setRGB(x, y, VIOLETA);
+			}
+		}
+
+		TextureEdgeFiller.Result result = filler.fillBlackEdges(atlas.getSubimage(0, 0, 16, 16));
+
+		assertThat(result.edgesFilled()).isEqualTo(1);
+		assertThat(atlas.getRGB(0, 5)).isEqualTo(VERDE);
+		assertThat(atlas.getRGB(1, 5)).isEqualTo(VERDE);
+		for (int y = 0; y < 16; y++) {
+			for (int x = 16; x < 32; x++) {
+				assertThat(atlas.getRGB(x, y)).isEqualTo(VIOLETA);
+			}
+		}
+	}
+
+	/**
+	 * La banda negra de una cara NO puede rellenarse copiando el píxel de la
+	 * cara contigua: la vista está acotada al rect, así que el único origen
+	 * posible es el interior de la propia cara.
+	 */
+	@Test
+	void unaCaraCuyaVecinaEsNegraSeRellenaConSuPropioColor() {
+		BufferedImage atlas = lleno(32, 16, VERDE);
+		for (int y = 0; y < 16; y++) {
+			for (int x = 0; x < 16; x++) {
+				atlas.setRGB(x, y, NEGRO); // cara izquierda: negra entera
+			}
+			atlas.setRGB(16, y, NEGRO); // banda negra en el borde izquierdo de la cara DERECHA
+		}
+
+		TextureEdgeFiller.Result result = filler.fillBlackEdges(atlas.getSubimage(16, 0, 16, 16));
+
+		assertThat(result.edgesFilled()).isEqualTo(1);
+		assertThat(atlas.getRGB(16, 5)).isEqualTo(VERDE);
+		assertThat(atlas.getRGB(15, 5)).isEqualTo(NEGRO); // la vecina sigue intacta
+	}
+
 	/** La transparencia es un estado legítimo del atlas (cara sin pintar), no una costura que haya que tapar. */
 	@Test
 	void unaBandaTransparenteNoSeConfundeConNegro() {
