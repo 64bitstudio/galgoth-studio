@@ -20,8 +20,9 @@ export function thumbnailUrl(key: string | null): string | null {
 
 /**
  * Ticket 092 -- `ProjectSummary.avatarUrl`/`ProjectDetail.avatarUrl`
- * llegan del backend como ruta relativa servible (`/api/account/avatar/{userId}`,
- * público -- ver `AccountAvatarController`), mismo criterio que
+ * llegan del backend como ruta relativa servible (`/api/account/avatar/{publicAvatarId}`,
+ * público -- ver `AccountAvatarController`; id de servicio aparte desde
+ * el ticket 106, nunca el `userId` real), mismo criterio que
  * `thumbnailUrl` de arriba.
  */
 export function avatarUrl(path: string | null): string | null {

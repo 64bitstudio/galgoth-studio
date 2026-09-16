@@ -10,8 +10,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.galgothstudio.backend.TestcontainersConfiguration;
 import java.util.Base64;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -43,17 +45,20 @@ class AccountAvatarControllerTest {
 	@Autowired
 	private MockMvc mockMvc;
 
+	private final ObjectMapper objectMapper = new ObjectMapper();
+
 	private static RequestPostProcessor authenticated() {
 		return jwt().jwt(builder -> builder.subject(USER_ID));
 	}
 
 	@Test
 	void subir_un_avatar_valido_y_descargarlo_devuelve_los_mismos_bytes() throws Exception {
-		mockMvc.perform(post("/api/account/avatar").with(authenticated()).contentType(MediaType.IMAGE_PNG).content(TINY_PNG))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.avatarUrl", is("/api/account/avatar/" + USER_ID)));
+		String avatarUrl = uploadAvatarAndGetUrl(TINY_PNG);
 
-		mockMvc.perform(get("/api/account/avatar/{userId}", USER_ID))
+		// Hallazgo real de seguridad (auth-core-mc#071): la URL pública NUNCA debe llevar el userId real.
+		assertThat(avatarUrl).isNotEqualTo("/api/account/avatar/" + USER_ID).startsWith("/api/account/avatar/");
+
+		mockMvc.perform(get(avatarUrl))
 				.andExpect(status().isOk())
 				.andExpect(header().string("Content-Type", MediaType.IMAGE_PNG_VALUE))
 				.andExpect(result -> assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(TINY_PNG));
@@ -62,14 +67,31 @@ class AccountAvatarControllerTest {
 	/** Descargar el avatar es público a propósito (ticket 092, Explorar) -- sin `Authorization`. */
 	@Test
 	void descargar_un_avatar_no_exige_autenticacion() throws Exception {
-		mockMvc.perform(post("/api/account/avatar").with(authenticated()).contentType(MediaType.IMAGE_PNG).content(TINY_PNG));
+		String avatarUrl = uploadAvatarAndGetUrl(TINY_PNG);
 
-		mockMvc.perform(get("/api/account/avatar/{userId}", USER_ID)).andExpect(status().isOk());
+		mockMvc.perform(get(avatarUrl)).andExpect(status().isOk());
+	}
+
+	@Test
+	void descargar_por_el_userId_real_en_vez_del_publicAvatarId_responde_404() throws Exception {
+		uploadAvatarAndGetUrl(TINY_PNG);
+
+		// Hallazgo real de seguridad (auth-core-mc#071): el userId real ya no es una ruta válida en absoluto.
+		mockMvc.perform(get("/api/account/avatar/{userId}", USER_ID)).andExpect(status().isNotFound());
 	}
 
 	@Test
 	void descargar_el_avatar_de_un_usuario_sin_avatar_responde_404() throws Exception {
-		mockMvc.perform(get("/api/account/avatar/{userId}", USER_ID)).andExpect(status().isNotFound());
+		mockMvc.perform(get("/api/account/avatar/{publicAvatarId}", UUID.randomUUID())).andExpect(status().isNotFound());
+	}
+
+	private String uploadAvatarAndGetUrl(byte[] png) throws Exception {
+		String responseBody = mockMvc.perform(post("/api/account/avatar").with(authenticated()).contentType(MediaType.IMAGE_PNG).content(png))
+				.andExpect(status().isOk())
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+		return objectMapper.readTree(responseBody).get("avatarUrl").asText();
 	}
 
 	@Test
@@ -113,15 +135,17 @@ class AccountAvatarControllerTest {
 	}
 
 	@Test
-	void resubir_un_avatar_reemplaza_el_anterior() throws Exception {
-		mockMvc.perform(post("/api/account/avatar").with(authenticated()).contentType(MediaType.IMAGE_PNG).content(TINY_PNG));
+	void resubir_un_avatar_reemplaza_el_anterior_bajo_la_misma_url_publica() throws Exception {
+		String avatarUrl = uploadAvatarAndGetUrl(TINY_PNG);
 
 		byte[] otroPng = Base64.getDecoder()
 				.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC");
-		mockMvc.perform(post("/api/account/avatar").with(authenticated()).contentType(MediaType.IMAGE_PNG).content(otroPng))
-				.andExpect(status().isOk());
+		String urlTrasResubir = uploadAvatarAndGetUrl(otroPng);
 
-		mockMvc.perform(get("/api/account/avatar/{userId}", USER_ID))
+		// El publicAvatarId no cambia entre subidas -- es del PERFIL, no de cada archivo.
+		assertThat(urlTrasResubir).isEqualTo(avatarUrl);
+
+		mockMvc.perform(get(avatarUrl))
 				.andExpect(status().isOk())
 				.andExpect(result -> assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(otroPng));
 	}
