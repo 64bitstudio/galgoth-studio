@@ -67,38 +67,39 @@ public class TextureEdgeFiller {
 			return new Result(0, countWide(left, w) + countWide(right, w) + countWide(top, h) + countWide(bottom, h));
 		}
 
-		int filled = 0;
-		int skipped = 0;
 		int maxHorizontal = (int) Math.floor(w * MAX_BAND_RATIO);
 		int maxVertical = (int) Math.floor(h * MAX_BAND_RATIO);
 
-		// Horizontal primero y vertical después: así las esquinas toman el
-		// valor ya corregido de su columna, no el negro original.
-		if (left > 0 && left <= maxHorizontal) {
-			copyColumnInto(image, left, 0, left);
-			filled++;
-		} else if (left > 0) {
-			skipped++;
+		// Horizontal primero y vertical después, en este orden explícito: así
+		// las esquinas toman el valor ya corregido de su columna en vez del
+		// negro original.
+		Tally tally = Tally.EMPTY;
+		tally = tally.plus(applyEdge(left, maxHorizontal, () -> copyColumnInto(image, left, 0, left)));
+		tally = tally.plus(applyEdge(right, maxHorizontal, () -> copyColumnInto(image, w - 1 - right, w - right, w)));
+		tally = tally.plus(applyEdge(top, maxVertical, () -> copyRowInto(image, top, 0, top)));
+		tally = tally.plus(applyEdge(bottom, maxVertical, () -> copyRowInto(image, h - 1 - bottom, h - bottom, h)));
+		return new Result(tally.filled(), tally.skipped());
+	}
+
+	/** Sin banda no hay nada que hacer; con banda ancha se cuenta y no se toca; si no, se rellena. */
+	private static Tally applyEdge(int band, int maxBand, Runnable fill) {
+		if (band <= 0) {
+			return Tally.EMPTY;
 		}
-		if (right > 0 && right <= maxHorizontal) {
-			copyColumnInto(image, w - 1 - right, w - right, w);
-			filled++;
-		} else if (right > 0) {
-			skipped++;
+		if (band > maxBand) {
+			return new Tally(0, 1);
 		}
-		if (top > 0 && top <= maxVertical) {
-			copyRowInto(image, top, 0, top);
-			filled++;
-		} else if (top > 0) {
-			skipped++;
+		fill.run();
+		return new Tally(1, 0);
+	}
+
+	private record Tally(int filled, int skipped) {
+
+		static final Tally EMPTY = new Tally(0, 0);
+
+		Tally plus(Tally other) {
+			return new Tally(filled + other.filled(), skipped + other.skipped());
 		}
-		if (bottom > 0 && bottom <= maxVertical) {
-			copyRowInto(image, h - 1 - bottom, h - bottom, h);
-			filled++;
-		} else if (bottom > 0) {
-			skipped++;
-		}
-		return new Result(filled, skipped);
 	}
 
 	private static int countWide(int band, int size) {
