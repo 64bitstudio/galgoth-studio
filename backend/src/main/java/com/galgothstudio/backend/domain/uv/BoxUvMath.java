@@ -64,14 +64,49 @@ public final class BoxUvMath {
 	 */
 	public static Footprint footprintOf(Cuboid cuboid, TexelDensity density) {
 		int factor = density.texelsPerUnit();
-		int x = boxSizeAxis(cuboid.from().x(), cuboid.to().x()) * factor;
-		int y = boxSizeAxis(cuboid.from().y(), cuboid.to().y()) * factor;
-		int z = boxSizeAxis(cuboid.from().z(), cuboid.to().z()) * factor;
+		int x = scaledAxis(cuboid.from().x(), cuboid.to().x(), factor);
+		int y = scaledAxis(cuboid.from().y(), cuboid.to().y(), factor);
+		int z = scaledAxis(cuboid.from().z(), cuboid.to().z(), factor);
 		return new Footprint(2 * (x + z), z + y);
 	}
 
+	/** Tamaño de un eje en unidades de modelo, redondeado a entero. Sin densidad: ver {@link #scaledAxis}. */
 	public static int boxSizeAxis(double from, double to) {
 		return (int) Math.round(Math.abs(to - from));
+	}
+
+	/**
+	 * Tamaño de un eje YA EN TEXELS -- ticket 118. El orden de las dos
+	 * operaciones no es un detalle: antes se redondeaba a unidades enteras y
+	 * recién después se multiplicaba por la densidad
+	 * ({@code round(v) * factor}), así que la densidad no podía recuperar lo
+	 * que el redondeo ya había destruido. Un eje de 0,4 unidades daba
+	 * {@code round(0,4) * 4 = 0}: cara degenerada a CUALQUIER densidad,
+	 * justo lo contrario de lo que promete subirla (ticket 109). Uno de 1,4
+	 * daba 4 texels en vez de los 6 que le corresponden.
+	 *
+	 * <p>Medido: 32 caras degeneradas en el reporte de calidad del benchmark
+	 * (110) y 22 caras enteramente negras en la verificación en vivo del
+	 * 114, 12 de ellas de 4x4 y ninguna mayor a 16x8 -- todas caras chicas.
+	 *
+	 * <p><b>Piso de 1 texel, decisión explícita del 118</b>: un eje que
+	 * EXISTE pero es tan chico que aun escalado redondea a cero recibe 1
+	 * texel. Una cara de tamaño cero no se puede pintar ni mostrar, así que
+	 * dejarla en cero es perder la pieza; darle un texel es lo mínimo
+	 * honesto. Un eje de tamaño REAL cero (cuboid plano de verdad) sigue
+	 * dando cero: ahí no hay nada que inventar, y el reporte de calidad ya
+	 * lo cuenta como degenerado en vez de taparlo.
+	 *
+	 * <p>A {@link TexelDensity#X1} el resultado es idéntico al anterior
+	 * ({@code round(v * 1)} es {@code round(v)}), así que las fixtures de los
+	 * tickets 006/007 siguen valiendo sin tocarlas.
+	 */
+	public static int scaledAxis(double from, double to, int texelsPerUnit) {
+		double size = Math.abs(to - from);
+		if (size == 0) {
+			return 0;
+		}
+		return Math.max(1, (int) Math.round(size * texelsPerUnit));
 	}
 
 	/**
@@ -97,9 +132,12 @@ public final class BoxUvMath {
 	 */
 	public static CuboidFaces boxUnwrapFaces(Cuboid cuboid, int offsetX, int offsetY, TexelDensity density) {
 		int factor = density.texelsPerUnit();
-		int x = boxSizeAxis(cuboid.from().x(), cuboid.to().x()) * factor;
-		int y = boxSizeAxis(cuboid.from().y(), cuboid.to().y()) * factor;
-		int z = boxSizeAxis(cuboid.from().z(), cuboid.to().z()) * factor;
+		// Ticket 118: MISMO cálculo que footprintOf, vía scaledAxis. Las dos
+		// rutas lo hacen por separado (una reserva, la otra coloca) y tienen
+		// que coincidir exactamente o el packing deja de ser consistente.
+		int x = scaledAxis(cuboid.from().x(), cuboid.to().x(), factor);
+		int y = scaledAxis(cuboid.from().y(), cuboid.to().y(), factor);
+		int z = scaledAxis(cuboid.from().z(), cuboid.to().z(), factor);
 
 		Face up = faceAt(offsetX + z, offsetY, x, z);
 		Face down = faceAt(offsetX + z + x, offsetY, x, z);
