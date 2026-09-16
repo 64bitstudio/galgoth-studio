@@ -165,6 +165,11 @@ public class GeometryPlannerService {
 		return new RawOperationsResult(List.copyOf(collected), response);
 	}
 
+	/** Igual que {@link #applyOperations(List, AiProviderResponse, MobProjectModel, TextureResolution)} con el tope por defecto (ticket 103). */
+	public MobProjectModel applyOperations(List<GeometryOperation> operations, AiProviderResponse providerResponse, MobProjectModel startingModel) {
+		return applyOperations(operations, providerResponse, startingModel, TextureResolution.MAX_128);
+	}
+
 	/**
 	 * Aplicación final CON UV (ticket 006) de un batch ya obtenido de
 	 * {@link #requestOperations} -- nunca vuelve a llamar al proveedor.
@@ -184,11 +189,6 @@ public class GeometryPlannerService {
 	 * {@code uvLayoutStrategy}, que es quien de verdad empaqueta las
 	 * regiones dentro de ese atlas ya bien dimensionado.
 	 */
-	/** Igual que {@link #applyOperations(List, AiProviderResponse, MobProjectModel, TextureResolution)} con el tope por defecto (ticket 103). */
-	public MobProjectModel applyOperations(List<GeometryOperation> operations, AiProviderResponse providerResponse, MobProjectModel startingModel) {
-		return applyOperations(operations, providerResponse, startingModel, TextureResolution.MAX_128);
-	}
-
 	public MobProjectModel applyOperations(
 			List<GeometryOperation> operations, AiProviderResponse providerResponse, MobProjectModel startingModel,
 			TextureResolution textureResolution) {
