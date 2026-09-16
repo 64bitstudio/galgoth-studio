@@ -57,7 +57,7 @@ class ProportionEstimatorTest {
 		// El resto del modelo se sigue produciendo -- el intent no se descarta completo.
 		assertThat(result.bones()).isNotEmpty();
 		assertThat(result.cuboids()).isNotEmpty();
-		TemplateCuboidSpec head = cuboid(result, "head").orElseThrow();
+		TemplateCuboidSpec head = cuboid(result, "head_cuboid").orElseThrow();
 		// Clampado a 1.8, no al valor pedido 5.0: alto = 8 * 1.8 = 14.4 desde el origen (y=24).
 		assertThat(head.to().y() - head.origin().y()).isCloseTo(8 * 1.8, within(EPS));
 	}
@@ -80,7 +80,7 @@ class ProportionEstimatorTest {
 		ModelIntent intent = intentWith(new Proportions(1.5, 1.0, 1.0, 1.0));
 
 		ProportionAdjustmentResult result = ProportionEstimator.adjust(template, intent);
-		TemplateCuboidSpec head = cuboid(result, "head").orElseThrow();
+		TemplateCuboidSpec head = cuboid(result, "head_cuboid").orElseThrow();
 
 		assertThat(head.origin()).isEqualTo(new com.galgothstudio.backend.domain.model.Vec3(0, 24, 0));
 		assertThat(head.from().x()).isCloseTo(-4 * 1.5, within(EPS));
@@ -100,8 +100,8 @@ class ProportionEstimatorTest {
 			ProportionAdjustmentResult result = ProportionEstimator.adjust(template, intent);
 
 			TemplateCuboidSpec upperArm = cuboid(result, "left_upper_arm").orElseThrow();
-			TemplateCuboidSpec forearm = cuboid(result, "left_forearm").orElseThrow();
-			TemplateCuboidSpec hand = cuboid(result, "left_hand").orElseThrow();
+			TemplateCuboidSpec forearm = cuboid(result, "left_forearm_cuboid").orElseThrow();
+			TemplateCuboidSpec hand = cuboid(result, "left_hand_cuboid").orElseThrow();
 
 			assertThat(upperArm.from().y()).as("armLength=" + armLength)
 					.isCloseTo(forearm.to().y(), within(EPS));
@@ -129,8 +129,8 @@ class ProportionEstimatorTest {
 		ModelIntent intent = intentWith(new Proportions(1.0, 1.0, 2.0, 1.0));
 
 		ProportionAdjustmentResult result = ProportionEstimator.adjust(template, intent);
-		TemplateCuboidSpec hand = cuboid(result, "left_hand").orElseThrow();
-		TemplateCuboidSpec forearm = cuboid(result, "left_forearm").orElseThrow();
+		TemplateCuboidSpec hand = cuboid(result, "left_hand_cuboid").orElseThrow();
+		TemplateCuboidSpec forearm = cuboid(result, "left_forearm_cuboid").orElseThrow();
 
 		// La muñeca (tope de la mano) sigue pegada al final del antebrazo, cualquiera sea handScale.
 		assertThat(hand.to().y()).isCloseTo(forearm.from().y(), within(EPS));
@@ -163,7 +163,7 @@ class ProportionEstimatorTest {
 		ProportionAdjustmentResult neutralResult = ProportionEstimator.adjust(template, neutral);
 		ProportionAdjustmentResult extremeResult = ProportionEstimator.adjust(template, extreme);
 
-		for (String id : List.of("torso", "left_thigh", "right_thigh", "left_shin_cuboid", "right_foot_cuboid")) {
+		for (String id : List.of("torso_cuboid", "left_thigh", "right_thigh", "left_shin_cuboid", "right_foot_cuboid")) {
 			assertThat(cuboid(extremeResult, id)).isEqualTo(cuboid(neutralResult, id));
 		}
 	}
