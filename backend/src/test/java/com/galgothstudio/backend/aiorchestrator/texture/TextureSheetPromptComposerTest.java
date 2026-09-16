@@ -118,4 +118,25 @@ class TextureSheetPromptComposerTest {
 		assertThatThrownBy(() -> TextureSheetPromptComposer.compose(sheet, 20, 10, planIncompleto)).isInstanceOf(IllegalStateException.class);
 	}
 
+	/**
+	 * Ticket 113 -- el prompt ya NO le pide al modelo reservar el margen
+	 * entre regiones. Pedírselo hacía que lo reservara DENTRO del rectángulo
+	 * y lo pintara oscuro: bandas negras de 1-2 px medidas en un atlas real,
+	 * visibles como costuras en el render. El gutter sigue en el layout y el
+	 * slicer sigue recortando exacto, así que el bleed hacia afuera ya se
+	 * descarta solo -- no hace falta pedirlo dos veces.
+	 */
+	@Test
+	void elPromptPideLlenarCadaRegionDeBordeABorde_yNoPideReservarMargen_AC() {
+		TextureGenerationSheet sheet = sheet();
+
+		String prompt = TextureSheetPromptComposer.compose(sheet, 20, 10, planFor(sheet, null, null));
+
+		assertThat(prompt)
+				.contains("de borde a borde")
+				.contains("los cuatro lados")
+				.doesNotContain("sin contenido")
+				.doesNotContain("margen entre ellas");
+	}
+
 }
