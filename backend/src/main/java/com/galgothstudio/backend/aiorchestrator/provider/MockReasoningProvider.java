@@ -56,9 +56,15 @@ public class MockReasoningProvider implements StructuredReasoningProvider {
 	/** `GeometryPlannerService.PROMPT_VERSION` (paquete `planner`, no importable directo desde acá sin acoplar los dos paquetes) -- valor literal replicado a propósito. */
 	private static final String GENERATION_PROMPT_VERSION = "planner-v1";
 
+	/** `SecondaryGeometryPlanner.PROMPT_VERSION` (ticket 099) -- mismo motivo/patrón que {@link #GENERATION_PROMPT_VERSION}. */
+	private static final String SECONDARY_PLANNER_PROMPT_VERSION = "secondary-planner-v1";
+
 	/** Primer cuboid serializado en el modelo actual dentro del `userPrompt` -- mismo orden de campos que el record `Cuboid` (id, name, boneId, ...), `boneId` distingue un cuboid de un bone (que tiene `parentId`, no `boneId`). */
 	private static final Pattern FIRST_CUBOID_ID =
 			Pattern.compile("\"id\"\\s*:\\s*\"([^\"]+)\"\\s*,\\s*\"name\"\\s*:\\s*\"[^\"]*\"\\s*,\\s*\"boneId\"");
+
+	/** Primer bone primario listado en el `userPrompt` de {@code SecondaryGeometryPlanner} (formato "- <id> (<name>), pivot=[...]") -- mismo espíritu que {@link #FIRST_CUBOID_ID}: nunca inventar un id, extraer uno real del prompt recibido. */
+	private static final Pattern FIRST_PRIMARY_BONE_ID = Pattern.compile("- (\\S+) \\(");
 
 	/**
 	 * Rig humanoide mínimo (raíz + torso, cabeza, ambos brazos) desde un
@@ -110,7 +116,31 @@ public class MockReasoningProvider implements StructuredReasoningProvider {
 		if (GENERATION_PROMPT_VERSION.equals(request.promptVersion())) {
 			return DEFAULT_GENERATION_RESPONSE;
 		}
+		if (SECONDARY_PLANNER_PROMPT_VERSION.equals(request.promptVersion())) {
+			return defaultSecondaryResponseFor(request.userPrompt());
+		}
 		return defaultEditResponseFor(request.userPrompt());
+	}
+
+	/**
+	 * Un único cuboid pequeño colgado del primer bone primario real que
+	 * aparece en el `userPrompt` (nunca un id inventado -- mismo espíritu
+	 * que {@link #defaultEditResponseFor}, que ya resuelve este mismo
+	 * problema para el caso de edición). Si `SecondaryGeometryConstraints`
+	 * lo rechaza por distancia al pivote (el mock no sabe la escala real del
+	 * template), es un resultado válido igual -- {@code SecondaryGeometryPlanner}
+	 * admite explícitamente una lista vacía de geometría secundaria.
+	 */
+	private String defaultSecondaryResponseFor(String userPrompt) {
+		Matcher matcher = FIRST_PRIMARY_BONE_ID.matcher(userPrompt);
+		if (!matcher.find()) {
+			return "[]";
+		}
+		String boneId = matcher.group(1);
+		return """
+				[{"op":"createCuboid","tempId":"c_secondary_mock","name":"detalle","boneId":"%s","from":[0,0,0],"to":[1,1,1],"origin":[0.5,0.5,0.5],"rotation":[0,0,0],"semanticPart":"GENERIC"}]
+				"""
+				.formatted(boneId);
 	}
 
 	/**

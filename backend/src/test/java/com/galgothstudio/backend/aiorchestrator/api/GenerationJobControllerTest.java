@@ -23,6 +23,8 @@ import com.galgothstudio.backend.aiorchestrator.provider.MockVisionProvider;
 import com.galgothstudio.backend.aiorchestrator.provider.StructuredReasoningProvider;
 import com.galgothstudio.backend.aiorchestrator.provider.VisionModelProvider;
 import com.galgothstudio.backend.asset.AssetStorageService;
+import com.galgothstudio.backend.domain.model.BaseType;
+import com.galgothstudio.backend.domain.template.CanonicalTemplateCatalog;
 import java.io.File;
 import java.nio.file.Files;
 import java.time.Duration;
@@ -87,21 +89,30 @@ class GenerationJobControllerTest {
 	@Autowired
 	private AiJobEventRepository aiJobEventRepository;
 
-	private static final String VALID_OPERATIONS_JSON =
-			"""
-			[
-			  {"op":"createBone","tempId":"root","name":"body","parentId":null,"pivot":[0,0,0],"rotation":[0,0,0]},
-			  {"op":"createCuboid","tempId":"c1","name":"body","boneId":"root","from":[-4,0,-4],"to":[4,8,4],"origin":[0,4,0],"rotation":[0,0,0]}
-			]
-			""";
-
+	/**
+	 * Ticket 099 -- {@code reasoningProvider} ya NO se usa para la anatomía
+	 * primaria (100% determinista, ver {@code PrimaryGeometryGenerator}),
+	 * solo para geometría secundaria. Sin fixture explícito: el default de
+	 * {@code MockReasoningProvider} para {@code secondary-planner-v1} extrae
+	 * un bone REAL del prompt (nunca puede hardcodearse de antemano).
+	 *
+	 * <p><b>Hallazgo real (no en el ticket original)</b>: {@code MockReasoningProvider}
+	 * es un bean singleton del contexto de Spring CACHEADO y COMPARTIDO
+	 * entre clases de test con las mismas properties/auto-config (ej.
+	 * {@code AiEditControllerTest}, mismo {@code @AutoConfigureMockMvc}) --
+	 * su {@code explicitResponse} mutable puede quedar seteado por la ÚLTIMA
+	 * llamada a {@code setNextResponse} de OTRA clase que corrió antes en el
+	 * mismo proceso de Gradle (orden de ejecución no garantizado), haciendo
+	 * que el default "inteligente" de acá nunca se alcance. `setNextResponse(null)`
+	 * fuerza un estado limpio en cada test, sin importar qué corrió antes.
+	 */
 	@BeforeEach
 	void resetMockProviders() throws Exception {
 		((MockVisionProvider) visionModelProvider)
 				.setNextResponse(Files.readString(new File("../contracts/fixtures/model-intent-example.json").toPath()));
 		((MockVisionProvider) visionModelProvider).setOnCall(() -> {
 		});
-		((MockReasoningProvider) reasoningProvider).setNextResponse(VALID_OPERATIONS_JSON);
+		((MockReasoningProvider) reasoningProvider).setNextResponse(null);
 	}
 
 	private UUID aProjectAndMobWithReference() {
@@ -125,9 +136,17 @@ class GenerationJobControllerTest {
 		return UUID.fromString(node.get("jobId").asText());
 	}
 
+	/**
+	 * 10s (antes 5s): la anatomía primaria real ahora es el template
+	 * humanoide completo (097/098, 15 bones/14 cuboides) en vez del fixture
+	 * mínimo de antes -- exportar/validar FMM y persistir ese modelo real es
+	 * más trabajo real, margen adicional razonable. La causa real de los
+	 * fallos intermitentes que motivaron investigar esto NO era timing --
+	 * ver el hallazgo documentado en {@link #resetMockProviders}.
+	 */
 	private AiJobEntity awaitTerminalStatus(UUID jobId) {
 		Awaitility.await()
-				.atMost(Duration.ofSeconds(5))
+				.atMost(Duration.ofSeconds(10))
 				.pollInterval(Duration.ofMillis(25))
 				.until(() -> !"running".equals(aiJobRepository.findById(jobId).orElseThrow().getStatus()));
 		return aiJobRepository.findById(jobId).orElseThrow();
@@ -211,13 +230,18 @@ class GenerationJobControllerTest {
 		UUID jobId = startGenerationAndExtractJobId(mobId);
 		awaitTerminalStatus(jobId);
 
+		// Ticket 099: anatomía primaria determinista (097/098, tamaño real del
+		// template humanoide -- no un número mágico hardcodeado acá) + 1
+		// cuboid secundario aceptado del default del mock (ver resetMockProviders).
+		int expectedPrimaryBones = CanonicalTemplateCatalog.forBaseType(BaseType.HUMANOID).bones().size();
+		int expectedPrimaryCuboids = CanonicalTemplateCatalog.forBaseType(BaseType.HUMANOID).cuboids().size();
 		mockMvc.perform(get("/api/jobs/{jobId}/result", jobId))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.jobId").value(jobId.toString()))
 				.andExpect(jsonPath("$.mobId").value(mobId.toString()))
 				.andExpect(jsonPath("$.mobName").value("Carcomido"))
-				.andExpect(jsonPath("$.cuboidCount").value(1))
-				.andExpect(jsonPath("$.boneCount").value(1))
+				.andExpect(jsonPath("$.cuboidCount").value(expectedPrimaryCuboids + 1))
+				.andExpect(jsonPath("$.boneCount").value(expectedPrimaryBones))
 				.andExpect(jsonPath("$.fmmCompatible").value(true));
 	}
 

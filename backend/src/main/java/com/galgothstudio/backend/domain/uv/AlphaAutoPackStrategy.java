@@ -84,7 +84,7 @@ public final class AlphaAutoPackStrategy implements UvLayoutStrategy {
 			updatedCuboids.add(
 					new Cuboid(
 							cuboid.id(), cuboid.name(), cuboid.boneId(), cuboid.from(), cuboid.to(), cuboid.origin(),
-							cuboid.rotation(), faces));
+							cuboid.rotation(), faces, cuboid.semanticPart()));
 			for (FaceName faceName : FaceName.values()) {
 				regions.add(new UvRegion(cuboid.id(), faceName, BoxUvMath.faceOf(faces, faceName).uv()));
 			}

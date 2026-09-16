@@ -59,10 +59,23 @@ public final class PrimaryGeometryGenerator {
 	 *         rango, los clampa y avisa.
 	 */
 	public static PrimaryGeometryResult generate(MobProjectModel emptyModel, CanonicalTemplate template, ModelIntent intent) {
+		PrimaryOperationsResult planned = planOperations(template, intent);
+		MobProjectModel model = GeometryEngine.apply(emptyModel, planned.operations());
+		return new PrimaryGeometryResult(model, planned.warnings());
+	}
+
+	/**
+	 * Igual que {@link #generate}, pero devuelve las operaciones crudas SIN
+	 * aplicarlas -- ticket 099: el pipeline real (`MobGenerationService`)
+	 * necesita esta lista para combinarla con las operaciones de
+	 * {@code SecondaryGeometryPlanner} y aplicar/previsualizar ambas juntas
+	 * en un solo batch (mismo patrón "siempre reaplicar desde el modelo
+	 * vacío" que ya usa el resto del pipeline) -- nunca vuelve a llamar al
+	 * LLM, sigue siendo 100% determinista.
+	 */
+	public static PrimaryOperationsResult planOperations(CanonicalTemplate template, ModelIntent intent) {
 		ProportionAdjustmentResult resolved = ProportionEstimator.adjust(template, intent);
-		List<GeometryOperation> operations = toOperations(resolved);
-		MobProjectModel model = GeometryEngine.apply(emptyModel, operations);
-		return new PrimaryGeometryResult(model, resolved.warnings());
+		return new PrimaryOperationsResult(toOperations(resolved), resolved.warnings());
 	}
 
 	private static List<GeometryOperation> toOperations(ProportionAdjustmentResult resolved) {
@@ -71,7 +84,9 @@ public final class PrimaryGeometryGenerator {
 			operations.add(new CreateBone(bone.id(), bone.name(), bone.parentId(), bone.pivot(), bone.rotation()));
 		}
 		for (TemplateCuboidSpec cuboid : resolved.cuboids()) {
-			operations.add(new CreateCuboid(cuboid.id(), cuboid.name(), cuboid.boneId(), cuboid.from(), cuboid.to(), cuboid.origin(), cuboid.rotation()));
+			operations.add(new CreateCuboid(
+					cuboid.id(), cuboid.name(), cuboid.boneId(), cuboid.from(), cuboid.to(), cuboid.origin(),
+					cuboid.rotation(), cuboid.semanticPart()));
 		}
 		return operations;
 	}

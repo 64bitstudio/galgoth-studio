@@ -23,6 +23,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -80,11 +82,15 @@ class MobGenerationServiceStreamingTest {
 	 */
 	static class FakeStreamingReasoningProvider implements StructuredReasoningProvider {
 
+		/** Primer bone primario real listado en el userPrompt de {@code SecondaryGeometryPlanner} (formato "- <id> (<name>), pivot=[...]") -- mismo mecanismo que {@code MockReasoningProvider.FIRST_PRIMARY_BONE_ID} (ticket 099): los ids de bone son UUIDs reales generados en cada corrida, nunca se pueden hardcodear de antemano en un fixture de test. */
+		private static final Pattern FIRST_PRIMARY_BONE_ID = Pattern.compile("- (\\S+) \\(");
+
 		private List<String> operationJsons = List.of();
 		private int failAtIndex = -1;
 		private IntConsumer onBeforeIndex = i -> { };
 		private long delayBeforeFirstDeltaMillis = 0;
 
+		/** Cada template puede contener el placeholder {@code %BONE_ID%}, sustituido por un bone primario REAL antes de emitirse -- ver {@link #resolveBoneId}. */
 		void configure(List<String> operationJsons, int failAtIndex, IntConsumer onBeforeIndex) {
 			this.operationJsons = operationJsons;
 			this.failAtIndex = failAtIndex;
@@ -96,9 +102,15 @@ class MobGenerationServiceStreamingTest {
 			this.delayBeforeFirstDeltaMillis = millis;
 		}
 
+		private static String resolveBoneId(String userPrompt) {
+			Matcher matcher = FIRST_PRIMARY_BONE_ID.matcher(userPrompt);
+			return matcher.find() ? matcher.group(1) : "unknown-bone-id";
+		}
+
 		@Override
 		public AiProviderResponse reason(ReasoningRequest request) {
-			String joined = "[" + String.join(",", operationJsons) + "]";
+			String boneId = resolveBoneId(request.userPrompt());
+			String joined = "[" + operationJsons.stream().map(op -> op.replace("%BONE_ID%", boneId)).reduce((a, b) -> a + "," + b).orElse("") + "]";
 			return new AiProviderResponse(joined, "fake-streaming", "fake-model", request.promptVersion(), request.schemaVersion());
 		}
 
@@ -111,12 +123,13 @@ class MobGenerationServiceStreamingTest {
 					Thread.currentThread().interrupt();
 				}
 			}
+			String boneId = resolveBoneId(request.userPrompt());
 			for (int i = 0; i < operationJsons.size(); i++) {
 				onBeforeIndex.accept(i);
 				if (i == failAtIndex) {
 					throw new AiProviderException("Fallo simulado de proveedor a mitad de stream (test).");
 				}
-				onTextDelta.accept(operationJsons.get(i));
+				onTextDelta.accept(operationJsons.get(i).replace("%BONE_ID%", boneId));
 			}
 			// `failAtIndex == operationJsons.size()`: falla DESPUÉS de emitir
 			// todas las operaciones reales configuradas -- simula un proveedor
@@ -175,15 +188,16 @@ class MobGenerationServiceStreamingTest {
 		return mobId;
 	}
 
+	/** 10s (antes 5s, ticket 099) -- mismo motivo que `MobGenerationServiceTest`/`GenerationJobControllerTest`: la anatomía primaria real ahora es el template humanoide completo, no un fixture mínimo. */
 	private AiJobEntity awaitTerminalStatus(UUID jobId) {
 		Awaitility.await()
-				.atMost(Duration.ofSeconds(5))
+				.atMost(Duration.ofSeconds(10))
 				.pollInterval(Duration.ofMillis(25))
 				.until(() -> !"running".equals(aiJobRepository.findById(jobId).orElseThrow().getStatus()));
 		return aiJobRepository.findById(jobId).orElseThrow();
 	}
 
-	/** Un bone raíz + `cuboidCount` cuboids válidos, todos colgando del mismo bone -- fixture reutilizado por varios tests de este archivo. */
+	/** Un bone raíz + `cuboidCount` cuboids válidos, todos colgando del mismo bone -- fixture del pipeline PRE-099 (LLM genera anatomía completa), todavía usado por los tests de este archivo cuyas aserciones no dependen de que las operaciones sean aceptadas (ver {@link #secondaryCuboids} para los que sí). */
 	private static List<String> boneAndCuboids(int cuboidCount) {
 		List<String> ops = new ArrayList<>();
 		ops.add("{\"op\":\"createBone\",\"tempId\":\"root\",\"name\":\"root\",\"parentId\":null,\"pivot\":[0,0,0],\"rotation\":[0,0,0]}");
@@ -191,6 +205,26 @@ class MobGenerationServiceStreamingTest {
 			ops.add(
 					"{\"op\":\"createCuboid\",\"tempId\":\"c" + i + "\",\"name\":\"part" + i
 							+ "\",\"boneId\":\"root\",\"from\":[0,0,0],\"to\":[2,2,2],\"origin\":[1,1,1],\"rotation\":[0,0,0]}");
+		}
+		return ops;
+	}
+
+	/**
+	 * Ticket 099 -- {@code cuboidCount} createCuboid válidos de geometría
+	 * SECUNDARIA (nunca createBone: {@code SecondaryGeometryConstraints} lo
+	 * rechazaría). {@code %BONE_ID%} se sustituye por un bone primario REAL
+	 * en {@link FakeStreamingReasoningProvider} -- nunca un id inventado,
+	 * ver su Javadoc. Posición/tamaño pequeños y cerca del origen de la
+	 * anatomía primaria (pivote real del bone raíz, `body`) para pasar los
+	 * constraints de tamaño/bounding-box/distancia al pivote de forma
+	 * determinista contra el template humanoide real.
+	 */
+	private static List<String> secondaryCuboids(int cuboidCount) {
+		List<String> ops = new ArrayList<>();
+		for (int i = 0; i < cuboidCount; i++) {
+			ops.add(
+					"{\"op\":\"createCuboid\",\"tempId\":\"c" + i + "\",\"name\":\"part" + i
+							+ "\",\"boneId\":\"%BONE_ID%\",\"from\":[0,0,0],\"to\":[1,1,1],\"origin\":[0.5,0.5,0.5],\"rotation\":[0,0,0],\"semanticPart\":\"GENERIC\"}");
 		}
 		return ops;
 	}
@@ -218,7 +252,7 @@ class MobGenerationServiceStreamingTest {
 
 	@Test
 	void cada_operacion_real_del_stream_dispara_su_propio_evento_con_progreso_creciente_no_un_burst_post_hoc() {
-		reasoningProvider.configure(boneAndCuboids(5), -1, i -> { });
+		reasoningProvider.configure(secondaryCuboids(5), -1, i -> { });
 		UUID mobId = aProjectAndMobWithReference();
 
 		UUID jobId = mobGenerationService.startGeneration(mobId);
@@ -235,8 +269,10 @@ class MobGenerationServiceStreamingTest {
 
 	@Test
 	void un_fallo_del_proveedor_a_mitad_de_stream_en_generando_cuboides_64_por_ciento_deja_el_job_fallido() {
-		// 1 bone + 23 cuboids reales -> progressPct tras el último = min(89, 40+24) = 64.
-		List<String> ops = boneAndCuboids(23);
+		// Ticket 099: 23 cuboids secundarios reales (sin bone -- ya no hace
+		// falta, la anatomía primaria es determinista) -> progressPct tras el
+		// último = min(89, 40+23) = 63.
+		List<String> ops = secondaryCuboids(23);
 		reasoningProvider.configure(ops, ops.size(), i -> { }); // falla al INTENTAR la operación #24 (índice == ops.size(), nunca llega)
 		UUID mobId = aProjectAndMobWithReference();
 
@@ -249,7 +285,7 @@ class MobGenerationServiceStreamingTest {
 
 		AiJobEventEntity lastRealProgress = events.get(events.size() - 2); // el evento real justo antes de "fallido"
 		assertThat(lastRealProgress.getStage()).isEqualTo("generando_cuboides");
-		assertThat(lastRealProgress.getProgressPct()).isEqualTo(64);
+		assertThat(lastRealProgress.getProgressPct()).isEqualTo(63);
 	}
 
 	@Test
@@ -288,7 +324,7 @@ class MobGenerationServiceStreamingTest {
 		// simulado, ping cada 1s -> al menos 2 pings reales antes de la
 		// primera operación real.
 		reasoningProvider.delayFirstDeltaBy(2500);
-		reasoningProvider.configure(boneAndCuboids(2), -1, i -> { });
+		reasoningProvider.configure(secondaryCuboids(2), -1, i -> { });
 		UUID mobId = aProjectAndMobWithReference();
 
 		UUID jobId = mobGenerationService.startGeneration(mobId);
@@ -296,13 +332,21 @@ class MobGenerationServiceStreamingTest {
 
 		assertThat(job.getStatus()).isEqualTo("completed");
 		List<AiJobEventEntity> events = aiJobEventRepository.findByJobIdAndSeqGreaterThanOrderBySeqAsc(jobId, 0);
+		// Ticket 099: la fase que espera al LLM (y por lo tanto hace heartbeat
+		// mientras no llega ningún token real) es la de geometría SECUNDARIA
+		// -- stage generando_cuboides/40%, ver planSecondaryWithStreaming.
 		List<AiJobEventEntity> heartbeatPings =
-				events.stream().filter(e -> "detectando_silueta".equals(e.getStage()) && e.getMessage().contains("llevamos")).toList();
+				events.stream().filter(e -> "generando_cuboides".equals(e.getStage()) && e.getMessage().contains("llevamos")).toList();
 
 		assertThat(heartbeatPings).as("al menos 2 pings reales mientras Claude no emitió ningún token real todavía").hasSizeGreaterThanOrEqualTo(2);
-		// Apenas llega la primera operación real, el heartbeat se apaga -- no sigue haciendo ping sobre eventos reales ya en curso.
+		// Apenas llega la primera operación real, el heartbeat se apaga -- no
+		// sigue haciendo ping sobre eventos reales ya en curso. El primer
+		// evento de geometría secundaria real (no de ping) es el primero cuyo
+		// mensaje ya NO contiene "llevamos".
 		AiJobEventEntity lastHeartbeat = heartbeatPings.getLast();
-		AiJobEventEntity firstRealCuboidEvent = events.stream().filter(e -> "creando_rig".equals(e.getStage())).findFirst().orElseThrow();
+		AiJobEventEntity firstRealCuboidEvent = events.stream()
+				.filter(e -> "generando_cuboides".equals(e.getStage()) && !e.getMessage().contains("llevamos"))
+				.findFirst().orElseThrow();
 		assertThat(lastHeartbeat.getSeq()).isLessThan(firstRealCuboidEvent.getSeq());
 	}
 

@@ -41,6 +41,14 @@ export interface Cuboid {
   origin: Vec3
   rotation: Vec3
   faces: CuboidFaces
+  /**
+   * Categoría semántica de la parte que este cuboid representa (ej. "TORSO",
+   * "CLAW") -- campo aditivo, ticket 099. Ausente/undefined para cuboids de
+   * antes de este ticket o de caminos que no la necesitan (edición manual/IA
+   * sobre un modelo existente). Todavía un string libre, no el enum cerrado
+   * SemanticPartCategory (ticket 104).
+   */
+  semanticPart?: string
 }
 
 export interface TextureDocument {

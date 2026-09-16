@@ -9,6 +9,7 @@ import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEventRepository
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobRepository;
 import com.galgothstudio.backend.aiorchestrator.planner.GeometryPlannerService;
 import com.galgothstudio.backend.aiorchestrator.planner.RawOperationsResult;
+import com.galgothstudio.backend.aiorchestrator.planner.SecondaryGeometryPlanner;
 import com.galgothstudio.backend.aiorchestrator.progress.GenerationCancellationRegistry;
 import com.galgothstudio.backend.aiorchestrator.progress.GenerationEventBroadcaster;
 import com.galgothstudio.backend.aiorchestrator.progress.GenerationPreviewDiff;
@@ -24,9 +25,12 @@ import com.galgothstudio.backend.domain.geometry.GeometryEngine;
 import com.galgothstudio.backend.domain.geometry.GeometryOperation;
 import com.galgothstudio.backend.domain.geometry.MoveCuboid;
 import com.galgothstudio.backend.domain.geometry.ParentBone;
+import com.galgothstudio.backend.domain.geometry.PrimaryGeometryGenerator;
+import com.galgothstudio.backend.domain.geometry.PrimaryOperationsResult;
 import com.galgothstudio.backend.domain.geometry.RemoveCuboid;
 import com.galgothstudio.backend.domain.geometry.ResizeCuboid;
 import com.galgothstudio.backend.domain.geometry.RotateCuboid;
+import com.galgothstudio.backend.domain.geometry.SecondaryGeometryConstraints;
 import com.galgothstudio.backend.domain.geometry.SetBonePivot;
 import com.galgothstudio.backend.domain.geometry.SetBoneRotation;
 import com.galgothstudio.backend.domain.export.BBModelExporterV5;
@@ -39,6 +43,8 @@ import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.ModelIntent;
 import com.galgothstudio.backend.domain.model.TextureDocument;
 import com.galgothstudio.backend.domain.model.UvLayout;
+import com.galgothstudio.backend.domain.template.CanonicalTemplate;
+import com.galgothstudio.backend.domain.template.CanonicalTemplateCatalog;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
 import com.galgothstudio.backend.project.persistence.MobEntity;
 import com.galgothstudio.backend.project.persistence.MobRepository;
@@ -116,6 +122,7 @@ public class MobGenerationService {
 	private final AssetStorageService assetStorageService;
 	private final VisionAnalysisService visionAnalysisService;
 	private final GeometryPlannerService geometryPlannerService;
+	private final SecondaryGeometryPlanner secondaryGeometryPlanner;
 	private final AiJobRepository aiJobRepository;
 	private final AiJobEventRepository aiJobEventRepository;
 	private final GenerationEventBroadcaster eventBroadcaster;
@@ -132,6 +139,7 @@ public class MobGenerationService {
 			AssetStorageService assetStorageService,
 			VisionAnalysisService visionAnalysisService,
 			GeometryPlannerService geometryPlannerService,
+			SecondaryGeometryPlanner secondaryGeometryPlanner,
 			AiJobRepository aiJobRepository,
 			AiJobEventRepository aiJobEventRepository,
 			GenerationEventBroadcaster eventBroadcaster,
@@ -152,6 +160,7 @@ public class MobGenerationService {
 		this.assetStorageService = assetStorageService;
 		this.visionAnalysisService = visionAnalysisService;
 		this.geometryPlannerService = geometryPlannerService;
+		this.secondaryGeometryPlanner = secondaryGeometryPlanner;
 		this.aiJobRepository = aiJobRepository;
 		this.aiJobEventRepository = aiJobEventRepository;
 		this.eventBroadcaster = eventBroadcaster;
@@ -204,20 +213,47 @@ public class MobGenerationService {
 			checkCancellation(jobId);
 			emit(jobId, seq, GenerationStage.DETECTANDO_SILUETA, "Silueta detectada: " + visionResult.modelIntent().silhouette(), 25, null);
 
+			// Ticket 099 -- la anatomía primaria (esqueleto + volumen esencial)
+			// ya NO sale del LLM: PrimaryGeometryGenerator (098) la construye
+			// 100% determinista a partir del CanonicalTemplate del baseType
+			// (097), sin ninguna llamada de red. Se aplica de una sola vez
+			// (instantáneo, sin heartbeat) y se muestra como un único evento
+			// de preview -- el LLM entra recién después, para geometría
+			// secundaria (ropa/garras/cuernos/jirones), sobre este modelo ya
+			// fijado.
+			MobProjectModel emptyModel = emptyModelFor(context);
+			// GenerationJobContext.baseType() es el String crudo de la BD
+			// (ej. "humanoid") -- se convierte al enum vía el mismo ObjectMapper
+			// que ya respeta los @JsonProperty de BaseType en el resto del
+			// dominio (nunca BaseType.valueOf, que esperaría "HUMANOID").
+			CanonicalTemplate template = CanonicalTemplateCatalog.forBaseType(objectMapper.convertValue(context.baseType(), BaseType.class));
+			PrimaryOperationsResult primary = PrimaryGeometryGenerator.planOperations(template, visionResult.modelIntent());
+			logGenerationWarnings(jobId, "anatomía primaria (proporciones)", primary.warnings());
+			MobProjectModel primaryModel = GeometryEngine.apply(emptyModel, primary.operations());
+			emit(
+					jobId, seq, GenerationStage.CREANDO_RIG,
+					"Anatomía primaria lista (" + primary.operations().size() + " operaciones).", 35,
+					previewSnapshotPayload(primaryModel));
+			checkCancellation(jobId);
+
 			// Ticket 038 -- hallazgo real (ver ai_job_events de jobs reales en
 			// dev, 2026-09-09): esta era la llamada que dejaba la UI "pegada"
 			// 70-90s sin ningún evento. Con streaming=true, cada operación
-			// real dispara su propio evento acá abajo (via applyStepAndEmit),
+			// real dispara su propio evento acá abajo (via applySecondaryStepAndEmit),
 			// en vez de un replay post-hoc instantáneo.
-			MobProjectModel emptyModel = emptyModelFor(context);
-			GeometryPlanExecution planExecution = geometryStreamingEnabled
-					? planWithStreaming(jobId, seq, visionResult.modelIntent(), emptyModel)
-					: planWithHeartbeat(jobId, seq, visionResult.modelIntent(), emptyModel);
-			updateJobProviderInfo(jobId, planExecution.providerResponse());
+			GeometryPlanExecution secondaryExecution = geometryStreamingEnabled
+					? planSecondaryWithStreaming(jobId, seq, visionResult.modelIntent(), primaryModel)
+					: planSecondaryWithHeartbeat(jobId, seq, visionResult.modelIntent(), primaryModel);
+			updateJobProviderInfo(jobId, secondaryExecution.providerResponse());
 			checkCancellation(jobId);
 
 			emit(jobId, seq, GenerationStage.PREPARANDO_RESULTADO, "Preparando resultado…", 90, null);
-			MobProjectModel finalModel = geometryPlannerService.applyOperations(planExecution.operations(), planExecution.providerResponse(), emptyModel);
+			// startingModel=primaryModel (no emptyModel): la geometría
+			// secundaria se aplica SOBRE la anatomía primaria ya resuelta,
+			// nunca reemplazándola -- GeometryPlannerService.applyOperations
+			// es agnóstico de quién produjo las operaciones, mismo cálculo de
+			// atlas/UV de siempre, ahora sobre el batch combinado real.
+			MobProjectModel finalModel = geometryPlannerService.applyOperations(secondaryExecution.operations(), secondaryExecution.providerResponse(), primaryModel);
 			checkCancellation(jobId);
 
 			emit(jobId, seq, GenerationStage.VALIDANDO_GEOMETRIA, "Validando compatibilidad con Blockbench/FMM…", 95, null);
@@ -251,29 +287,21 @@ public class MobGenerationService {
 	}
 
 	/**
-	 * Ticket 038 -- modo streaming (switch encendido, default): consume la
-	 * respuesta del Geometry Planner incrementalmente y aplica/emite cada
-	 * operación real EN CUANTO el modelo la termina de emitir -- a
-	 * diferencia del modo heartbeat, acá no hay ningún replay post-hoc,
-	 * el usuario ve el modelo crecer en tiempo real mientras la IA todavía
-	 * está generando. Como bonus real (no buscado a propósito): la
-	 * cancelación deja de estar limitada a "recién en el próximo punto de
-	 * control" (ver `GenerationCancellationRegistry`) durante ESTA fase --
-	 * cada operación parseada es un punto de control nuevo.
+	 * Ticket 099 -- geometría SECUNDARIA solamente (la primaria ya está
+	 * fijada en {@code primaryModel}, ver {@link #runPipeline}). Modo
+	 * streaming (switch encendido, default): consume la respuesta del
+	 * {@link SecondaryGeometryPlanner} incrementalmente y valida/aplica/emite
+	 * cada operación real EN CUANTO el modelo la termina de emitir -- una
+	 * operación que {@link SecondaryGeometryConstraints} rechaza NUNCA se
+	 * aplica ni se muestra en el preview (HU-2b: el job no falla completo,
+	 * cada rechazo queda como advertencia logueada, no como algo que el
+	 * usuario ve aparecer y luego desaparecer).
 	 */
-	private GeometryPlanExecution planWithStreaming(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel emptyModel) {
+	private GeometryPlanExecution planSecondaryWithStreaming(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel primaryModel) {
 		List<GeometryOperation> collected = new ArrayList<>();
-		MobProjectModel[] previewBox = {emptyModel};
-		// Hallazgo real (verificación en vivo del ticket 038 contra Claude
-		// real, job cb867de9, 2026-09-10): incluso con streaming, Claude
-		// puede pasar ~75s en razonamiento extendido (`thinking_delta`,
-		// deliberadamente NO mostrado -- nunca fue contenido para el
-		// usuario) ANTES de emitir el primer token de la respuesta real.
-		// Ese hueco es tan silencioso como el que streaming vino a
-		// resolver -- acá también corre el heartbeat honesto, pero SOLO
-		// mientras no llegó ninguna operación real todavía (`AtomicBoolean`,
-		// no un `List.isEmpty()` leído desde otro hilo -- visibilidad
-		// garantizada entre el hilo del pipeline y el del scheduler).
+		List<SecondaryGeometryConstraints.Rejection> rejections = new ArrayList<>();
+		MobProjectModel[] previewBox = {primaryModel};
+		List<SecondaryGeometryPlanner.BoneDescriptor> primaryBones = boneDescriptorsFrom(primaryModel);
 		AtomicBoolean firstOperationReceived = new AtomicBoolean(false);
 		RawOperationsResult raw;
 		try (ScheduledExecutorService heartbeatScheduler = Executors.newSingleThreadScheduledExecutor()) {
@@ -283,110 +311,117 @@ public class MobGenerationService {
 						if (!firstOperationReceived.get()) {
 							long elapsedSeconds = (System.nanoTime() - startNanos) / 1_000_000_000L;
 							emit(
-									jobId, seq, GenerationStage.DETECTANDO_SILUETA,
-									"Generando geometría… llevamos " + elapsedSeconds + "s, puede tardar hasta un minuto.", 25, null);
+									jobId, seq, GenerationStage.GENERANDO_CUBOIDES,
+									"Generando geometría secundaria… llevamos " + elapsedSeconds + "s.", 40, null);
 						}
 					},
 					heartbeatInitialDelaySeconds, heartbeatPeriodSeconds, TimeUnit.SECONDS);
 			try {
-				raw = geometryPlannerService.planStreaming(modelIntent, op -> {
+				raw = secondaryGeometryPlanner.planStreaming(modelIntent, primaryBones, SecondaryGeometryPlanner.DEFAULT_SECONDARY_BUDGET, op -> {
 					checkCancellation(jobId);
 					firstOperationReceived.set(true);
+					SecondaryGeometryConstraints.ValidationResult validated = SecondaryGeometryConstraints.validate(List.of(op), primaryModel);
+					if (validated.accepted().isEmpty()) {
+						rejections.addAll(validated.rejected());
+						return;
+					}
 					collected.add(op);
-					// Progreso honesto basado en operaciones REALES ya vistas --
-					// no se conoce el total hasta que el stream termina (a
-					// diferencia del modo heartbeat, que sí conoce
-					// `operations.size()` de entrada), así que se acerca
-					// asintóticamente a 89% en vez de una fracción exacta de un
-					// total desconocido.
 					int progressPct = Math.min(89, 40 + collected.size());
-					previewBox[0] = applyStepAndEmit(jobId, seq, emptyModel, collected, previewBox[0], op, progressPct);
+					previewBox[0] = applySecondaryStepAndEmit(jobId, seq, primaryModel, collected, previewBox[0], op, progressPct);
 				});
 			} finally {
 				heartbeat.cancel(true);
 			}
 		}
-		return new GeometryPlanExecution(raw.operations(), raw.providerResponse());
+		logRejections(jobId, rejections);
+		return new GeometryPlanExecution(collected, raw.providerResponse());
 	}
 
 	/**
-	 * Ticket 038 -- modo heartbeat (switch operativo apagado,
-	 * `AI_GEOMETRY_STREAMING_ENABLED=false`): la misma llamada bloqueante
-	 * de siempre, pero con un ping periódico HONESTO mientras espera
-	 * (mismo stage/% ya emitido, `detectando_silueta`/25% -- nunca inventa
-	 * avance de etapa ni de porcentaje, solo informa cuánto tiempo real
-	 * lleva corriendo). Al volver la respuesta completa, reproduce el
-	 * batch de una vez (mismo comportamiento instantáneo de siempre en
-	 * este modo -- es exactamente lo que hacía el pipeline antes de este
-	 * ticket).
+	 * Igual que {@link #planSecondaryWithStreaming} pero en modo heartbeat
+	 * (switch operativo apagado): espera la respuesta completa, valida el
+	 * batch entero de una vez, y reproduce SOLO las operaciones aceptadas.
 	 */
-	private GeometryPlanExecution planWithHeartbeat(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel emptyModel) {
+	private GeometryPlanExecution planSecondaryWithHeartbeat(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel primaryModel) {
+		List<SecondaryGeometryPlanner.BoneDescriptor> primaryBones = boneDescriptorsFrom(primaryModel);
 		RawOperationsResult raw;
-		// try-with-resources -- `ExecutorService`/`ScheduledExecutorService`
-		// implementan `AutoCloseable` desde Java 19 (Sonar S2093): cierra el
-		// scheduler solo, sin un `finally` manual con `shutdownNow()`.
 		try (ScheduledExecutorService heartbeatScheduler = Executors.newSingleThreadScheduledExecutor()) {
 			long startNanos = System.nanoTime();
 			ScheduledFuture<?> heartbeat = heartbeatScheduler.scheduleAtFixedRate(
 					() -> {
 						long elapsedSeconds = (System.nanoTime() - startNanos) / 1_000_000_000L;
 						emit(
-								jobId, seq, GenerationStage.DETECTANDO_SILUETA,
-								"Generando geometría… llevamos " + elapsedSeconds + "s, puede tardar hasta un minuto.", 25, null);
+								jobId, seq, GenerationStage.GENERANDO_CUBOIDES,
+								"Generando geometría secundaria… llevamos " + elapsedSeconds + "s.", 40, null);
 					},
 					heartbeatInitialDelaySeconds, heartbeatPeriodSeconds, TimeUnit.SECONDS);
 			try {
-				raw = geometryPlannerService.requestOperations(modelIntent);
+				raw = secondaryGeometryPlanner.requestOperations(modelIntent, primaryBones, SecondaryGeometryPlanner.DEFAULT_SECONDARY_BUDGET);
 			} finally {
 				heartbeat.cancel(true);
 			}
 		}
 
 		checkCancellation(jobId);
-		replayOperationsWithPreview(jobId, seq, raw.operations(), emptyModel);
-		return new GeometryPlanExecution(raw.operations(), raw.providerResponse());
+		SecondaryGeometryConstraints.ValidationResult validated = SecondaryGeometryConstraints.validate(raw.operations(), primaryModel);
+		logRejections(jobId, validated.rejected());
+		replaySecondaryOpsWithPreview(jobId, seq, validated.accepted(), primaryModel);
+		return new GeometryPlanExecution(validated.accepted(), raw.providerResponse());
 	}
 
-	/**
-	 * Reproduce el batch de operaciones YA obtenido (nunca vuelve a
-	 * llamar al proveedor) de a una operación por vez, emitiendo un
-	 * evento `preview_operations` por cada cambio real -- usado solo en
-	 * modo heartbeat (ticket 038); en modo streaming, {@link #applyStepAndEmit}
-	 * se llama directo desde el callback de {@link #planWithStreaming} a
-	 * medida que cada operación llega de verdad, sin este replay.
-	 */
-	private MobProjectModel replayOperationsWithPreview(UUID jobId, AtomicInteger seq, List<GeometryOperation> operations, MobProjectModel emptyModel) {
-		MobProjectModel previous = emptyModel;
-		for (int i = 0; i < operations.size(); i++) {
+	/** Reproduce SOLO operaciones ya validadas (nunca vuelve a llamar al proveedor) de a una por vez -- usado en modo heartbeat; en modo streaming, {@link #applySecondaryStepAndEmit} se llama directo a medida que cada operación llega y pasa la validación. */
+	private MobProjectModel replaySecondaryOpsWithPreview(UUID jobId, AtomicInteger seq, List<GeometryOperation> acceptedOps, MobProjectModel primaryModel) {
+		MobProjectModel previous = primaryModel;
+		for (int i = 0; i < acceptedOps.size(); i++) {
 			checkCancellation(jobId);
-			int progressPct = Math.min(89, 40 + (int) Math.round(45.0 * (i + 1) / operations.size()));
-			previous = applyStepAndEmit(jobId, seq, emptyModel, operations.subList(0, i + 1), previous, operations.get(i), progressPct);
+			int progressPct = Math.min(89, 40 + (int) Math.round(45.0 * (i + 1) / Math.max(1, acceptedOps.size())));
+			previous = applySecondaryStepAndEmit(jobId, seq, primaryModel, acceptedOps.subList(0, i + 1), previous, acceptedOps.get(i), progressPct);
 		}
 		return previous;
 	}
 
 	/**
-	 * Aplica el batch completo visto HASTA AHORA (siempre desde
-	 * `emptyModel`) y diferencia contra el preview anterior -- mecanismo
-	 * compartido entre el replay post-hoc (heartbeat) y el streaming real:
-	 * `GeometryEngine.apply` asigna ids reales nuevos (`UUID.randomUUID()`)
-	 * en cada llamada, así que no soporta "aplicar una operación más"
-	 * incrementalmente sobre un modelo ya construido con ids estables --
-	 * hay que re-aplicar desde cero cada vez y dejar que
-	 * {@link GenerationPreviewDiff} calcule qué cambió de verdad. Costo
-	 * ínfimo (operaciones en memoria, sin I/O) incluso para el tamaño de
-	 * batch real de este proyecto.
+	 * Aplica el batch de geometría secundaria visto HASTA AHORA sobre
+	 * {@code primaryModel} (nunca sobre un modelo vacío: la anatomía
+	 * primaria es la base fija de esta fase) y diferencia contra el preview
+	 * anterior -- mismo motivo que la versión previa a este ticket
+	 * (`GeometryEngine.apply` asigna ids nuevos cada vez, hay que
+	 * reaplicar desde una base estable y dejar que {@link GenerationPreviewDiff}
+	 * calcule qué cambió de verdad). Siempre {@code GENERANDO_CUBOIDES}:
+	 * geometría secundaria nunca crea bones (ver {@link SecondaryGeometryConstraints}).
 	 */
-	private MobProjectModel applyStepAndEmit(
-			UUID jobId, AtomicInteger seq, MobProjectModel emptyModel, List<GeometryOperation> allOpsSoFar,
+	private MobProjectModel applySecondaryStepAndEmit(
+			UUID jobId, AtomicInteger seq, MobProjectModel primaryModel, List<GeometryOperation> acceptedOpsSoFar,
 			MobProjectModel previousPreview, GeometryOperation justAdded, int progressPct) {
-		MobProjectModel current = GeometryEngine.apply(emptyModel, allOpsSoFar);
+		MobProjectModel current = GeometryEngine.apply(primaryModel, acceptedOpsSoFar);
 		PreviewDelta delta = GenerationPreviewDiff.diff(previousPreview, current);
 		if (!delta.isEmpty()) {
-			String stage = isBoneOnlyOp(justAdded) ? GenerationStage.CREANDO_RIG : GenerationStage.GENERANDO_CUBOIDES;
-			emit(jobId, seq, stage, describeOperation(justAdded), progressPct, previewOperationsPayload(delta));
+			emit(jobId, seq, GenerationStage.GENERANDO_CUBOIDES, describeOperation(justAdded), progressPct, previewOperationsPayload(delta));
 		}
 		return current;
+	}
+
+	/** Bones de {@code primaryModel} descritos para el prompt de {@link SecondaryGeometryPlanner} -- ids REALES (ya resueltos por {@code GeometryEngine}), no tempIds: la geometría secundaria se aplica directo sobre este modelo, nunca se re-mezcla con las operaciones de creación de la anatomía primaria en un batch nuevo. */
+	private static List<SecondaryGeometryPlanner.BoneDescriptor> boneDescriptorsFrom(MobProjectModel primaryModel) {
+		List<SecondaryGeometryPlanner.BoneDescriptor> descriptors = new ArrayList<>();
+		for (var bone : primaryModel.bones()) {
+			descriptors.add(new SecondaryGeometryPlanner.BoneDescriptor(bone.id(), bone.name(), bone.pivot()));
+		}
+		return descriptors;
+	}
+
+	/** Ningún rechazo de {@link SecondaryGeometryConstraints} tumba el job (HU-2b) -- se loguean con su razón concreta para diagnóstico; exponerlos en la API como `generationWarnings` estructurados queda para un ticket futuro (candidato natural: 104, `ModelGenerationQualityReport`). */
+	private void logRejections(UUID jobId, List<SecondaryGeometryConstraints.Rejection> rejections) {
+		for (SecondaryGeometryConstraints.Rejection rejection : rejections) {
+			log.info("Job {}: geometría secundaria rechazada -- {}", jobId, rejection.reason());
+		}
+	}
+
+	/** Advertencias de {@link com.galgothstudio.backend.domain.template.ProportionEstimator} (proporciones clampadas) -- mismo criterio que {@link #logRejections}, nunca se pierden en silencio. */
+	private void logGenerationWarnings(UUID jobId, String phase, List<String> warnings) {
+		for (String warning : warnings) {
+			log.info("Job {}: advertencia de generación ({}) -- {}", jobId, phase, warning);
+		}
 	}
 
 	/**
@@ -413,10 +448,6 @@ public class MobGenerationService {
 							+ "GenerationResultService la reintenta al servir GET /result.",
 					jobId, e);
 		}
-	}
-
-	private static boolean isBoneOnlyOp(GeometryOperation op) {
-		return op instanceof CreateBone || op instanceof SetBonePivot || op instanceof SetBoneRotation || op instanceof ParentBone;
 	}
 
 	private static String describeOperation(GeometryOperation op) {

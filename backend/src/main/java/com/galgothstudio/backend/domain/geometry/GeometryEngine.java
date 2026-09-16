@@ -203,7 +203,7 @@ public final class GeometryEngine {
 				newId,
 				new Cuboid(
 						newId, op.name(), resolvedBoneId, op.from(), op.to(), op.origin(), op.rotation(),
-						placeholderFaces()));
+						placeholderFaces(), op.semanticPart()));
 		tempRefs.put(tempId, newId);
 	}
 
@@ -239,7 +239,7 @@ public final class GeometryEngine {
 				id,
 				new Cuboid(
 						current.id(), current.name(), current.boneId(), newFrom, newTo, current.origin(),
-						current.rotation(), current.faces()));
+						current.rotation(), current.faces(), current.semanticPart()));
 	}
 
 	private static void applyMoveCuboid(MoveCuboid op, Map<String, Cuboid> cuboids, Map<String, String> tempRefs) {
@@ -260,7 +260,7 @@ public final class GeometryEngine {
 				id,
 				new Cuboid(
 						current.id(), current.name(), current.boneId(), newFrom, newTo, newOrigin,
-						current.rotation(), current.faces()));
+						current.rotation(), current.faces(), current.semanticPart()));
 	}
 
 	private static void applyRotateCuboid(RotateCuboid op, Map<String, Cuboid> cuboids, Map<String, String> tempRefs) {
@@ -273,7 +273,7 @@ public final class GeometryEngine {
 				id,
 				new Cuboid(
 						current.id(), current.name(), current.boneId(), current.from(), current.to(),
-						current.origin(), newRotation, current.faces()));
+						current.origin(), newRotation, current.faces(), current.semanticPart()));
 	}
 
 	// -- setBonePivot / setBoneRotation / parentBone ---------------------
