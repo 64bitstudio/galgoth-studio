@@ -53,7 +53,12 @@ public class VisionAnalysisService {
 			  "materials": ["<descripción de material/color>", ...]
 			}
 
-			"featureCategories" debe tener EXACTAMENTE un elemento por cada elemento de 			"features", en el mismo orden, y cada valor debe ser UNO de estos (nunca otro): 			HEAD, TORSO, ARM, FOREARM, HAND, LEG, SHIN, FOOT, JAW, CLAW, HORN, SPIKE, TAIL, 			WING, EAR, EYE, TORN_CLOTH, LOINCLOTH, ARMOR, EMISSIVE_CRACK, GENERIC. Si un rasgo 			no encaja en ninguna, usá GENERIC -- nunca lo omitas ni inventes una categoría nueva.
+			"featureCategories" debe tener EXACTAMENTE un elemento por cada elemento de
+			"features", en el mismo orden. Cada valor debe ser UNO de estos, nunca otro:
+			HEAD, TORSO, ARM, FOREARM, HAND, LEG, SHIN, FOOT, JAW, CLAW, HORN, SPIKE,
+			TAIL, WING, EAR, EYE, TORN_CLOTH, LOINCLOTH, ARMOR, EMISSIVE_CRACK, GENERIC.
+			Si un rasgo no encaja en ninguna, usá GENERIC -- nunca lo omitas ni inventes
+			una categoría nueva.
 
 			El resultado debe permanecer NEUTRAL Y ANIMABLE: nunca propongas huesos/miembros \
 			faltantes, proporciones tan extremas que rompan el rigging humanoide estándar, ni \

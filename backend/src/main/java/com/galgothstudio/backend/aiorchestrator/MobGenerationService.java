@@ -493,6 +493,13 @@ public class MobGenerationService {
 	 * futuro, no de este.
 	 */
 	private void logQualityReport(UUID jobId, ModelIntent intent, MobProjectModel finalModel, ModelGenerationQualityReport.Metric fmm) {
+		// El reporte HOY solo existe para loguearse: si el nivel INFO está
+		// apagado, calcularlo (y formatearlo) sería trabajo tirado en cada
+		// generación. Cuando el ticket futuro lo exponga en la API, este
+		// cálculo sale de acá y deja de ser condicional.
+		if (!log.isInfoEnabled()) {
+			return;
+		}
 		ModelGenerationQualityReport report = ModelGenerationQualityReport.of(intent, finalModel, fmm);
 		log.info("Job {}: reporte de calidad -- {}", jobId, report.describe());
 	}
