@@ -225,15 +225,16 @@ class CarcomidoBenchmarkTest {
 				.distinct()
 				.toList();
 
-		// Garras, ropa desgarrada, mandíbula y grietas emisivas son los
-		// rasgos que el documento de definición nombra explícitamente como
-		// criterio visual del personaje.
-		assertThat(presentes).contains(
-				SemanticPartCategory.CLAW, SemanticPartCategory.TORN_CLOTH, SemanticPartCategory.JAW,
-				SemanticPartCategory.EMISSIVE_CRACK);
-		// Y la anatomía primaria determinista sigue presente (097/098): el
-		// personaje no es solo un montón de rasgos sueltos.
-		assertThat(presentes).contains(SemanticPartCategory.HEAD, SemanticPartCategory.TORSO);
+		// Primero los rasgos que el documento de definición nombra
+		// explícitamente como criterio visual del personaje (garras, ropa
+		// desgarrada, mandíbula, grietas emisivas); después, que la anatomía
+		// primaria determinista (097/098) siga ahí -- el personaje no es solo
+		// un montón de rasgos sueltos.
+		assertThat(presentes)
+				.contains(
+						SemanticPartCategory.CLAW, SemanticPartCategory.TORN_CLOTH, SemanticPartCategory.JAW,
+						SemanticPartCategory.EMISSIVE_CRACK)
+				.contains(SemanticPartCategory.HEAD, SemanticPartCategory.TORSO);
 	}
 
 	@Test
