@@ -36,3 +36,31 @@ Lo irónico: ese margen existe justamente para que el bleed no contamine a la ca
 - La suite existente sigue en verde (el cambio es de texto de prompt; los tests que fijan el formato del prompt se actualizan explícitamente).
 
 ## Hecho
+### Cambio
+El prompt dejó de pedir que el modelo reserve el margen entre regiones y pasó a pedirle lo contrario: llenar cada rectángulo **de borde a borde**, sin marcos, contornos ni márgenes internos, aclarando que lo que queda fuera se descarta. El gutter sigue en el layout del `ShelfBinPacker` y el slicer sigue recortando por el `sheetRect` exacto — la protección real contra bleed no cambió, solo se dejó de pedirla dos veces.
+
+Test nuevo en `TextureSheetPromptComposerTest` que fija la intención (pide borde a borde, no pide reservar margen). Backend 581/581.
+
+### Verificación en vivo: mejoró, pero NO está resuelto
+Regenerada la textura de `Carcomido v3` (mismo mob, misma UV, solo cambió el prompt) y medida con el mismo criterio que la línea de base (columna/fila con luminancia ≤ 8 en todos sus píxeles):
+
+| Métrica | Antes | Después |
+|---|---|---|
+| Bandas en la muestra de 40 caras (izq/der/arr/aba) | 12 / 3 / 16 / 20 = **51** | 5 / 3 / 6 / 14 = **28** |
+
+Es una baja de ~45% en la métrica comparable. Pero midiendo el atlas COMPLETO (202 caras, dato que antes no tenía):
+
+| Métrica (atlas completo, después) | Valor |
+|---|---|
+| Caras con alguna banda negra | **75 de 202 (37%)** |
+| Caras con más del 50% de píxeles negros | 16 |
+| Cara 100% negra | 1 |
+| Promedio de píxeles negros por cara | 15,1% |
+
+**Conclusión honesta**: el cambio de prompt ayudó y se queda (es estrictamente mejor y no tiene contraindicación), pero no alcanza. Más de un tercio de las caras sigue con banda negra, y el borde inferior casi no mejoró (20 → 14). Pedirle al modelo que llene el rectángulo reduce el problema; no lo elimina, porque depende de que obedezca.
+
+### Consecuencia: hace falta una solución determinista
+El propio alcance de este ticket anticipaba este desenlace ("si la medición no mejora... se evalúa el post-procesado en otro ticket"). Mejoró a medias, así que aplica igual: **ticket 114**, relleno determinista de bordes (dilatar el píxel válido más cercano sobre las bandas negras del borde antes de componer). Eso no depende del modelo y elimina la costura por construcción.
+
+### Nota de método
+Durante la verificación, el panel del generador se cerró y perdió la propuesta de la UI; se recuperó el `jobId` de las entradas de red de la página para medir el atlas ya aplicado, sin gastar otra tanda de llamadas.
