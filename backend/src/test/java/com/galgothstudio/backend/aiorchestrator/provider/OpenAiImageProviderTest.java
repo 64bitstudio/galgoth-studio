@@ -97,7 +97,9 @@ class OpenAiImageProviderTest {
 			String body = ((MockClientHttpRequest) request).getBodyAsString(StandardCharsets.UTF_8);
 			assertThat(body).contains("name=\"model\"").contains(CONFIGURED_MODEL);
 			assertThat(body).contains("name=\"prompt\"").contains("torso de goblin");
-			assertThat(body).contains("name=\"image\"");
+			// Ticket 102: el campo pasa a ser el array `image[]` (mismo formato
+			// para 1 o N imágenes, ver Javadoc de `OpenAiImageProvider#callEdits`).
+			assertThat(body).contains("name=\"image[]\"");
 		};
 
 		serverBox[0]
@@ -115,6 +117,67 @@ class OpenAiImageProviderTest {
 				new TextureGenerationSheetRequest("torso de goblin", referenceImage, 128, 128, null));
 
 		assertThat(actual).isEqualTo(resultBytes);
+		serverBox[0].verify();
+	}
+
+	/**
+	 * Ticket 102 (HU-8) -- de la segunda llamada de un job en adelante viajan
+	 * DOS imágenes de entrada en la misma llamada de edición: la referencia
+	 * original (siempre primero, nunca se la reemplaza) y el atlas parcial ya
+	 * compuesto como contexto de continuidad entre bones.
+	 */
+	@Test
+	void generateTextureSheet_con_atlas_parcial_manda_las_dos_imagenes_en_la_misma_llamada_de_edits() {
+		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];
+		OpenAiImageProvider provider = newProviderWithMockServer(serverBox, TEST_API_KEY, CONFIGURED_MODEL);
+		byte[] referenceImage = {5, 6, 7};
+		byte[] partialAtlas = {8, 9, 10};
+
+		RequestMatcher multipartContainsBothImages = request -> {
+			String body = ((MockClientHttpRequest) request).getBodyAsString(StandardCharsets.UTF_8);
+			assertThat(body.split("name=\"image\\[]\"", -1))
+					.as("dos partes multipart repetidas bajo el mismo nombre image[]")
+					.hasSize(3); // N separadores -> N+1 fragmentos
+			assertThat(body).contains("reference.png").contains("partial-atlas-1.png");
+		};
+
+		serverBox[0]
+				.expect(requestTo(BASE_URL + "/v1/images/edits"))
+				.andExpect(method(HttpMethod.POST))
+				.andExpect(multipartContainsBothImages)
+				.andRespond(withSuccess(
+						"""
+						{"data":[{"b64_json":"%s"}]}
+						""".formatted(base64Png(new byte[] {1})),
+						MediaType.APPLICATION_JSON));
+
+		provider.generateTextureSheet(new TextureGenerationSheetRequest("torso", referenceImage, partialAtlas, 1024, 1024, null));
+
+		serverBox[0].verify();
+	}
+
+	@Test
+	void generateTextureSheet_con_atlas_parcial_vacio_manda_solo_la_referencia_original() {
+		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];
+		OpenAiImageProvider provider = newProviderWithMockServer(serverBox, TEST_API_KEY, CONFIGURED_MODEL);
+
+		RequestMatcher multipartContainsOnlyOneImage = request -> {
+			String body = ((MockClientHttpRequest) request).getBodyAsString(StandardCharsets.UTF_8);
+			assertThat(body.split("name=\"image\\[]\"", -1)).as("una sola parte image[]").hasSize(2);
+			assertThat(body).doesNotContain("partial-atlas");
+		};
+
+		serverBox[0]
+				.expect(requestTo(BASE_URL + "/v1/images/edits"))
+				.andExpect(multipartContainsOnlyOneImage)
+				.andRespond(withSuccess(
+						"""
+						{"data":[{"b64_json":"%s"}]}
+						""".formatted(base64Png(new byte[] {1})),
+						MediaType.APPLICATION_JSON));
+
+		provider.generateTextureSheet(new TextureGenerationSheetRequest("torso", new byte[] {5, 6, 7}, new byte[0], 1024, 1024, null));
+
 		serverBox[0].verify();
 	}
 

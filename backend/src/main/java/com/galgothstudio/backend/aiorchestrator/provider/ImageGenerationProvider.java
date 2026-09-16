@@ -81,45 +81,70 @@ public interface ImageGenerationProvider {
 	}
 
 	/**
-	 * {@code style} no tiene equivalente directo en el contrato genérico de
+	 * <b>{@code partialAtlasBytes} (ticket 102, HU-8)</b>: atlas ya
+	 * compuesto hasta ese momento DENTRO del mismo job -- contexto de
+	 * continuidad visual entre bones (que el brazo empalme con el torso,
+	 * etc.). {@code null}/vacío en la primera llamada de un job (todavía no
+	 * hay nada compuesto) y en cualquier flujo que no lo provea. Cada
+	 * proveedor decide qué hacer con él: {@link OpenAiImageProvider} lo
+	 * manda JUNTO a la referencia original (la API real acepta varias
+	 * imágenes por llamada, ver su Javadoc); un proveedor que solo admita
+	 * UNA imagen debe quedarse con la referencia original y documentar por
+	 * qué -- nunca descartar la referencia artística en silencio.
+	 *
+	 * <p>{@code style} no tiene equivalente directo en el contrato genérico de
 	 * `/v1/images/generations`/`/v1/images/edits` de OpenAI (a diferencia
 	 * del parámetro `style` específico de DALL-E-3, "vivid"/"natural", que
 	 * no aplica a un snapshot de `gpt-image-*`) -- cada proveedor decide
 	 * cómo incorporarlo (ver {@link OpenAiImageProvider}, que lo pliega
 	 * dentro del prompt compuesto).
 	 */
-	record TextureGenerationSheetRequest(String prompt, byte[] referenceImageBytes, int sheetWidth, int sheetHeight, String style) {
+	record TextureGenerationSheetRequest(
+			String prompt, byte[] referenceImageBytes, byte[] partialAtlasBytes, int sheetWidth, int sheetHeight, String style) {
 
-		// S6218: un record con un campo array (`referenceImageBytes`) hereda
-		// equals/hashCode/toString por identidad de referencia del array, no
-		// por contenido -- dos requests con los mismos bytes de imagen (pero
-		// arrays distintos, ej. tras un round-trip de deserialización)
-		// compararían como distintos. Se sobreescriben los 3 explícitamente
-		// con `java.util.Arrays` sobre ese campo.
+		/**
+		 * Constructor de compatibilidad para los call sites anteriores al
+		 * ticket 102 ({@code partialAtlasBytes} = {@code null}: primera
+		 * llamada de un job, o proveedor/flujo sin contexto de continuidad)
+		 * -- mismo patrón aditivo ya usado en {@code Cuboid}/{@code CreateCuboid}
+		 * (099), cero call sites existentes rotos.
+		 */
+		public TextureGenerationSheetRequest(String prompt, byte[] referenceImageBytes, int sheetWidth, int sheetHeight, String style) {
+			this(prompt, referenceImageBytes, null, sheetWidth, sheetHeight, style);
+		}
+
+		// S6218: un record con campos array (`referenceImageBytes`,
+		// `partialAtlasBytes`) hereda equals/hashCode/toString por identidad de
+		// referencia del array, no por contenido -- dos requests con los mismos
+		// bytes de imagen (pero arrays distintos, ej. tras un round-trip de
+		// deserialización) compararían como distintos. Se sobreescriben los 3
+		// explícitamente con `java.util.Arrays` sobre esos campos.
 		@Override
 		public boolean equals(Object other) {
 			if (this == other) {
 				return true;
 			}
 			if (!(other instanceof TextureGenerationSheetRequest(
-					String otherPrompt, byte[] otherBytes, int otherWidth, int otherHeight, String otherStyle))) {
+					String otherPrompt, byte[] otherBytes, byte[] otherAtlas, int otherWidth, int otherHeight, String otherStyle))) {
 				return false;
 			}
 			return sheetWidth == otherWidth && sheetHeight == otherHeight && Objects.equals(prompt, otherPrompt)
-					&& Objects.equals(style, otherStyle) && Arrays.equals(referenceImageBytes, otherBytes);
+					&& Objects.equals(style, otherStyle) && Arrays.equals(referenceImageBytes, otherBytes)
+					&& Arrays.equals(partialAtlasBytes, otherAtlas);
 		}
 
 		@Override
 		public int hashCode() {
 			int result = Objects.hash(prompt, sheetWidth, sheetHeight, style);
-			return 31 * result + Arrays.hashCode(referenceImageBytes);
+			result = 31 * result + Arrays.hashCode(referenceImageBytes);
+			return 31 * result + Arrays.hashCode(partialAtlasBytes);
 		}
 
 		@Override
 		public String toString() {
 			return "TextureGenerationSheetRequest[prompt=" + prompt + ", referenceImageBytes="
-					+ Arrays.toString(referenceImageBytes) + ", sheetWidth=" + sheetWidth + ", sheetHeight=" + sheetHeight
-					+ ", style=" + style + "]";
+					+ Arrays.toString(referenceImageBytes) + ", partialAtlasBytes=" + Arrays.toString(partialAtlasBytes)
+					+ ", sheetWidth=" + sheetWidth + ", sheetHeight=" + sheetHeight + ", style=" + style + "]";
 		}
 	}
 

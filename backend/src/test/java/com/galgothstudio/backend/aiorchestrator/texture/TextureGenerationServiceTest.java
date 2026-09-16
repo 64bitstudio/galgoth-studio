@@ -9,6 +9,9 @@ import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEventEntity;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEventRepository;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobRepository;
 import com.galgothstudio.backend.aiorchestrator.progress.GenerationStage;
+import com.galgothstudio.backend.aiorchestrator.provider.ImageGenerationProvider;
+import com.galgothstudio.backend.aiorchestrator.provider.ImageGenerationProvider.TextureGenerationSheetRequest;
+import com.galgothstudio.backend.aiorchestrator.provider.MockImageProvider;
 import com.galgothstudio.backend.aiorchestrator.provider.MockVisionProvider;
 import com.galgothstudio.backend.aiorchestrator.provider.VisionModelProvider;
 import com.galgothstudio.backend.asset.AssetStorageService;
@@ -94,6 +97,9 @@ class TextureGenerationServiceTest {
 	private VisionModelProvider visionModelProvider; // en realidad un MockVisionProvider (ai.vision-provider=mock)
 
 	@Autowired
+	private ImageGenerationProvider imageGenerationProvider; // en realidad un MockImageProvider (ai.image-provider=mock)
+
+	@Autowired
 	private AssetStorageService assetStorageService;
 
 	@Autowired
@@ -108,9 +114,18 @@ class TextureGenerationServiceTest {
 	@Autowired
 	private ObjectMapper objectMapper;
 
+	/**
+	 * Reset OBLIGATORIO de ambos dobles (ticket 102): el contexto de Spring
+	 * está CACHEADO y compartido entre clases de test, así que las requests
+	 * recordadas por `MockImageProvider` de otra clase se verían acá como
+	 * propias -- exactamente el hallazgo ya documentado para
+	 * `MockReasoningProvider.explicitResponse` (099), que causó fallos
+	 * intermitentes ~50% hasta resetearlo en `@BeforeEach`.
+	 */
 	@BeforeEach
 	void resetMockProviders() {
 		((MockVisionProvider) visionModelProvider).setNextResponse(VALID_TEXTURE_PLAN);
+		((MockImageProvider) imageGenerationProvider).clearReceivedSheetRequests();
 	}
 
 	// ---- fixtures ----
@@ -226,6 +241,28 @@ class TextureGenerationServiceTest {
 						GenerationStage.LIMPIANDO_PIXELES, GenerationStage.COMPLETADO)
 				.anyMatch(s -> s.startsWith(GenerationStage.GENERANDO_BONE_PREFIX));
 		assertThat(stages.stream().filter(GenerationStage.MAPEANDO_CARAS::equals).count()).isEqualTo(2); // un bone cada uno
+	}
+
+	/**
+	 * Ticket 102 (HU-8) -- continuidad entre bones: la PRIMERA llamada del
+	 * job no tiene atlas parcial que ofrecer como contexto (todavía no se
+	 * generó nada); de la segunda en adelante viaja el atlas ya compuesto
+	 * JUNTO a la referencia original, que nunca se reemplaza.
+	 */
+	@Test
+	void HU8_el_atlas_parcial_viaja_como_contexto_recien_de_la_segunda_llamada_en_adelante() {
+		UUID mobId = aMobReadyForTexture();
+
+		UUID jobId = textureGenerationService.startGeneration(mobId, new GenerateTextureRequest("pixel_art", "medium", null));
+		assertThat(awaitTerminalStatus(jobId).getStatus()).isEqualTo("completed");
+
+		List<TextureGenerationSheetRequest> requests = ((MockImageProvider) imageGenerationProvider).receivedSheetRequests();
+		assertThat(requests)
+				.hasSize(2) // un bone cada uno, una sheet por bone
+				.as("la referencia original viaja SIEMPRE, nunca se la reemplaza por el atlas")
+				.allSatisfy(request -> assertThat(request.referenceImageBytes()).isNotEmpty());
+		assertThat(requests.get(0).partialAtlasBytes()).as("primera llamada: sin contexto de atlas todavía").isNull();
+		assertThat(requests.get(1).partialAtlasBytes()).as("segunda llamada: atlas ya compuesto como contexto").isNotEmpty();
 	}
 
 	@Test

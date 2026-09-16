@@ -21,6 +21,7 @@ import com.galgothstudio.backend.domain.model.Bone;
 import com.galgothstudio.backend.domain.model.FaceName;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.TextureDocument;
+import com.galgothstudio.backend.domain.model.TexturePalette;
 import com.galgothstudio.backend.domain.model.UvLayout;
 import com.galgothstudio.backend.domain.model.UvPaintOrigin;
 import com.galgothstudio.backend.domain.model.UvRegion;
@@ -100,6 +101,7 @@ public class TextureGenerationService {
 	private final TexturePlanService texturePlanService;
 	private final TextureGenerationSheetPlanner textureGenerationSheetPlanner;
 	private final TextureSheetSlicer textureSheetSlicer;
+	private final TextureContentValidator textureContentValidator;
 	private final TextureCompositorService textureCompositorService;
 	private final ImageGenerationProvider imageGenerationProvider;
 	private final TextureService textureService;
@@ -117,6 +119,7 @@ public class TextureGenerationService {
 			TexturePlanService texturePlanService,
 			TextureGenerationSheetPlanner textureGenerationSheetPlanner,
 			TextureSheetSlicer textureSheetSlicer,
+			TextureContentValidator textureContentValidator,
 			TextureCompositorService textureCompositorService,
 			ImageGenerationProvider imageGenerationProvider,
 			TextureService textureService,
@@ -132,6 +135,7 @@ public class TextureGenerationService {
 		this.texturePlanService = texturePlanService;
 		this.textureGenerationSheetPlanner = textureGenerationSheetPlanner;
 		this.textureSheetSlicer = textureSheetSlicer;
+		this.textureContentValidator = textureContentValidator;
 		this.textureCompositorService = textureCompositorService;
 		this.imageGenerationProvider = imageGenerationProvider;
 		this.textureService = textureService;
@@ -205,6 +209,10 @@ public class TextureGenerationService {
 			byte[] beforeAtlas = loadCurrentAtlasOrBlank(context.model());
 			byte[] currentAtlas = beforeAtlas;
 			List<TouchedFace> touchedFaces = new ArrayList<>();
+			// Ticket 102 -- cuenta sheets YA generadas en este job (no el índice
+			// de bone ni el de parte): el contexto de continuidad depende de que
+			// exista contenido real ya compuesto, sin importar de qué bone salió.
+			int sheetsGenerated = 0;
 
 			for (String boneId : context.targetBoneIds()) {
 				Bone bone = findBone(context.model(), boneId);
@@ -229,14 +237,23 @@ public class TextureGenerationService {
 					int[] inflatedSize = imageGenerationProvider.inflatedSheetSize(sheet.sheetWidth(), sheet.sheetHeight());
 					TextureGenerationPlan sheetPlan = TextureGenerationPlan.forSheet(context.model(), planResult.texturePlan(), sheet);
 					String prompt = composePrompt(sheet, inflatedSize[0], inflatedSize[1], sheetPlan, context.style(), context.detailLevel());
-					TextureGenerationSheetRequest sheetRequest =
-							new TextureGenerationSheetRequest(prompt, referenceBytes, sheet.sheetWidth(), sheet.sheetHeight(), context.style().wireValue());
+					// Ticket 102 (HU-8) -- de la SEGUNDA llamada del job en adelante
+					// viaja también el atlas ya compuesto hasta ese momento, como
+					// contexto de continuidad entre bones; la referencia original
+					// sigue viajando SIEMPRE (nunca se la reemplaza). En la primera
+					// llamada `atlasContext` es null: el atlas todavía no tiene nada
+					// generado por este job que sirva de contexto.
+					byte[] atlasContext = sheetsGenerated == 0 ? null : currentAtlas;
+					TextureGenerationSheetRequest sheetRequest = new TextureGenerationSheetRequest(
+							prompt, referenceBytes, atlasContext, sheet.sheetWidth(), sheet.sheetHeight(), context.style().wireValue());
 					byte[] sheetBytes = imageGenerationProvider.generateTextureSheet(sheetRequest);
+					sheetsGenerated++;
 					updateJobProviderInfo(
 							jobId,
 							new AiProviderResponse(null, imageGenerationProvider.provider(), imageGenerationProvider.model(), PROMPT_VERSION_SHEET, SCHEMA_VERSION_SHEET));
 
 					List<TextureSlice> slices = textureSheetSlicer.slice(sheetBytes, sheet, inflatedSize[0], inflatedSize[1]);
+					logContentFindings(jobId, slices, context.detailLevel(), planResult.texturePlan().palette());
 					currentAtlas = textureCompositorService.compose(currentAtlas, slices);
 
 					for (CuboidFacePlacement placement : sheet.placements()) {
@@ -328,6 +345,25 @@ public class TextureGenerationService {
 			TextureDetailLevel detailLevel) {
 		return TextureSheetPromptComposer.compose(sheet, inflatedWidth, inflatedHeight, texturePlan) + "\n\n" + style.promptInstruction() + "\n"
 				+ detailLevel.promptInstruction();
+	}
+
+	/**
+	 * Ticket 102 (HU-9) -- ningún hallazgo de {@link TextureContentValidator}
+	 * tumba ni altera el job: el slice se compone igual y el hallazgo queda
+	 * logueado con sus números concretos para diagnóstico. Mismo criterio
+	 * (y misma deuda declarada) que
+	 * {@code MobGenerationService.logRejections}: exponerlos como
+	 * `generationWarnings` estructurados en la API es alcance del ticket
+	 * 104, no de este.
+	 */
+	private void logContentFindings(UUID jobId, List<TextureSlice> slices, TextureDetailLevel detailLevel, TexturePalette palette) {
+		for (TextureSlice slice : slices) {
+			for (TextureContentValidator.Finding finding : textureContentValidator.validate(slice, detailLevel, palette)) {
+				log.info(
+						"Job {}: contenido de textura sospechoso [{}] -- cuboid {} cara {}: {}", jobId, finding.type(), finding.cuboidId(),
+						finding.face(), finding.detail());
+			}
+		}
 	}
 
 	private static List<String> boneIdsWithGeometry(MobProjectModel model) {
