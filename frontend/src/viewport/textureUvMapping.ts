@@ -104,7 +104,12 @@ export function applyCuboidFaceUvs(uvAttribute: BufferAttribute, faces: CuboidFa
     const { u0, v0, u1, v1 } = normalizeFaceUv(faces[faceName].uv, atlasWidth, atlasHeight)
     DEFAULT_FACE_CORNERS.forEach(([du, dv], cornerIndex) => {
       const vertexIndex = faceIndex * 4 + cornerIndex
-      uvAttribute.setXY(vertexIndex, du === 0 ? u0 : u1, dv === 0 ? v0 : v1)
+      // `dv` viene del UV por defecto de Three (v=1 en los vértices de ARRIBA).
+      // Con `flipY = false` (ver `normalizeFaceUv`), v=0 es la fila 0 del buffer,
+      // o sea el borde SUPERIOR del atlas -- así que los vértices de arriba
+      // (dv=1) tienen que recibir `v0`, no `v1`. Invertirlo espeja cada cara
+      // verticalmente (ticket 112).
+      uvAttribute.setXY(vertexIndex, du === 0 ? u0 : u1, dv === 0 ? v1 : v0)
     })
   })
   uvAttribute.needsUpdate = true

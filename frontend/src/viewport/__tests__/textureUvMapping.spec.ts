@@ -62,4 +62,29 @@ describe('applyCuboidFaceUvs', () => {
   it('el orden de caras de BoxGeometry es +x,-x,+y,-y,+z,-z -- east/west/up/down/south/north (convención Minecraft, ADR 0001)', () => {
     expect(BOX_GEOMETRY_FACE_ORDER).toEqual(['east', 'west', 'up', 'down', 'south', 'north'])
   })
+
+  /**
+   * Ticket 112 -- orientación vertical, que hasta ahora NINGÚN test fijaba.
+   *
+   * La textura se sube como `DataTexture` con `flipY = false` (`TextureCanvas.vue`)
+   * y su buffer viene de `drawImage` + `getImageData`, o sea fila 0 = ARRIBA de
+   * la imagen. Con `flipY=false`, v=0 muestrea esa fila 0. Los vértices SUPERIORES
+   * de cada cara de una `BoxGeometry` traen v=1 por defecto, así que para que la
+   * cara se vea derecha hay que asignarles el borde SUPERIOR del rect (y0), no el
+   * inferior (y1).
+   */
+  it('los vértices superiores de la cara muestran el borde SUPERIOR del rect (no invierte verticalmente)', () => {
+    const geometry = new BoxGeometry(1, 1, 1)
+    // Rect alto y separado del origen: y0=10 (arriba), y1=50 (abajo).
+    const faces = facesWith({ north: { uv: [0, 10, 20, 50], texture: 0 } })
+
+    applyCuboidFaceUvs(uvAttributeOf(geometry), faces, 100, 100)
+
+    const uvAttribute = uvAttributeOf(geometry)
+    const base = BOX_GEOMETRY_FACE_ORDER.indexOf('north') * 4
+    // Vértices de BoxGeometry: 0=arriba-izq, 1=arriba-der, 2=abajo-izq, 3=abajo-der.
+    expect(uvAttribute.getY(base)).toBeCloseTo(10 / 100)
+    expect(uvAttribute.getY(base + 2)).toBeCloseTo(50 / 100)
+  })
+
 })
