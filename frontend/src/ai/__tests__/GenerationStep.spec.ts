@@ -66,14 +66,14 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const PROPS = { mobId: 'mob-1', projectId: 'project-1', mobName: 'Carcomido', baseType: 'humanoid' as const }
+const PROPS = { mobId: 'mob-1', projectId: 'project-1', mobName: 'Carcomido', baseType: 'humanoid' as const, geometryDetail: 'MEDIUM' as const }
 
 describe('GenerationStep.vue', () => {
   it('al montar, inicia la generación y abre el stream de eventos del job real', async () => {
     mount(GenerationStep, { props: PROPS })
     await flushPromises()
 
-    expect(startGeneration).toHaveBeenCalledWith('mob-1')
+    expect(startGeneration).toHaveBeenCalledWith('mob-1', 'MEDIUM')
     expect(FakeEventSource.instances).toHaveLength(1)
     expect(FakeEventSource.instances[0]?.url).toBe('http://localhost:8080/api/jobs/job-1/events')
   })
