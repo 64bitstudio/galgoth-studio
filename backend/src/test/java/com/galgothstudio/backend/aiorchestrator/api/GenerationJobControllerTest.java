@@ -92,11 +92,19 @@ class GenerationJobControllerTest {
 	/**
 	 * Ticket 099 -- {@code reasoningProvider} ya NO se usa para la anatomía
 	 * primaria (100% determinista, ver {@code PrimaryGeometryGenerator}),
-	 * solo para geometría secundaria. Deliberadamente SIN {@code setNextResponse}
-	 * explícito: el default de {@code MockReasoningProvider} para
-	 * {@code secondary-planner-v1} extrae un bone REAL del prompt (nunca
-	 * puede hardcodearse de antemano), mismo mecanismo documentado en
-	 * {@code MockGenerationServiceTest}.
+	 * solo para geometría secundaria. Sin fixture explícito: el default de
+	 * {@code MockReasoningProvider} para {@code secondary-planner-v1} extrae
+	 * un bone REAL del prompt (nunca puede hardcodearse de antemano).
+	 *
+	 * <p><b>Hallazgo real (no en el ticket original)</b>: {@code MockReasoningProvider}
+	 * es un bean singleton del contexto de Spring CACHEADO y COMPARTIDO
+	 * entre clases de test con las mismas properties/auto-config (ej.
+	 * {@code AiEditControllerTest}, mismo {@code @AutoConfigureMockMvc}) --
+	 * su {@code explicitResponse} mutable puede quedar seteado por la ÚLTIMA
+	 * llamada a {@code setNextResponse} de OTRA clase que corrió antes en el
+	 * mismo proceso de Gradle (orden de ejecución no garantizado), haciendo
+	 * que el default "inteligente" de acá nunca se alcance. `setNextResponse(null)`
+	 * fuerza un estado limpio en cada test, sin importar qué corrió antes.
 	 */
 	@BeforeEach
 	void resetMockProviders() throws Exception {
@@ -104,6 +112,7 @@ class GenerationJobControllerTest {
 				.setNextResponse(Files.readString(new File("../contracts/fixtures/model-intent-example.json").toPath()));
 		((MockVisionProvider) visionModelProvider).setOnCall(() -> {
 		});
+		((MockReasoningProvider) reasoningProvider).setNextResponse(null);
 	}
 
 	private UUID aProjectAndMobWithReference() {
@@ -128,16 +137,12 @@ class GenerationJobControllerTest {
 	}
 
 	/**
-	 * Ticket 099 -- 5s alcanzaba de sobra contra el fixture viejo (1 bone, 1
-	 * cuboid), pero el pipeline real ahora genera la anatomía primaria
-	 * completa del template humanoide (097/098, 15 bones/14 cuboides) antes
-	 * de llegar a `completed` -- exportar/validar FMM y persistir ese modelo
-	 * real es más trabajo real que antes, y bajo la suite completa (muchos
-	 * `@SpringBootTest` compitiendo por CPU/conexiones) 5s dejó de ser
-	 * suficiente margen para los 3 tests que esperan el modelo final
-	 * completo (verificado corriendo la suite completa repetidas veces:
-	 * reproducible siempre en los mismos tests, nunca al azar en otros --
-	 * consistente con "más trabajo real", no con un flake genérico).
+	 * 10s (antes 5s): la anatomía primaria real ahora es el template
+	 * humanoide completo (097/098, 15 bones/14 cuboides) en vez del fixture
+	 * mínimo de antes -- exportar/validar FMM y persistir ese modelo real es
+	 * más trabajo real, margen adicional razonable. La causa real de los
+	 * fallos intermitentes que motivaron investigar esto NO era timing --
+	 * ver el hallazgo documentado en {@link #resetMockProviders}.
 	 */
 	private AiJobEntity awaitTerminalStatus(UUID jobId) {
 		Awaitility.await()

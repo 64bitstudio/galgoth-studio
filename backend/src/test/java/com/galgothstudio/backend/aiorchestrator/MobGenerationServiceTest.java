@@ -93,13 +93,23 @@ class MobGenerationServiceTest {
 	 *
 	 * <p>Ticket 099 -- {@code reasoningProvider} ya NO se usa para la
 	 * anatomía primaria (100% determinista, ver {@code PrimaryGeometryGenerator})
-	 * sino solo para geometría SECUNDARIA. Deliberadamente SIN
-	 * {@code setNextResponse} explícito acá: el default de
-	 * {@code MockReasoningProvider} para {@code secondary-planner-v1}
+	 * sino solo para geometría SECUNDARIA. Sin fixture explícito: el default
+	 * de {@code MockReasoningProvider} para {@code secondary-planner-v1}
 	 * extrae un bone REAL del prompt (nunca puede hardcodearse de antemano
 	 * -- `GeometryEngine` le asigna un UUID nuevo a cada bone primario en
 	 * cada corrida), mismo mecanismo que ya resuelve este problema para el
 	 * flujo de edición (ver Javadoc de `MockReasoningProvider`).
+	 *
+	 * <p><b>Hallazgo real (no en el ticket original, encontrado corriendo la
+	 * suite completa repetidas veces)</b>: {@code MockReasoningProvider} es
+	 * un bean singleton del contexto de Spring cacheado -- su
+	 * {@code explicitResponse} mutable puede quedar seteado por OTRA clase de
+	 * test que compartió el mismo contexto y corrió antes en el mismo
+	 * proceso de Gradle (orden de ejecución no garantizado), haciendo que el
+	 * default "inteligente" de acá nunca se alcance. `setNextResponse(null)`
+	 * fuerza un estado limpio en cada test (mismo fix aplicado en
+	 * `GenerationJobControllerTest`, que sí lo sufría de verdad contra
+	 * `AiEditControllerTest`).
 	 */
 	@BeforeEach
 	void resetMockProviders() throws Exception {
@@ -107,6 +117,7 @@ class MobGenerationServiceTest {
 		mockVision.setNextResponse(Files.readString(new File("../contracts/fixtures/model-intent-example.json").toPath()));
 		mockVision.setOnCall(() -> {
 		});
+		((MockReasoningProvider) reasoningProvider).setNextResponse(null);
 	}
 
 	private UUID aProjectAndMobWithReference() {
