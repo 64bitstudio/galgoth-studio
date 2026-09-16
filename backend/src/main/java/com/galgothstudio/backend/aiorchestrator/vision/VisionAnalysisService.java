@@ -29,7 +29,7 @@ public class VisionAnalysisService {
 	 * cambia de forma que afecte el contrato de salida esperado
 	 * (reproducibilidad real, master prompt §20).
 	 */
-	static final String PROMPT_VERSION = "vision-v1";
+	static final String PROMPT_VERSION = "vision-v2"; // ticket 104: el prompt ahora pide featureCategories
 	static final String SCHEMA_VERSION = "model-intent-v1";
 
 	private static final String SYSTEM_PROMPT =
@@ -49,8 +49,16 @@ public class VisionAnalysisService {
 			  },
 			  "asymmetry": <número entre 0 y 1, 0 = simétrico, 1 = máxima asimetría deliberada>,
 			  "features": ["<rasgo visual distintivo>", ...],
+			  "featureCategories": ["<categoría de CADA rasgo, en el MISMO orden que "features">", ...],
 			  "materials": ["<descripción de material/color>", ...]
 			}
+
+			"featureCategories" debe tener EXACTAMENTE un elemento por cada elemento de
+			"features", en el mismo orden. Cada valor debe ser UNO de estos, nunca otro:
+			HEAD, TORSO, ARM, FOREARM, HAND, LEG, SHIN, FOOT, JAW, CLAW, HORN, SPIKE,
+			TAIL, WING, EAR, EYE, TORN_CLOTH, LOINCLOTH, ARMOR, EMISSIVE_CRACK, GENERIC.
+			Si un rasgo no encaja en ninguna, usá GENERIC -- nunca lo omitas ni inventes
+			una categoría nueva.
 
 			El resultado debe permanecer NEUTRAL Y ANIMABLE: nunca propongas huesos/miembros \
 			faltantes, proporciones tan extremas que rompan el rigging humanoide estándar, ni \

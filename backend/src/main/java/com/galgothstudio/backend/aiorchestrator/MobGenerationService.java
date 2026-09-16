@@ -40,6 +40,7 @@ import com.galgothstudio.backend.domain.model.BaseType;
 import com.galgothstudio.backend.domain.model.ExportSettings;
 import com.galgothstudio.backend.domain.model.FormatVersion;
 import com.galgothstudio.backend.domain.model.GeometryDetail;
+import com.galgothstudio.backend.domain.model.ModelGenerationQualityReport;
 import com.galgothstudio.backend.domain.model.TextureResolution;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.ModelIntent;
@@ -285,7 +286,8 @@ public class MobGenerationService {
 			checkCancellation(jobId);
 
 			emit(jobId, seq, GenerationStage.VALIDANDO_GEOMETRIA, "Validando compatibilidad con Blockbench/FMM…", 95, null);
-			validateFmmCompatibilityInformational(jobId, finalModel);
+			ModelGenerationQualityReport.Metric fmmMetric = validateFmmCompatibilityInformational(jobId, finalModel);
+			logQualityReport(jobId, visionResult.modelIntent(), finalModel, fmmMetric);
 
 			completeJob(jobId, finalModel);
 			emit(jobId, seq, GenerationStage.COMPLETADO, "Generación completada.", 100, previewSnapshotPayload(finalModel));
@@ -463,19 +465,43 @@ public class MobGenerationService {
 	 * `GenerationResultService` normalmente) no debe tumbar un job que
 	 * por lo demás generó geometría válida.
 	 */
-	private void validateFmmCompatibilityInformational(UUID jobId, MobProjectModel finalModel) {
+	private ModelGenerationQualityReport.Metric validateFmmCompatibilityInformational(UUID jobId, MobProjectModel finalModel) {
 		try {
 			String bbmodelJson = BBModelExporterV5.export(finalModel);
 			ValidationResult validation = FmmCompatibilityValidator.validate(bbmodelJson);
 			if (!validation.pass()) {
 				log.info("Job {} generó un modelo con hallazgos de compatibilidad FMM (informativo, no falla el job): {}", jobId, validation.issues());
 			}
+			// Ticket 104: el mismo resultado alimenta el reporte de calidad --
+			// 1 = compatible, 0 = con hallazgos; nunca se vuelve a validar.
+			return ModelGenerationQualityReport.Metric.of(validation.pass() ? 1 : 0);
 		} catch (RuntimeException e) {
 			log.warn(
 					"No se pudo correr la validación FMM informativa del job {} durante el pipeline -- se ignora, "
 							+ "GenerationResultService la reintenta al servir GET /result.",
 					jobId, e);
+			// Ticket 104: no se pudo medir -- `unavailable`, nunca un valor inventado.
+			return ModelGenerationQualityReport.Metric.unavailable();
 		}
+	}
+
+	/**
+	 * Ticket 104 (HU-5b) -- reporte de calidad puramente diagnóstico: no
+	 * bloquea el job, no se expone en UI en v1 (confirmado en el documento
+	 * de definición), solo se loguea. Misma deuda declarada que
+	 * {@link #logRejections}: exponerlo en la API es alcance de un ticket
+	 * futuro, no de este.
+	 */
+	private void logQualityReport(UUID jobId, ModelIntent intent, MobProjectModel finalModel, ModelGenerationQualityReport.Metric fmm) {
+		// El reporte HOY solo existe para loguearse: si el nivel INFO está
+		// apagado, calcularlo (y formatearlo) sería trabajo tirado en cada
+		// generación. Cuando el ticket futuro lo exponga en la API, este
+		// cálculo sale de acá y deja de ser condicional.
+		if (!log.isInfoEnabled()) {
+			return;
+		}
+		ModelGenerationQualityReport report = ModelGenerationQualityReport.of(intent, finalModel, fmm);
+		log.info("Job {}: reporte de calidad -- {}", jobId, report.describe());
 	}
 
 	private static String describeOperation(GeometryOperation op) {

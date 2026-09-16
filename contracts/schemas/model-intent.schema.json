@@ -38,6 +38,14 @@
       "type": "array",
       "items": { "type": "string", "minLength": 1 },
       "minItems": 1
+    },
+    "featureCategories": {
+      "type": "array",
+      "description": "Ticket 104 (HU-5b): categoria de cada elemento de `features`, EN EL MISMO ORDEN. Campo ADITIVO y opcional -- una respuesta sin el campo sigue siendo valida (contrato anterior intacto). Taxonomia cerrada compartida con Cuboid.semanticPart, para medir cobertura por igualdad de enum y nunca por comparacion de texto libre.",
+      "items": {
+        "type": "string",
+        "enum": ["HEAD", "TORSO", "ARM", "FOREARM", "HAND", "LEG", "SHIN", "FOOT", "JAW", "CLAW", "HORN", "SPIKE", "TAIL", "WING", "EAR", "EYE", "TORN_CLOTH", "LOINCLOTH", "ARMOR", "EMISSIVE_CRACK", "GENERIC"]
+      }
     }
   }
 }
