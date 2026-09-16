@@ -23,7 +23,21 @@ public enum TexelDensity {
 	X1(1),
 
 	/** 2 texels por unidad de modelo (el doble de densidad lineal) -- upgrade explícito, nunca automático. */
-	X2(2);
+	X2(2),
+
+	/**
+	 * 4 texels por unidad de modelo -- ticket 109
+	 * (`docs/definiciones/densidad-de-texel-y-resolucion-de-textura.md`).
+	 *
+	 * <p>Agregado por un hallazgo medido contra un mob real en `studio-dev`
+	 * (`Carcomido v2`, 46 cuboides): a {@link #X1}, 178 de sus 276 caras
+	 * quedaban bajo 16 px² y los rasgos que dan identidad al personaje
+	 * recibían 1-2 téxeles -- un ojo de 2×1.2 unidades no entra en 2
+	 * píxeles, así que el generador de imagen solo podía devolver ruido con
+	 * la paleta correcta. {@link #X2} no alcanzaba: dejaba los colmillos en
+	 * 2×2. A X4 ese mismo colmillo recibe 4×4 y el ojo 8×5.
+	 */
+	X4(4);
 
 	private final int texelsPerUnit;
 

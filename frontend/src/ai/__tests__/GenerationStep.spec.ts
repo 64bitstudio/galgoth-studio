@@ -72,7 +72,7 @@ const PROPS = {
   mobName: 'Carcomido',
   baseType: 'humanoid' as const,
   geometryDetail: 'MEDIUM' as const,
-  textureResolution: '128' as const,
+  textureDensity: 'max' as const,
 }
 
 describe('GenerationStep.vue', () => {
@@ -80,7 +80,7 @@ describe('GenerationStep.vue', () => {
     mount(GenerationStep, { props: PROPS })
     await flushPromises()
 
-    expect(startGeneration).toHaveBeenCalledWith('mob-1', 'MEDIUM', '128')
+    expect(startGeneration).toHaveBeenCalledWith('mob-1', 'MEDIUM', 'max')
     expect(FakeEventSource.instances).toHaveLength(1)
     expect(FakeEventSource.instances[0]?.url).toBe('http://localhost:8080/api/jobs/job-1/events')
   })

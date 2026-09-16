@@ -3,6 +3,7 @@ package com.galgothstudio.backend.domain.uv;
 import com.galgothstudio.backend.domain.model.Cuboid;
 import com.galgothstudio.backend.domain.model.CuboidFaces;
 import com.galgothstudio.backend.domain.model.FaceName;
+import com.galgothstudio.backend.domain.model.UvLayout;
 import com.galgothstudio.backend.domain.model.UvRegion;
 import java.util.ArrayList;
 import java.util.List;
@@ -49,18 +50,27 @@ public final class AlphaAutoPackStrategy implements UvLayoutStrategy {
 		return layout(cuboids, textureWidth, textureHeight, TexelDensity.X1);
 	}
 
+	/** Ticket 109 -- el camino real de la generación: acá la densidad elegida por el usuario sí llega al packing (ver el Javadoc de la sobrecarga en {@link UvLayoutStrategy}). */
+	@Override
+	public Result layout(
+			List<Cuboid> cuboids, int textureWidth, int textureHeight, UvLayout previousLayout, boolean confirmPaintLoss,
+			TexelDensity density) {
+		return layout(cuboids, textureWidth, textureHeight, density);
+	}
+
 	/**
-	 * Ticket 042, Diseño técnico §7: variante aditiva que empaqueta a una
-	 * {@link TexelDensity} explícita -- NO forma parte del contrato
-	 * {@link UvLayoutStrategy} (que no tiene noción de densidad; ningún
-	 * {@code MobProjectModel}/{@code UvLayout} persiste todavía qué
-	 * densidad está vigente, fuera de alcance de este ticket). Único
-	 * consumidor real: {@link TexelDensityUpgrade} (upgrade explícito
-	 * x1→x2 ANTES de contenido {@code PAINTED}). La sobrecarga de 3
-	 * argumentos de arriba (contrato {@link UvLayoutStrategy}, tickets
-	 * 006/007/041) es exactamente equivalente a llamar esta con
-	 * {@link TexelDensity#X1} -- CERO cambio de comportamiento para el
-	 * código ya existente.
+	 * Ticket 042, Diseño técnico §7: variante que empaqueta a una
+	 * {@link TexelDensity} explícita. La sobrecarga de 3 argumentos
+	 * (contrato {@link UvLayoutStrategy}, tickets 006/007/041) es
+	 * exactamente equivalente a llamar esta con {@link TexelDensity#X1}.
+	 *
+	 * <p>Ticket 109: dejó de ser ajena al contrato de
+	 * {@link UvLayoutStrategy}. Antes su único consumidor era
+	 * {@link TexelDensityUpgrade} (upgrade explícito fuera del pipeline de
+	 * generación), y por eso la densidad nunca llegaba al packing del flujo
+	 * normal -- el efecto medido era que subir la densidad agrandaba el
+	 * atlas sin cambiar el tamaño de las caras. Ahora la sobrecarga de 6
+	 * argumentos de arriba la conecta con el camino real de generación.
 	 */
 	public Result layout(List<Cuboid> cuboids, int textureWidth, int textureHeight, TexelDensity density) {
 		List<BoxUvMath.Footprint> footprints = footprintsOf(cuboids, density);

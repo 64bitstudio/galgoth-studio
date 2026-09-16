@@ -41,7 +41,7 @@ import com.galgothstudio.backend.domain.model.ExportSettings;
 import com.galgothstudio.backend.domain.model.FormatVersion;
 import com.galgothstudio.backend.domain.model.GeometryDetail;
 import com.galgothstudio.backend.domain.model.ModelGenerationQualityReport;
-import com.galgothstudio.backend.domain.model.TextureResolution;
+import com.galgothstudio.backend.domain.model.TextureDensity;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.ModelIntent;
 import com.galgothstudio.backend.domain.model.TextureDocument;
@@ -175,18 +175,18 @@ public class MobGenerationService {
 		this.generationExecutor = generationExecutor;
 	}
 
-	/** Igual que {@link #startGeneration(UUID, GeometryDetail, TextureResolution)} con los defaults (tickets 100/103) -- mantenido por compatibilidad con callers que no eligen detalle geométrico ni resolución. */
+	/** Igual que {@link #startGeneration(UUID, GeometryDetail, TextureDensity)} con los defaults (tickets 100/109) -- mantenido por compatibilidad con callers que no eligen detalle geométrico ni densidad. */
 	public UUID startGeneration(UUID mobId) {
-		return startGeneration(mobId, GeometryDetail.MEDIUM, TextureResolution.MAX_128);
+		return startGeneration(mobId, GeometryDetail.MEDIUM, TextureDensity.MAX);
 	}
 
-	/** Igual que {@link #startGeneration(UUID, GeometryDetail, TextureResolution)} con la resolución por defecto (ticket 103). */
+	/** Igual que {@link #startGeneration(UUID, GeometryDetail, TextureDensity)} con la densidad por defecto (ticket 109). */
 	public UUID startGeneration(UUID mobId, GeometryDetail geometryDetail) {
-		return startGeneration(mobId, geometryDetail, TextureResolution.MAX_128);
+		return startGeneration(mobId, geometryDetail, TextureDensity.MAX);
 	}
 
 	/** Preflight síncrono (mob/referencia deben existir, AC implícito del ticket 028 preservado) + creación inmediata de la fila `running` -- el pipeline real se dispara después, en {@code generationExecutor}. */
-	public UUID startGeneration(UUID mobId, GeometryDetail geometryDetail, TextureResolution textureResolution) {
+	public UUID startGeneration(UUID mobId, GeometryDetail geometryDetail, TextureDensity textureDensity) {
 		MobEntity mob = mobRepository.findById(mobId).orElseThrow(() -> new MobNotFoundException(mobId));
 		ReferenceImageEntity reference = mostRecentReference(mobId);
 
@@ -196,7 +196,7 @@ public class MobGenerationService {
 		GenerationJobContext context = new GenerationJobContext(
 				job.getId(), mob.getId(), mob.getProjectId(), mob.getName(), mob.getBaseType(), reference.getId(), reference.getStorageKey(),
 				reference.getContentType(), geometryDetail != null ? geometryDetail : GeometryDetail.MEDIUM,
-				textureResolution != null ? textureResolution : TextureResolution.MAX_128);
+				textureDensity != null ? textureDensity : TextureDensity.MAX);
 
 		generationExecutor.execute(() -> runPipeline(context));
 		return context.jobId();
@@ -274,7 +274,7 @@ public class MobGenerationService {
 			// es agnóstico de quién produjo las operaciones, mismo cálculo de
 			// atlas/UV de siempre, ahora sobre el batch combinado real.
 			MobProjectModel finalModel = geometryPlannerService.applyOperations(
-					secondaryExecution.operations(), secondaryExecution.providerResponse(), primaryModel, context.textureResolution());
+					secondaryExecution.operations(), secondaryExecution.providerResponse(), primaryModel, context.textureDensity());
 			// Ticket 100, HU-4: el presupuesto es orientativo -- un resultado
 			// fuera de rango no falla el job, solo se registra para diagnóstico.
 			if (!context.geometryDetail().isWithinBudget(finalModel.cuboids().size())) {

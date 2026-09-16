@@ -47,7 +47,7 @@ import IconMosaic from '../../design-system/icons/IconMosaic.vue'
 import IconQuadruped from '../../design-system/icons/IconQuadruped.vue'
 import IconSparkle from '../../design-system/icons/IconSparkle.vue'
 import type { BaseType } from '../../projects/mobsApi'
-import type { GeometryDetail, TextureResolution } from '../../api/generationApi'
+import type { GeometryDetail, TextureDensity } from '../../api/generationApi'
 
 const NAME_MAX_LENGTH = 32
 
@@ -69,16 +69,16 @@ const RIG_ESTIMATE_BY_TYPE: Record<BaseType, string> = {
 }
 
 /**
- * Ticket 103, HU-10 -- las ETIQUETAS visibles no cambian; lo que cambia es
- * el `value`, que ahora es el valor de contrato que viaja al backend
- * (`TextureResolution`). El tamaño elegido es un TOPE del atlas, no un
- * tamaño exacto (decisión explícita del PO): ver el Javadoc del enum en
- * backend y el §7 del diseño técnico de textura.
+ * Ticket 109, HU-3 -- el control pasa a elegir DENSIDAD de téxel, no un
+ * tamaño de atlas. Las etiquetas de tamaño anteriores (64/128/256) se
+ * eliminaron porque el atlas ya no tiene tope: prometían un tamaño final
+ * que el motor no puede garantizar. Decisión del PO en el VoBo de
+ * `docs/definiciones/densidad-de-texel-y-resolucion-de-textura.md`.
  */
-const TEXTURE_RESOLUTION_OPTIONS: GSelectOption[] = [
-  { value: '64', label: '64×64' },
-  { value: '128', label: '128×128 (recomendado)' },
-  { value: '256', label: '256×256' },
+const TEXTURE_DENSITY_OPTIONS: GSelectOption[] = [
+  { value: 'standard', label: 'Estándar' },
+  { value: 'high', label: 'Alta' },
+  { value: 'max', label: 'Máxima (recomendada)' },
 ]
 
 /** Ticket 100, HU-4 -- a diferencia de "Resolución de textura" (arriba), esta selección SÍ viaja al backend y condiciona de verdad el presupuesto de cuboides secundarios (`SecondaryGeometryPlanner`). Default "Detallado"=MEDIUM, decisión ya tomada en el documento de definición. */
@@ -90,13 +90,13 @@ const GEOMETRY_DETAIL_OPTIONS: GSelectOption[] = [
 
 const props = defineProps<{ referencePreviewUrl: string; submitting: boolean; submitError: string | null }>()
 const emit = defineEmits<{
-  confirm: [{ name: string; baseType: BaseType; geometryDetail: GeometryDetail; textureResolution: TextureResolution }]
+  confirm: [{ name: string; baseType: BaseType; geometryDetail: GeometryDetail; textureDensity: TextureDensity }]
   back: []
 }>()
 
 const name = ref('')
 const baseType = ref<BaseType>('humanoid')
-const textureResolution = ref('128')
+const textureResolution = ref('max')
 // GSelect.modelValue es siempre `string` (ver su propio Javadoc) -- mismo
 // patrón que textureResolution arriba, se estrecha a GeometryDetail recién
 // al emitir (los valores posibles los controlan GEOMETRY_DETAIL_OPTIONS,
@@ -117,7 +117,7 @@ function confirm(): void {
     name: trimmed,
     baseType: baseType.value,
     geometryDetail: geometryDetail.value as GeometryDetail,
-    textureResolution: textureResolution.value as TextureResolution,
+    textureDensity: textureResolution.value as TextureDensity,
   })
 }
 </script>
@@ -175,7 +175,7 @@ function confirm(): void {
 
       <div class="configuration-step__label">
         Resolución de textura
-        <GSelect v-model="textureResolution" :options="TEXTURE_RESOLUTION_OPTIONS" label="Resolución de textura">
+        <GSelect v-model="textureResolution" :options="TEXTURE_DENSITY_OPTIONS" label="Densidad de textura">
           <template #icon><IconMosaic :size="16" /></template>
         </GSelect>
         <span class="configuration-step__field-hint">Mayor resolución ofrece más detalle, pero aumenta el tiempo de generación.</span>

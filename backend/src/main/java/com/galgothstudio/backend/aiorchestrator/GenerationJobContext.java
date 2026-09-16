@@ -1,7 +1,7 @@
 package com.galgothstudio.backend.aiorchestrator;
 
 import com.galgothstudio.backend.domain.model.GeometryDetail;
-import com.galgothstudio.backend.domain.model.TextureResolution;
+import com.galgothstudio.backend.domain.model.TextureDensity;
 import java.util.UUID;
 
 /**
@@ -15,12 +15,12 @@ import java.util.UUID;
  * @param geometryDetail presupuesto de detalle geométrico elegido en
  *                       Configuración (ticket 100) -- {@code MEDIUM} si el
  *                       caller no mandó ninguno (compatibilidad).
- * @param textureResolution TOPE de atlas elegido en Configuración (ticket
- *                          103) -- {@code MAX_128} si el caller no mandó
- *                          ninguno. Ver {@link TextureResolution}: acota,
- *                          nunca fija el tamaño.
+ * @param textureDensity densidad de téxel elegida en Configuración
+ *                       (ticket 109) -- {@code MAX} si el caller no mandó
+ *                       ninguna. Ver {@link TextureDensity}: el atlas sale
+ *                       del packing a esa densidad, sin tope.
  */
 record GenerationJobContext(
 		UUID jobId, UUID mobId, UUID projectId, String mobName, String baseType, UUID referenceId, String storageKey,
-		String contentType, GeometryDetail geometryDetail, TextureResolution textureResolution) {
+		String contentType, GeometryDetail geometryDetail, TextureDensity textureDensity) {
 }
