@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../api/ApiError'
-import { confirmPasswordReset, isTwoFactorRequired, login, refreshAccessToken, register, requestPasswordReset } from '../authApi'
+import {
+  confirmPasswordReset,
+  exchangeSocialCode,
+  isTwoFactorRequired,
+  login,
+  refreshAccessToken,
+  register,
+  requestPasswordReset,
+  socialLoginUrl,
+} from '../authApi'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -111,5 +120,56 @@ describe('authApi', () => {
     )
 
     await expect(confirmPasswordReset('bad-token', 'newpass123')).rejects.toMatchObject({ status: 400, code: 'invalid_token' })
+  })
+
+  // Ticket 072 de auth-core-mc -- login social real.
+  it('socialLoginUrl hace GET a /api/v1/oauth2/login-url/{provider} con X-Client-Id y devuelve redirectUrl', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({ redirectUrl: 'https://auth-dev.example.com/oauth2/authorization/x::google' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await socialLoginUrl('google')
+
+    expect(result).toBe('https://auth-dev.example.com/oauth2/authorization/x::google')
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/v1/oauth2/login-url/google')
+    expect((init?.headers as Record<string, string>)['X-Client-Id']).toBe('galgoth-studio')
+  })
+
+  it('socialLoginUrl propaga un ApiError si el proveedor no está soportado', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => jsonResponse({ error: 'unsupported_provider', message: 'Unknown provider' }, 400)))
+
+    await expect(socialLoginUrl('google')).rejects.toMatchObject({ status: 400, code: 'unsupported_provider' })
+  })
+
+  it('exchangeSocialCode hace POST a /api/v1/oauth2/social-exchange con X-Client-Id y devuelve tokens+user en éxito', async () => {
+    const success = {
+      user: { id: 'u1', email: 'ada@example.com', phone: null, nombre: 'Ada', apellidos: 'Lovelace', emailVerified: true, phoneVerified: false, hasPassword: false },
+      tokens: { accessToken: 'a.b.c', refreshToken: 'r1', tokenType: 'Bearer', expiresInSeconds: 900 },
+    }
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(success))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await exchangeSocialCode('code-abc')
+
+    expect(result).toEqual(success)
+    expect(isTwoFactorRequired(result)).toBe(false)
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/v1/oauth2/social-exchange')
+    expect((init?.headers as Record<string, string>)['X-Client-Id']).toBe('galgoth-studio')
+    expect(JSON.parse(init?.body as string)).toEqual({ code: 'code-abc' })
+  })
+
+  it('exchangeSocialCode con 2FA activo devuelve twoFactorRequired en vez de tokens', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => jsonResponse({ twoFactorRequired: true, pendingToken: 'p1', method: 'TOTP' }, 202)))
+
+    const result = await exchangeSocialCode('code-abc')
+
+    expect(isTwoFactorRequired(result)).toBe(true)
+  })
+
+  it('un código de un solo uso inválido/expirado propaga un ApiError', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => jsonResponse({ error: 'invalid_token', message: 'The exchange code is invalid, expired, or already used' }, 400)))
+
+    await expect(exchangeSocialCode('bad-code')).rejects.toMatchObject({ status: 400, code: 'invalid_token' })
   })
 })

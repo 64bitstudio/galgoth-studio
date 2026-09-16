@@ -59,6 +59,35 @@ export function login(identifier: string, password: string): Promise<LoginSucces
   return requestJson<LoginSuccess | TwoFactorRequired>('/api/v1/login', { identifier, password })
 }
 
+/**
+ * Ticket 072 de auth-core-mc -- resuelve `/oauth2/authorization/{registrationId}`
+ * para un visitante SIN sesión (login social por primera vez). El
+ * `registrationId` empaqueta el UUID interno del `IdentityClient`, un
+ * detalle que este frontend nunca debe conocer -- por eso pasa por este
+ * endpoint en vez de armar la URL a mano.
+ */
+export async function socialLoginUrl(provider: 'google' | 'facebook'): Promise<string> {
+  const response = await fetch(`${authCoreMcUrl()}/api/v1/oauth2/login-url/${provider}`, {
+    headers: { 'X-Client-Id': AUTH_CLIENT_ID },
+  })
+  const body = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new ApiError(body?.message ?? `Error HTTP ${response.status}`, response.status, body?.error)
+  }
+  return (body as { redirectUrl: string }).redirectUrl
+}
+
+/**
+ * Ticket 072 -- canjea el código de un solo uso que `/auth/callback`
+ * recibe de auth-core-mc tras el consentimiento del proveedor. Mismo
+ * shape de respuesta que `login` (`LoginSuccess | TwoFactorRequired`) --
+ * el gate de 2FA es el mismo (`LoginCompletionService`, auth-core-mc#045)
+ * para ambos flujos de entrada.
+ */
+export function exchangeSocialCode(code: string): Promise<LoginSuccess | TwoFactorRequired> {
+  return requestJson<LoginSuccess | TwoFactorRequired>('/api/v1/oauth2/social-exchange', { code })
+}
+
 /** `/api/v1/token/refresh` no exige `X-Client-Id` -- el refresh token ya identifica de qué cliente/usuario es (auth-core-mc, TokenController). */
 export function refreshAccessToken(refreshToken: string): Promise<TokenPair> {
   return requestJson<TokenPair>('/api/v1/token/refresh', { refreshToken }, false)

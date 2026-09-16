@@ -104,6 +104,15 @@ const router = createRouter({
       component: () => import('../auth/RegisterView.vue'),
     },
     {
+      // Ticket 072 de auth-core-mc -- ruta FIJA: es el redirect_uri real ya
+      // registrado en Google/Facebook y en identity_client.redirect_uris para
+      // galgoth-studio en los 3 ambientes -- cambiar este path rompería el
+      // login social en producción, mismo motivo que 'password-reset-confirm'.
+      path: '/auth/callback',
+      name: 'auth-callback',
+      component: () => import('../auth/AuthCallbackView.vue'),
+    },
+    {
       // Ticket 080: pide el reset (email/teléfono) -- dispara
       // POST /api/v1/password-reset/request, sin revelar si la cuenta existe.
       path: '/forgot-password',
