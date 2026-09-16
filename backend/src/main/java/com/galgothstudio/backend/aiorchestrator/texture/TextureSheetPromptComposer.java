@@ -1,5 +1,6 @@
 package com.galgothstudio.backend.aiorchestrator.texture;
 
+import com.galgothstudio.backend.domain.model.FaceName;
 import com.galgothstudio.backend.domain.model.Vec4;
 import java.util.Locale;
 
@@ -32,24 +33,48 @@ import java.util.Locale;
  * ambos acá duplicaría esa responsabilidad. Elegir el estilo es decisión
  * de usuario orquestada por 054, fuera del alcance de este ticket
  * (100% determinista, sin IA, sin estado de sesión de usuario).
+ *
+ * <p><b>Alineamiento de coordenadas prompt↔API real (ticket 101, causa
+ * raíz documentada en `docs/definiciones/anatomia-por-capas-generacion-mobs.md`,
+ * "Texture Generation V2")</b>: antes de este ticket, este composer
+ * describía el canvas usando {@code sheet.sheetWidth()/sheetHeight()} --
+ * el tamaño ORIGINAL, pequeño, calculado por {@code ShelfBinPacker}. Pero
+ * la llamada real a la API (ver {@code ImageGenerationProvider.inflatedSheetSize})
+ * puede pedir un canvas hasta ~25x más grande (múltiplo de 16, aspect
+ * ratio, pixel budget de área, ver Javadoc de
+ * {@code OpenAiImageProvider.inflatedSheetSize}) -- el modelo generador
+ * de imagen no tenía forma de reconciliar un canvas "chico" descrito en
+ * el prompt con el canvas real, mucho más grande, sobre el que en verdad
+ * dibuja: el resultado eran colores en regiones incorrectas y zonas en
+ * blanco. Corregido: {@link #compose} recibe el tamaño REAL inflado
+ * ({@code inflatedWidth}/{@code inflatedHeight}) y describe el canvas
+ * Y cada coordenada de grilla en ESE sistema -- el mismo que
+ * {@link TextureSheetSlicer} usa después para recortar (ver su Javadoc),
+ * sin doble conversión.
+ *
+ * <p><b>Nota de material por línea, no bloque compartido (decisión T2 del
+ * documento de definición, ticket 101)</b>: cada línea de coordenadas
+ * lleva adjunta su propia nota de material (vía {@link TextureGenerationPlan}),
+ * reemplazando el bloque {@code "Notas de material: ..."} único que
+ * describía TODAS las caras del bone de forma genérica.
  */
 public final class TextureSheetPromptComposer {
 
 	private TextureSheetPromptComposer() {
 	}
 
-	public static String compose(TextureGenerationSheet sheet) {
+	public static String compose(TextureGenerationSheet sheet, int inflatedWidth, int inflatedHeight, TextureGenerationPlan plan) {
 		StringBuilder sb = new StringBuilder();
-		appendHeader(sb, sheet);
-		appendGrid(sb, sheet);
+		appendHeader(sb, sheet, inflatedWidth, inflatedHeight);
+		appendGrid(sb, sheet, inflatedWidth, inflatedHeight, plan);
 		return sb.toString();
 	}
 
-	private static void appendHeader(StringBuilder sb, TextureGenerationSheet sheet) {
+	private static void appendHeader(StringBuilder sb, TextureGenerationSheet sheet, int inflatedWidth, int inflatedHeight) {
 		sb.append("Generá una única imagen de ")
-				.append(sheet.sheetWidth())
+				.append(inflatedWidth)
 				.append('x')
-				.append(sheet.sheetHeight())
+				.append(inflatedHeight)
 				.append(" píxeles para la parte \"")
 				.append(sheet.boneName())
 				.append("\" (")
@@ -58,41 +83,59 @@ public final class TextureSheetPromptComposer {
 				.append("Paleta: ")
 				.append(sheet.dominantPalette())
 				.append(".\n");
-		if (sheet.materialNotes() != null && !sheet.materialNotes().isBlank()) {
-			sb.append("Notas de material: ").append(sheet.materialNotes()).append(".\n");
-		}
 	}
 
-	private static void appendGrid(StringBuilder sb, TextureGenerationSheet sheet) {
+	private static void appendGrid(StringBuilder sb, TextureGenerationSheet sheet, int inflatedWidth, int inflatedHeight, TextureGenerationPlan plan) {
+		double scaleX = inflatedWidth / (double) sheet.sheetWidth();
+		double scaleY = inflatedHeight / (double) sheet.sheetHeight();
+		long scaledGutter = Math.round(TextureGenerationSheetPlanner.GUTTER_PX * scaleX);
 		sb.append("\nLa imagen se divide en ")
 				.append(sheet.placements().size())
 				.append(" regiones fijas, separadas por un margen de ")
-				.append(TextureGenerationSheetPlanner.GUTTER_PX)
+				.append(scaledGutter)
 				.append("px sin contenido. Respetá EXACTAMENTE estos límites -- el contenido de cada región debe "
 						+ "quedar contenido dentro de su rectángulo [x0,y0]-[x1,y1], sin invadir el de las demás "
 						+ "regiones ni el margen entre ellas:\n");
 		for (CuboidFacePlacement placement : sheet.placements()) {
-			appendPlacementLine(sb, placement);
+			appendPlacementLine(sb, placement, scaleX, scaleY, plan);
 		}
 	}
 
-	private static void appendPlacementLine(StringBuilder sb, CuboidFacePlacement placement) {
+	private static void appendPlacementLine(StringBuilder sb, CuboidFacePlacement placement, double scaleX, double scaleY, TextureGenerationPlan plan) {
 		Vec4 rect = placement.sheetRect();
-		sb.append("- Cuboid ")
-				.append(placement.cuboidId())
-				.append(", cara ")
+		TextureGenerationPlan.Entry entry = planEntryFor(placement, plan);
+		sb.append("- Cuboid ").append(placement.cuboidId());
+		appendIfPresent(sb, entry.semanticPart(), " (", ")");
+		sb.append(", cara ")
 				.append(placement.face().name().toLowerCase(Locale.ROOT))
 				.append(" (")
 				.append(placement.orientationHint())
 				.append("): [")
-				.append((int) rect.a())
+				.append(Math.round(rect.a() * scaleX))
 				.append(',')
-				.append((int) rect.b())
+				.append(Math.round(rect.b() * scaleY))
 				.append("]-[")
-				.append((int) rect.c())
+				.append(Math.round(rect.c() * scaleX))
 				.append(',')
-				.append((int) rect.d())
-				.append("]\n");
+				.append(Math.round(rect.d() * scaleY))
+				.append(']');
+		appendIfPresent(sb, entry.materialNote(), " -- material: ", "");
+		sb.append('\n');
+	}
+
+	private static TextureGenerationPlan.Entry planEntryFor(CuboidFacePlacement placement, TextureGenerationPlan plan) {
+		FaceName face = placement.face();
+		return plan.find(placement.cuboidId(), face)
+				.orElseThrow(() -> new IllegalStateException(
+						"TextureGenerationPlan no tiene una entrada para cuboid '" + placement.cuboidId() + "' cara " + face
+								+ " -- se construye 1:1 desde los mismos placements de esta sheet (ver TextureGenerationPlan#forSheet), "
+								+ "nunca debería faltar una entrada."));
+	}
+
+	private static void appendIfPresent(StringBuilder sb, String value, String prefix, String suffix) {
+		if (value != null && !value.isBlank()) {
+			sb.append(prefix).append(value).append(suffix);
+		}
 	}
 
 }

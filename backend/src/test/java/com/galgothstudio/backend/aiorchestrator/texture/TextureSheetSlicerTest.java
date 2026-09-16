@@ -65,7 +65,7 @@ class TextureSheetSlicerTest {
 				"head-1", "head", List.of(placement("cube-a", FaceName.NORTH, new Vec4(0, 0, 8, 8))), "cabeza", "paleta",
 				"", "ref-1", 20, 8);
 
-		List<TextureSlice> slices = slicer.slice(imageBytes, sheet);
+		List<TextureSlice> slices = slicer.slice(imageBytes, sheet, 20, 8);
 
 		assertThat(slices).hasSize(1);
 		BufferedImage slice = slices.getFirst().image();
@@ -80,7 +80,7 @@ class TextureSheetSlicerTest {
 				"head-1", "head", List.of(placement("cube-a", FaceName.NORTH, new Vec4(0, 0, 8, 8))), "cabeza", "paleta",
 				"", "ref-1", 20, 8);
 
-		BufferedImage slice = slicer.slice(imageBytes, sheet).getFirst().image();
+		BufferedImage slice = slicer.slice(imageBytes, sheet, 20, 8).getFirst().image();
 
 		for (int x = 0; x < slice.getWidth(); x++) {
 			for (int y = 0; y < slice.getHeight(); y++) {
@@ -99,7 +99,7 @@ class TextureSheetSlicerTest {
 						placement("cube-a", FaceName.UP, new Vec4(10, 0, 18, 8))),
 				"cabeza", "paleta", "", "ref-1", 20, 8);
 
-		List<TextureSlice> slices = slicer.slice(imageBytes, sheet);
+		List<TextureSlice> slices = slicer.slice(imageBytes, sheet, 20, 8);
 
 		BufferedImage sliceA = slices.get(0).image();
 		BufferedImage sliceB = slices.get(1).image();
@@ -118,12 +118,21 @@ class TextureSheetSlicerTest {
 	 * distribuido en ese canvas completo, no confinado a una esquina. Recortar
 	 * con las coordenadas ORIGINALES (pequeñas) contra la imagen REAL (más
 	 * grande) sin escalar extraía la región equivocada.
+	 *
+	 * <p>Ticket 101: el factor de escala ya no se INFIERE midiendo la
+	 * imagen decodificada -- se recibe como parámetro explícito
+	 * ({@code inflatedWidth}/{@code inflatedHeight}, el mismo valor que
+	 * {@code ImageGenerationProvider.inflatedSheetSize} ya calculó ANTES
+	 * de pedirle la imagen a la API), así que este test lo pasa
+	 * explícitamente (8x8) en vez de dejar que el slicer lo mida solo --
+	 * el escenario real de 065 (sheet planeado en 4x4, tamaño real pedido
+	 * 8x8) sigue cubierto igual.
 	 */
 	@Test
-	void cuandoLaImagenRealEsMasGrandeQueElSheetPlaneado_escalaElSheetRectProporcionalmente_hallazgoRealTicket065() {
+	void cuandoElTamanoRealInfladoEsMasGrandeQueElSheetPlaneado_escalaElSheetRectProporcionalmente_hallazgoRealTicket065() {
 		// Imagen real 8x8: mitad izquierda (x<4) ROJO, mitad derecha (x>=4)
 		// VERDE -- simula lo que la API real devuelve cuando el sheet se
-		// PLANEÓ en 4x4 pero el tamaño realmente pedido (tras sizeParam) fue
+		// PLANEÓ en 4x4 pero el tamaño realmente pedido (inflatedSheetSize) fue
 		// 8x8 (2x más grande en cada eje).
 		BufferedImage real = new BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB);
 		for (int x = 0; x < 8; x++) {
@@ -135,9 +144,9 @@ class TextureSheetSlicerTest {
 		// El placement ocupa la mitad DERECHA del sheet PLANEADO (4x4): [2,0]-[4,4].
 		TextureGenerationSheet sheet = new TextureGenerationSheet(
 				"head-1", "head", List.of(placement("cube-a", FaceName.NORTH, new Vec4(2, 0, 4, 4))), "cabeza", "paleta",
-				"", "ref-1", 4, 4); // sheetWidth/Height = 4x4 -- la imagen real decodificada es 8x8
+				"", "ref-1", 4, 4); // sheetWidth/Height = 4x4 -- el tamaño real inflado es 8x8
 
-		BufferedImage slice = slicer.slice(imageBytes, sheet).getFirst().image();
+		BufferedImage slice = slicer.slice(imageBytes, sheet, 8, 8).getFirst().image();
 
 		// Sin el fix: recorta [2,0]-[4,4] de la imagen real de 8x8 tal cual ->
 		// cae dentro de la mitad ROJA (x<4) -- el bug real. Con el fix,
@@ -152,7 +161,7 @@ class TextureSheetSlicerTest {
 				"head-1", "head", List.of(placement("cube-a", FaceName.NORTH, new Vec4(0, 0, 8, 8))), "cabeza", "paleta",
 				"", "ref-1", 20, 8);
 
-		assertThatThrownBy(() -> slicer.slice(garbage, sheet)).isInstanceOf(TextureGenerationFailedException.class);
+		assertThatThrownBy(() -> slicer.slice(garbage, sheet, 20, 8)).isInstanceOf(TextureGenerationFailedException.class);
 	}
 
 	@Test
@@ -173,7 +182,7 @@ class TextureSheetSlicerTest {
 				"head-1", "head", List.of(placement("cube-a", FaceName.NORTH, new Vec4(0, 0, 200, 200))), "cabeza",
 				"paleta", "", "ref-1", 100, 100);
 
-		assertThatThrownBy(() -> slicer.slice(imageBytes, sheet)).isInstanceOf(TextureGenerationFailedException.class);
+		assertThatThrownBy(() -> slicer.slice(imageBytes, sheet, 100, 100)).isInstanceOf(TextureGenerationFailedException.class);
 	}
 
 	private static void assertOnlyColor(BufferedImage image, int expectedColor) {

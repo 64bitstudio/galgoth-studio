@@ -213,6 +213,42 @@ class OpenAiImageProviderTest {
 				Arguments.of("32x32 (cuadrado pequeño, bajo el pixel budget real)", 32, 32));
 	}
 
+	/**
+	 * Ticket 101 -- {@code inflatedSheetSize} sube a la interfaz
+	 * {@code ImageGenerationProvider} para que {@code TextureGenerationService}
+	 * pueda preguntar, ANTES de llamar a la API, qué tamaño REAL se va a
+	 * pedir de verdad (mismo valor que después alimenta el prompt y el
+	 * slicing, ver Javadoc de {@code TextureSheetPromptComposer}/
+	 * {@code TextureSheetSlicer}). Mismo `MethodSource` que el test de
+	 * arriba -- ambos deben producir el MISMO tamaño para el mismo
+	 * `(width, height)`, ya que `sizeParam` delega en este método (ver su
+	 * Javadoc): se verifica acá directamente, sin pasar por HTTP.
+	 */
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("tamanosDeSheetProblematicos")
+	void inflatedSheetSize_cumpleLasMismasRestriccionesRealesDeLaApi_queSizeParam(String caso, int width, int height) {
+		OpenAiImageProvider provider = new OpenAiImageProvider(RestClient.builder(), new ObjectMapper(), BASE_URL, TEST_API_KEY, GENERIC_MODEL);
+
+		int[] size = provider.inflatedSheetSize(width, height);
+
+		assertThat(size[0] % 16).as("ancho múltiplo de 16").isZero();
+		assertThat(size[1] % 16).as("alto múltiplo de 16").isZero();
+		assertThat(Math.max(size[0], size[1]))
+				.as("aspect ratio dentro de %s:1", MAX_ASPECT_RATIO_DOCUMENTADO)
+				.isLessThanOrEqualTo(Math.min(size[0], size[1]) * MAX_ASPECT_RATIO_DOCUMENTADO);
+		assertThat((long) size[0] * size[1]).as("área >= pixel budget mínimo real").isGreaterThanOrEqualTo(MIN_PIXEL_BUDGET_DOCUMENTADO);
+	}
+
+	@Test
+	void inflatedSheetSize_nuncaEncogeElTamanoPedido() {
+		OpenAiImageProvider provider = new OpenAiImageProvider(RestClient.builder(), new ObjectMapper(), BASE_URL, TEST_API_KEY, GENERIC_MODEL);
+
+		int[] size = provider.inflatedSheetSize(64, 32);
+
+		assertThat(size[0]).isGreaterThanOrEqualTo(64);
+		assertThat(size[1]).isGreaterThanOrEqualTo(32);
+	}
+
 	@Test
 	void generateTextureSheet_con_bytes_de_referencia_vacios_se_trata_como_sin_referencia() {
 		MockRestServiceServer[] serverBox = new MockRestServiceServer[1];

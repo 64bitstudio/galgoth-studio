@@ -158,11 +158,24 @@ public class OpenAiImageProvider implements ImageGenerationProvider {
 	private static final int MAX_ASPECT_RATIO = 3;
 	private static final int MIN_PIXEL_BUDGET = 655_360;
 
-	private static String sizeParam(int width, int height) {
+	/**
+	 * Sube a la interfaz {@link ImageGenerationProvider} en el ticket 101 --
+	 * antes vivía solo dentro de {@link #sizeParam}, que ahora delega acá.
+	 * Mismo algoritmo documentado arriba (059/060/061/063), sin ningún
+	 * cambio de comportamiento -- {@code sizeParam} sigue produciendo
+	 * EXACTAMENTE el mismo string {@code "WxH"} que antes de este ticket.
+	 */
+	@Override
+	public int[] inflatedSheetSize(int width, int height) {
 		int[] size = clampAspectRatio(roundUpToMultipleOf16(width), roundUpToMultipleOf16(height));
 		if ((long) size[0] * size[1] < MIN_PIXEL_BUDGET) {
 			size = clampAspectRatio(growToMeetPixelBudget(size[0], size[1]));
 		}
+		return size;
+	}
+
+	private String sizeParam(int width, int height) {
+		int[] size = inflatedSheetSize(width, height);
 		return size[0] + "x" + size[1];
 	}
 

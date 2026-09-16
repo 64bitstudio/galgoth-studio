@@ -48,22 +48,38 @@ import org.springframework.stereotype.Component;
  * proporcional al canvas completo que se le pide, no confinado a una
  * esquina -- así que recortar con las coordenadas ORIGINALES (pequeñas)
  * contra la imagen REAL (mucho más grande) extraía una esquina
- * mayormente vacía/negra, no el contenido generado real. Corregido:
- * cada {@code sheetRect} se ESCALA proporcionalmente
- * ({@code imagenReal.ancho/alto} ÷ {@code sheet.sheetWidth/Height}) antes
- * de recortar -- el slice resultante queda más grande que el
- * {@code atlasUvRect} de destino, pero eso es SEGURO por diseño:
- * {@link TextureCompositorService} YA soporta ese mismatch (lo
- * reescala automáticamente al tamaño de destino, "decisión ya vigente
- * del PO", ver su Javadoc) -- este fix no le cambia nada a esa clase.
+ * mayormente vacía/negra, no el contenido generado real. Corregido
+ * originalmente escalando cada {@code sheetRect} por
+ * {@code imagenDecodificada.ancho/alto} ÷ {@code sheet.sheetWidth/Height}
+ * -- el slice resultante queda más grande que el {@code atlasUvRect} de
+ * destino, pero eso es SEGURO por diseño: {@link TextureCompositorService}
+ * YA soporta ese mismatch (lo reescala automáticamente al tamaño de
+ * destino, "decisión ya vigente del PO", ver su Javadoc).
+ *
+ * <p><b>Refinado (ticket 101, elimina el escalado "a ojo")</b>: el fix de
+ * 065 de arriba MEDÍA la imagen decodificada para inferir el factor de
+ * escala -- funcionaba porque, en la práctica, el proveedor devuelve
+ * exactamente el tamaño que se le pidió, pero era un valor INFERIDO, no
+ * el mismo sistema de coordenadas que {@link TextureSheetPromptComposer}
+ * usa para describirle el canvas al modelo generador (que, antes de 101,
+ * usaba {@code sheet.sheetWidth()/sheetHeight()} -- la causa raíz real del
+ * desalineamiento, ver su Javadoc). Ahora ambos reciben el MISMO valor ya
+ * conocido de antemano ({@code ImageGenerationProvider.inflatedSheetSize}) --
+ * el escalado acá pasa a ser {@code inflatedWidth/Height} ÷
+ * {@code sheet.sheetWidth/Height} (el tamaño REAL solicitado, no el
+ * medido de la respuesta), sin doble conversión entre prompt y slicer.
+ * {@link #decode} sigue siendo necesario para obtener los píxeles reales
+ * a recortar; el guard de {@link RasterFormatException} de abajo sigue
+ * cubriendo el caso real de que la imagen decodificada no calce con el
+ * tamaño esperado.
  */
 @Component
 public class TextureSheetSlicer {
 
-	public List<TextureSlice> slice(byte[] sheetImageBytes, TextureGenerationSheet sheet) {
+	public List<TextureSlice> slice(byte[] sheetImageBytes, TextureGenerationSheet sheet, int inflatedWidth, int inflatedHeight) {
 		BufferedImage source = decode(sheetImageBytes);
-		double scaleX = source.getWidth() / (double) sheet.sheetWidth();
-		double scaleY = source.getHeight() / (double) sheet.sheetHeight();
+		double scaleX = inflatedWidth / (double) sheet.sheetWidth();
+		double scaleY = inflatedHeight / (double) sheet.sheetHeight();
 		List<TextureSlice> slices = new ArrayList<>(sheet.placements().size());
 		for (CuboidFacePlacement placement : sheet.placements()) {
 			slices.add(new TextureSlice(placement, cropClamped(source, placement, scaleX, scaleY)));
