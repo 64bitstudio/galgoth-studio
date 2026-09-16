@@ -47,7 +47,7 @@ import IconMosaic from '../../design-system/icons/IconMosaic.vue'
 import IconQuadruped from '../../design-system/icons/IconQuadruped.vue'
 import IconSparkle from '../../design-system/icons/IconSparkle.vue'
 import type { BaseType } from '../../projects/mobsApi'
-import type { GeometryDetail } from '../../api/generationApi'
+import type { GeometryDetail, TextureResolution } from '../../api/generationApi'
 
 const NAME_MAX_LENGTH = 32
 
@@ -68,10 +68,17 @@ const RIG_ESTIMATE_BY_TYPE: Record<BaseType, string> = {
   custom: 'Definido a mano (sin estimar)',
 }
 
+/**
+ * Ticket 103, HU-10 -- las ETIQUETAS visibles no cambian; lo que cambia es
+ * el `value`, que ahora es el valor de contrato que viaja al backend
+ * (`TextureResolution`). El tamaño elegido es un TOPE del atlas, no un
+ * tamaño exacto (decisión explícita del PO): ver el Javadoc del enum en
+ * backend y el §7 del diseño técnico de textura.
+ */
 const TEXTURE_RESOLUTION_OPTIONS: GSelectOption[] = [
-  { value: '64×64', label: '64×64' },
-  { value: '128×128', label: '128×128 (recomendado)' },
-  { value: '256×256', label: '256×256' },
+  { value: '64', label: '64×64' },
+  { value: '128', label: '128×128 (recomendado)' },
+  { value: '256', label: '256×256' },
 ]
 
 /** Ticket 100, HU-4 -- a diferencia de "Resolución de textura" (arriba), esta selección SÍ viaja al backend y condiciona de verdad el presupuesto de cuboides secundarios (`SecondaryGeometryPlanner`). Default "Detallado"=MEDIUM, decisión ya tomada en el documento de definición. */
@@ -82,11 +89,14 @@ const GEOMETRY_DETAIL_OPTIONS: GSelectOption[] = [
 ]
 
 const props = defineProps<{ referencePreviewUrl: string; submitting: boolean; submitError: string | null }>()
-const emit = defineEmits<{ confirm: [{ name: string; baseType: BaseType; geometryDetail: GeometryDetail }]; back: [] }>()
+const emit = defineEmits<{
+  confirm: [{ name: string; baseType: BaseType; geometryDetail: GeometryDetail; textureResolution: TextureResolution }]
+  back: []
+}>()
 
 const name = ref('')
 const baseType = ref<BaseType>('humanoid')
-const textureResolution = ref('128×128')
+const textureResolution = ref('128')
 // GSelect.modelValue es siempre `string` (ver su propio Javadoc) -- mismo
 // patrón que textureResolution arriba, se estrecha a GeometryDetail recién
 // al emitir (los valores posibles los controlan GEOMETRY_DETAIL_OPTIONS,
@@ -103,7 +113,12 @@ function confirm(): void {
     return
   }
   validationError.value = null
-  emit('confirm', { name: trimmed, baseType: baseType.value, geometryDetail: geometryDetail.value as GeometryDetail })
+  emit('confirm', {
+    name: trimmed,
+    baseType: baseType.value,
+    geometryDetail: geometryDetail.value as GeometryDetail,
+    textureResolution: textureResolution.value as TextureResolution,
+  })
 }
 </script>
 

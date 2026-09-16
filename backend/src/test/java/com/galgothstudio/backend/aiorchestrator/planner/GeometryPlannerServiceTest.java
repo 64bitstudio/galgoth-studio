@@ -14,6 +14,7 @@ import com.galgothstudio.backend.domain.model.ModelIntent;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.Proportions;
 import com.galgothstudio.backend.domain.model.TextureDocument;
+import com.galgothstudio.backend.domain.model.TextureResolution;
 import com.galgothstudio.backend.domain.model.UvLayout;
 import com.galgothstudio.backend.domain.uv.AlphaAutoPackStrategy;
 import java.util.List;
@@ -87,11 +88,21 @@ class GeometryPlannerServiceTest {
 	/**
 	 * Ticket 042, Diseño técnico §7: el atlas inicial de un mob generado
 	 * por IA es SIEMPRE la potencia de 2 que contiene el footprint
-	 * empaquetado de sus cuboids reales a densidad X1 -- nunca el
+	 * empaquetado de sus cuboids reales -- nunca el
 	 * {@code TextureDocument} de {@code startingModel} (acá 64x64,
-	 * deliberadamente distinto del resultado esperado, para probar que se
-	 * IGNORA) ni un valor fijo hardcodeado (128x128, el que existía antes
-	 * de este ticket).
+	 * deliberadamente distinto del footprint, para probar que se IGNORA) ni
+	 * un valor fijo hardcodeado (128x128, el que existía antes de 042).
+	 *
+	 * <p><b>CAMBIO DE COMPORTAMIENTO REAL, ticket 103</b>: las cifras
+	 * esperadas de este test cambiaron de 32x16 a 64x32. No es un ajuste
+	 * cosmético del test: hasta 103 la densidad estaba hardcodeada en
+	 * {@code TexelDensity.X1}; ahora sale del tope elegido en Configuración
+	 * ({@link TextureResolution}, default {@code MAX_128}), y para este
+	 * cuboid la densidad X2 entra de sobra en ese tope -- así que el
+	 * pipeline elige X2 y el atlas resultante es el doble por lado. El
+	 * footprint sigue siendo el que manda; lo que cambió es a qué densidad
+	 * se mide. Reportado explícitamente en el PR del ticket 103 por ser un
+	 * cambio de comportamiento del flujo por defecto, no solo del selector.
 	 */
 	@Test
 	void elAtlasInicial_seCalculaDelFootprintEmpaquetadoRealDeLosCuboids_nuncaDeUnValorFijo() {
@@ -107,13 +118,51 @@ class GeometryPlannerServiceTest {
 
 		GeometryPlanResult result = service.plan(aModelIntent(), emptyModel());
 
-		// Cuboid 8(x) x 8(y) x 4(z) -- footprint = 2*(8+4)=24 de ancho,
-		// (4+8)=12 de alto -- atlas = potencia de 2 inmediatamente
-		// contenedora: 32x16.
-		assertThat(result.model().texture().width()).isEqualTo(32);
-		assertThat(result.model().texture().height()).isEqualTo(16);
-		assertThat(result.model().uv().textureWidth()).isEqualTo(32);
-		assertThat(result.model().uv().textureHeight()).isEqualTo(16);
+		// Cuboid 8(x) x 8(y) x 4(z) -- footprint a X1 = 2*(8+4)=24 de ancho,
+		// (4+8)=12 de alto (atlas 32x16); a X2, el doble por lado -> 48x24,
+		// atlas = potencia de 2 inmediatamente contenedora: 64x32. Con el
+		// tope default (128) la densidad X2 entra, así que es la elegida.
+		assertThat(result.model().texture().width()).isEqualTo(64);
+		assertThat(result.model().texture().height()).isEqualTo(32);
+		assertThat(result.model().uv().textureWidth()).isEqualTo(64);
+		assertThat(result.model().uv().textureHeight()).isEqualTo(32);
+	}
+
+	/**
+	 * Ticket 103 (HU-10) -- la resolución elegida en Configuración cambia de
+	 * verdad el atlas resultante, reemplazando el hardcode
+	 * {@code TexelDensity.X1}: el MISMO cuboid, con dos topes distintos, da
+	 * dos atlas reales distintos. El tope acota la densidad; el atlas sigue
+	 * saliendo del packing (§7), nunca se infla para "llenar" el tope.
+	 */
+	@Test
+	void laResolucionElegidaCambiaElAtlasReal_yaNoEsElHardcodeX1_AC() {
+		MockReasoningProvider mockProvider = new MockReasoningProvider();
+		// Cuboid 16(x) x 16(y) x 8(z): a X1 el footprint empaquetado da un
+		// atlas de 64x32; a X2 (footprint lineal x2) da 128x64.
+		String rig =
+				"""
+				[
+				  {"op":"createBone","tempId":"root","name":"body","parentId":null,"pivot":[0,0,0],"rotation":[0,0,0]},
+				  {"op":"createCuboid","tempId":"c1","name":"body","boneId":"root","from":[-8,0,-4],"to":[8,16,4],"origin":[0,8,0],"rotation":[0,0,0]}
+				]
+				""";
+		mockProvider.setNextResponse(rig);
+		GeometryPlannerService service = newService(mockProvider);
+		GeometryPlanResult planned = service.plan(aModelIntent(), emptyModel());
+
+		MobProjectModel conTope64 = service.applyOperations(
+				planned.operations(), planned.providerResponse(), emptyModel(), TextureResolution.MAX_64);
+		MobProjectModel conTope128 = service.applyOperations(
+				planned.operations(), planned.providerResponse(), emptyModel(), TextureResolution.MAX_128);
+
+		// Con tope 64, la densidad alta (atlas 128) no entra -> se usa X1.
+		assertThat(conTope64.texture().width()).isEqualTo(64);
+		assertThat(conTope64.texture().height()).isEqualTo(32);
+		// Con tope 128 sí entra la densidad alta -> atlas real más grande.
+		assertThat(conTope128.texture().width()).isEqualTo(128);
+		assertThat(conTope128.texture().height()).isEqualTo(64);
+		assertThat(conTope128.uv().textureWidth()).isEqualTo(128);
 	}
 
 	@Test
