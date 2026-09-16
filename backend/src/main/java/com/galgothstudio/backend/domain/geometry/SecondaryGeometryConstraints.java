@@ -129,8 +129,12 @@ public final class SecondaryGeometryConstraints {
 	private record BoundingBox(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
 
 		static BoundingBox of(MobProjectModel model) {
-			double minX = Double.POSITIVE_INFINITY, minY = Double.POSITIVE_INFINITY, minZ = Double.POSITIVE_INFINITY;
-			double maxX = Double.NEGATIVE_INFINITY, maxY = Double.NEGATIVE_INFINITY, maxZ = Double.NEGATIVE_INFINITY;
+			double minX = Double.POSITIVE_INFINITY;
+			double minY = Double.POSITIVE_INFINITY;
+			double minZ = Double.POSITIVE_INFINITY;
+			double maxX = Double.NEGATIVE_INFINITY;
+			double maxY = Double.NEGATIVE_INFINITY;
+			double maxZ = Double.NEGATIVE_INFINITY;
 			for (var cuboid : model.cuboids()) {
 				minX = Math.min(minX, Math.min(cuboid.from().x(), cuboid.to().x()));
 				maxX = Math.max(maxX, Math.max(cuboid.from().x(), cuboid.to().x()));

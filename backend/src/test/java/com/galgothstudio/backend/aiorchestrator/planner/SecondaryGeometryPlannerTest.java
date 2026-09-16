@@ -84,8 +84,10 @@ class SecondaryGeometryPlannerTest {
 				[{"op":"noExiste","foo":"bar"}]
 				""");
 		SecondaryGeometryPlanner planner = new SecondaryGeometryPlanner(mockProvider, objectMapper());
+		ModelIntent intent = aModelIntent();
+		List<BoneDescriptor> bones = primaryBones();
 
-		assertThatThrownBy(() -> planner.requestOperations(aModelIntent(), primaryBones(), 10))
+		assertThatThrownBy(() -> planner.requestOperations(intent, bones, 10))
 				.isInstanceOf(InvalidGeometryProposalException.class);
 	}
 

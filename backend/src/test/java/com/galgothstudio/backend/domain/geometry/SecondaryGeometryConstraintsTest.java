@@ -2,7 +2,6 @@ package com.galgothstudio.backend.domain.geometry;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.galgothstudio.backend.domain.geometry.SecondaryGeometryConstraints.Rejection;
 import com.galgothstudio.backend.domain.geometry.SecondaryGeometryConstraints.ValidationResult;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.Vec3;
