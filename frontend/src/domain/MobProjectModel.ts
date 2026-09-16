@@ -44,12 +44,47 @@ export interface Cuboid {
   /**
    * Categoría semántica de la parte que este cuboid representa (ej. "TORSO",
    * "CLAW") -- campo aditivo, ticket 099. Ausente/undefined para cuboids de
-   * antes de este ticket o de caminos que no la necesitan (edición manual/IA
-   * sobre un modelo existente). Todavía un string libre, no el enum cerrado
-   * SemanticPartCategory (ticket 104).
+   * antes de ese ticket o de caminos que no la necesitan (edición manual/IA
+   * sobre un modelo existente).
+   *
+   * Sigue siendo `string` a propósito (ticket 104): lo escribe el LLM de
+   * geometría secundaria y puede traer cualquier valor. La taxonomía cerrada
+   * es `SemanticPartCategory` (abajo), y el backend normaliza contra ella al
+   * medir cobertura -- lo desconocido cae en GENERIC, nunca se descarta.
    */
   semanticPart?: string
 }
+
+/**
+ * Taxonomía semántica cerrada -- espejo de `SemanticPartCategory` (backend) y
+ * de `contracts/schemas/model-intent.schema.json`, ticket 104 (HU-5b).
+ * Extender es aditivo: agregar un valor no rompe a ningún consumidor.
+ */
+export const SEMANTIC_PART_CATEGORIES = [
+  'HEAD',
+  'TORSO',
+  'ARM',
+  'FOREARM',
+  'HAND',
+  'LEG',
+  'SHIN',
+  'FOOT',
+  'JAW',
+  'CLAW',
+  'HORN',
+  'SPIKE',
+  'TAIL',
+  'WING',
+  'EAR',
+  'EYE',
+  'TORN_CLOTH',
+  'LOINCLOTH',
+  'ARMOR',
+  'EMISSIVE_CRACK',
+  'GENERIC',
+] as const
+
+export type SemanticPartCategory = (typeof SEMANTIC_PART_CATEGORIES)[number]
 
 export interface TextureDocument {
   width: number
