@@ -88,10 +88,9 @@ class TextureSheetPromptComposerTest {
 
 		String prompt = TextureSheetPromptComposer.compose(sheet, 20, 10, plan);
 
-		assertThat(prompt).contains("TORSO").contains("material: cuero desgastado con parches")
-				.contains("HEAD_TOP").contains("material: piel agrietada");
 		// El bloque compartido de notas del composer anterior a 101 ya no existe.
-		assertThat(prompt).doesNotContain("Notas de material:");
+		assertThat(prompt).contains("TORSO").contains("material: cuero desgastado con parches").contains("HEAD_TOP")
+				.contains("material: piel agrietada").doesNotContain("Notas de material:");
 	}
 
 	@Test

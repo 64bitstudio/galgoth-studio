@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Une, por {@code (cuboidId, face)}, todo lo que
+ * Une, por {@code (cuboidId, face)}, la información completa que
  * {@link TextureSheetPromptComposer} necesita para escribir una línea de
  * prompt autosuficiente -- ticket 101 (HU-7 de
  * `docs/definiciones/anatomia-por-capas-generacion-mobs.md`). Antes de
