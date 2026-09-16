@@ -105,8 +105,12 @@ final class HumanoidCanonicalTemplate {
 
 	private static List<TemplateCuboidSpec> baseCuboids() {
 		List<TemplateCuboidSpec> cuboids = new ArrayList<>();
-		cuboids.add(new TemplateCuboidSpec(TORSO_ID, TORSO_ID, TORSO_ID, new Vec3(-4, 12, -2), new Vec3(4, 24, 2), new Vec3(0, 12, 0), Vec3.of(0, 0, 0), "TORSO"));
-		cuboids.add(new TemplateCuboidSpec(HEAD_ID, HEAD_ID, HEAD_ID, new Vec3(-4, 24, -4), new Vec3(4, 32, 4), new Vec3(0, 24, 0), Vec3.of(0, 0, 0), "HEAD"));
+		// Ids de cuboid distintos de los ids de bone (aunque compartan boneId):
+		// GeometryEngine rechaza un batch con tempId duplicado, y CreateBone
+		// ya usa TORSO_ID/HEAD_ID como su propio tempId -- hallazgo real,
+		// no obvio hasta correr el generador (ticket 098).
+		cuboids.add(new TemplateCuboidSpec("torso_cuboid", TORSO_ID, TORSO_ID, new Vec3(-4, 12, -2), new Vec3(4, 24, 2), new Vec3(0, 12, 0), Vec3.of(0, 0, 0), "TORSO"));
+		cuboids.add(new TemplateCuboidSpec("head_cuboid", HEAD_ID, HEAD_ID, new Vec3(-4, 24, -4), new Vec3(4, 32, 4), new Vec3(0, 24, 0), Vec3.of(0, 0, 0), "HEAD"));
 		cuboids.addAll(armCuboids(1));
 		cuboids.addAll(armCuboids(-1));
 		cuboids.addAll(legCuboids(1));
@@ -121,14 +125,19 @@ final class HumanoidCanonicalTemplate {
 		double wristY = elbowY - FOREARM_LEN;
 		double xMin = shoulderX - LIMB_HALF_WIDTH;
 		double xMax = shoulderX + LIMB_HALF_WIDTH;
+		// Ids de cuboid distintos de los ids de bone (mismo hallazgo que
+		// torso/head en baseCuboids): "_upper_arm" ya era distinto de
+		// ARM_SUFFIX ("_arm"), pero forearm/hand cuboid coincidían
+		// exactamente con el id de su propio bone -- GeometryEngine rechaza
+		// tempId duplicado en el batch.
 		return List.of(
 				new TemplateCuboidSpec(side + "_upper_arm", side + " upper arm", side + ARM_SUFFIX,
 						new Vec3(xMin, elbowY, -ARM_HALF_DEPTH), new Vec3(xMax, SHOULDER_Y, ARM_HALF_DEPTH),
 						new Vec3(shoulderX, SHOULDER_Y, 0), Vec3.of(0, 0, 0), "ARM"),
-				new TemplateCuboidSpec(side + FOREARM_SUFFIX, side + " forearm", side + FOREARM_SUFFIX,
+				new TemplateCuboidSpec(side + FOREARM_SUFFIX + "_cuboid", side + " forearm", side + FOREARM_SUFFIX,
 						new Vec3(xMin, wristY, -ARM_HALF_DEPTH), new Vec3(xMax, elbowY, ARM_HALF_DEPTH),
 						new Vec3(shoulderX, elbowY, 0), Vec3.of(0, 0, 0), "FOREARM"),
-				new TemplateCuboidSpec(side + HAND_SUFFIX, side + " hand", side + HAND_SUFFIX,
+				new TemplateCuboidSpec(side + HAND_SUFFIX + "_cuboid", side + " hand", side + HAND_SUFFIX,
 						new Vec3(shoulderX - HAND_HALF_SIZE, wristY - 2 * HAND_HALF_SIZE, -HAND_HALF_SIZE),
 						new Vec3(shoulderX + HAND_HALF_SIZE, wristY, HAND_HALF_SIZE),
 						new Vec3(shoulderX, wristY, 0), Vec3.of(0, 0, 0), "HAND"));
@@ -173,11 +182,11 @@ final class HumanoidCanonicalTemplate {
 
 		for (TemplateCuboidSpec cuboid : baseCuboids) {
 			cuboids.add(switch (cuboid.id()) {
-				case "head" -> scaledAroundOrigin(cuboid, headScale);
-				case "left_upper_arm", "left_forearm" -> scaledArmSegment(cuboid, 1, armLength, shoulderWidth);
-				case "right_upper_arm", "right_forearm" -> scaledArmSegment(cuboid, -1, armLength, shoulderWidth);
-				case "left_hand" -> scaledHand(cuboid, 1, armLength, shoulderWidth, handScale);
-				case "right_hand" -> scaledHand(cuboid, -1, armLength, shoulderWidth, handScale);
+				case "head_cuboid" -> scaledAroundOrigin(cuboid, headScale);
+				case "left_upper_arm", "left_forearm_cuboid" -> scaledArmSegment(cuboid, 1, armLength, shoulderWidth);
+				case "right_upper_arm", "right_forearm_cuboid" -> scaledArmSegment(cuboid, -1, armLength, shoulderWidth);
+				case "left_hand_cuboid" -> scaledHand(cuboid, 1, armLength, shoulderWidth, handScale);
+				case "right_hand_cuboid" -> scaledHand(cuboid, -1, armLength, shoulderWidth, handScale);
 				default -> cuboid; // torso/piernas: sin cambios.
 			});
 		}
