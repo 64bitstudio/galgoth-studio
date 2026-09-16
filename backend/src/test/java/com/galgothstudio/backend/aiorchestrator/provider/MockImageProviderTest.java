@@ -61,6 +61,16 @@ class MockImageProviderTest {
 		assertThat(a).isNotEqualTo(b);
 	}
 
+	/** Ticket 101 -- default identidad de `ImageGenerationProvider.inflatedSheetSize` (ver su Javadoc): correcto para este mock, que nunca infla el tamaño realmente generado (test de arriba, "dimensiones exactas pedidas"). */
+	@Test
+	void inflatedSheetSize_devuelveElMismoTamanoPedido_defaultIdentidad() {
+		MockImageProvider provider = new MockImageProvider();
+
+		int[] size = provider.inflatedSheetSize(40, 24);
+
+		assertThat(size).containsExactly(40, 24);
+	}
+
 	@Test
 	void generateTextureSheet_es_configurable_via_setNextTextureSheet() {
 		MockImageProvider provider = new MockImageProvider();

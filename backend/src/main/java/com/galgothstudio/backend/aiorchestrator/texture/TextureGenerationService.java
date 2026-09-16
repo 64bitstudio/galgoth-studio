@@ -220,7 +220,15 @@ public class TextureGenerationService {
 					String message = "Generando textura: " + bone.name() + (totalParts > 1 ? " (parte " + (partIndex + 1) + "/" + totalParts + ")" : "") + "…";
 					emit(jobId, seq, stage, message, nextProgress(progressCounter), null);
 
-					String prompt = composePrompt(sheet, context.style(), context.detailLevel());
+					// Ticket 101 -- se pregunta ANTES de llamar al proveedor qué tamaño
+					// REAL va a pedir de verdad (`inflatedSheetSize`, default identidad
+					// para proveedores que no inflan, ver su Javadoc); el mismo valor
+					// alimenta el prompt (`TextureSheetPromptComposer`) y el slicing
+					// posterior (`TextureSheetSlicer`) -- un único sistema de
+					// coordenadas de punta a punta, sin doble conversión.
+					int[] inflatedSize = imageGenerationProvider.inflatedSheetSize(sheet.sheetWidth(), sheet.sheetHeight());
+					TextureGenerationPlan sheetPlan = TextureGenerationPlan.forSheet(context.model(), planResult.texturePlan(), sheet);
+					String prompt = composePrompt(sheet, inflatedSize[0], inflatedSize[1], sheetPlan, context.style(), context.detailLevel());
 					TextureGenerationSheetRequest sheetRequest =
 							new TextureGenerationSheetRequest(prompt, referenceBytes, sheet.sheetWidth(), sheet.sheetHeight(), context.style().wireValue());
 					byte[] sheetBytes = imageGenerationProvider.generateTextureSheet(sheetRequest);
@@ -228,7 +236,7 @@ public class TextureGenerationService {
 							jobId,
 							new AiProviderResponse(null, imageGenerationProvider.provider(), imageGenerationProvider.model(), PROMPT_VERSION_SHEET, SCHEMA_VERSION_SHEET));
 
-					List<TextureSlice> slices = textureSheetSlicer.slice(sheetBytes, sheet);
+					List<TextureSlice> slices = textureSheetSlicer.slice(sheetBytes, sheet, inflatedSize[0], inflatedSize[1]);
 					currentAtlas = textureCompositorService.compose(currentAtlas, slices);
 
 					for (CuboidFacePlacement placement : sheet.placements()) {
@@ -315,8 +323,11 @@ public class TextureGenerationService {
 	}
 
 	/** Style/detailLevel plegados como instrucción de texto determinista, mismo criterio que `style` en `OpenAiImageProvider`/`TextureGenerationSheetRequest` (ver Javadoc de {@link TextureStyle}/{@link TextureDetailLevel}). */
-	private static String composePrompt(TextureGenerationSheet sheet, TextureStyle style, TextureDetailLevel detailLevel) {
-		return TextureSheetPromptComposer.compose(sheet) + "\n\n" + style.promptInstruction() + "\n" + detailLevel.promptInstruction();
+	private static String composePrompt(
+			TextureGenerationSheet sheet, int inflatedWidth, int inflatedHeight, TextureGenerationPlan texturePlan, TextureStyle style,
+			TextureDetailLevel detailLevel) {
+		return TextureSheetPromptComposer.compose(sheet, inflatedWidth, inflatedHeight, texturePlan) + "\n\n" + style.promptInstruction() + "\n"
+				+ detailLevel.promptInstruction();
 	}
 
 	private static List<String> boneIdsWithGeometry(MobProjectModel model) {

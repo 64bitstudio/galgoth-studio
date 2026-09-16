@@ -55,6 +55,32 @@ public interface ImageGenerationProvider {
 	byte[] generateTextureSheet(TextureGenerationSheetRequest request);
 
 	/**
+	 * Tamaño real {@code (width, height)} en píxeles que este proveedor va
+	 * a solicitarle de verdad a su API subyacente para un sheet
+	 * {@code width x height} -- ticket 101 (Diseño técnico, causa raíz de
+	 * "colores en regiones incorrectas"/"zonas en blanco" de Texture V2).
+	 * Antes de este método, el único lugar del código que conocía la
+	 * inflación real de tamaño era el ajuste interno de
+	 * {@link OpenAiImageProvider#generateTextureSheet}: ni
+	 * {@code TextureSheetPromptComposer} (que describe el grid al modelo)
+	 * ni {@code TextureSheetSlicer} (que recorta la respuesta) tenían forma
+	 * de saber que el canvas real iba a ser hasta 25x más grande que
+	 * {@code TextureGenerationSheet.sheetWidth()/sheetHeight()} -- de ahí
+	 * el desalineamiento de coordenadas prompt↔API.
+	 *
+	 * <p>Default identidad ({@code {width, height}} tal cual) -- correcto
+	 * para {@link MockImageProvider}, que siempre genera exactamente el
+	 * tamaño pedido (nunca infla). Un proveedor que SÍ infla el tamaño
+	 * real solicitado (ver {@link OpenAiImageProvider#inflatedSheetSize})
+	 * debe sobreescribirlo -- nunca puede devolver algo MENOR al tamaño
+	 * pedido (mismo invariante de "nunca encoge" que ya documenta
+	 * {@code OpenAiImageProvider#sizeParam}).
+	 */
+	default int[] inflatedSheetSize(int width, int height) {
+		return new int[] {width, height};
+	}
+
+	/**
 	 * {@code style} no tiene equivalente directo en el contrato genérico de
 	 * `/v1/images/generations`/`/v1/images/edits` de OpenAI (a diferencia
 	 * del parámetro `style` específico de DALL-E-3, "vivid"/"natural", que
