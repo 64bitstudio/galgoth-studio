@@ -8,7 +8,7 @@ import RegisterView from '../RegisterView.vue'
 
 vi.mock('../authApi', async () => {
   const actual = await vi.importActual<typeof authApi>('../authApi')
-  return { ...actual, register: vi.fn(), requestEmailVerification: vi.fn() }
+  return { ...actual, register: vi.fn(), requestEmailVerification: vi.fn(), socialLoginUrl: vi.fn() }
 })
 
 function testRouter(): Router {
@@ -165,5 +165,22 @@ describe('RegisterView.vue', () => {
 
     expect(wrapper.text()).toContain('Debes aceptar los términos y condiciones')
     expect(authApi.register).not.toHaveBeenCalled()
+  })
+
+  // Ticket 072 de auth-core-mc -- login/registro social real.
+  it('"Google" navega el navegador completo a la URL real devuelta por el backend', async () => {
+    const realLocation = window.location
+    Object.defineProperty(window, 'location', { value: { ...realLocation, href: '' }, writable: true, configurable: true })
+    vi.mocked(authApi.socialLoginUrl).mockResolvedValue('https://auth-dev.example.com/oauth2/authorization/x::google')
+    const wrapper = await mountAtRegister()
+
+    const googleButton = wrapper.findAll('button').find((b) => b.text().includes('Google'))!
+    await googleButton.trigger('click')
+    await flushPromises()
+
+    expect(authApi.socialLoginUrl).toHaveBeenCalledWith('google')
+    expect(window.location.href).toBe('https://auth-dev.example.com/oauth2/authorization/x::google')
+
+    Object.defineProperty(window, 'location', { value: realLocation, writable: true, configurable: true })
   })
 })

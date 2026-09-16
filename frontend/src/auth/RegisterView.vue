@@ -21,16 +21,23 @@
  * mismo patrón split-screen ya corregido en `LoginView.vue`. El único
  * cambio de comportamiento real es "Confirmar contraseña" (validación de
  * cliente, nunca llega a `session.register`) -- el contrato con
- * `sessionStore`/`authApi` no cambia. Login social y el checkbox de
- * newsletter se muestran fieles a la referencia pero `disabled` con
- * "Próximamente": ninguno tiene una función real hoy (login social nunca
- * se cableó aquí; el backend no soporta preferencia de newsletter) --
- * nunca aparentar una función que no existe.
+ * `sessionStore`/`authApi` no cambia. El checkbox de newsletter se
+ * muestra fiel a la referencia pero `disabled` con "Próximamente": el
+ * backend no soporta esa preferencia todavía -- nunca aparentar una
+ * función que no existe.
  *
  * Ticket 083: el checkbox de términos pasa de "Próximamente" a real y
  * obligatorio (validación de cliente, mismo patrón que "confirmar
  * contraseña") ahora que `/terms` existe -- el link abre en pestaña
  * nueva para no perder lo ya llenado del formulario.
+ *
+ * Ticket 072 de auth-core-mc: login social real -- `connectSocial` es
+ * literalmente idéntico al de `LoginView.vue` (mismo endpoint, misma
+ * navegación de página completa). Un "Continuar con Google/Facebook"
+ * aquí no es conceptualmente un registro aparte: `SocialLoginSuccessHandler`
+ * crea la cuenta si el correo verificado del proveedor no existe
+ * todavía, o la vincula si sí -- ambos casos, mismo botón, sin que este
+ * formulario intervenga.
  */
 import { ref } from 'vue'
 import { ApiError } from '../api/ApiError'
@@ -53,6 +60,7 @@ const acceptedTerms = ref(false)
 const error = ref<string | null>(null)
 const busy = ref(false)
 const registered = ref(false)
+const connectingProvider = ref<'google' | 'facebook' | null>(null)
 
 async function submit(): Promise<void> {
   if (busy.value) {
@@ -86,6 +94,21 @@ async function submit(): Promise<void> {
     error.value = e instanceof ApiError ? e.message : 'No se pudo completar el registro. Intenta de nuevo.'
   } finally {
     busy.value = false
+  }
+}
+
+/** Ticket 072 de auth-core-mc -- ver docstring de arriba y el gemelo en `LoginView.vue`. */
+async function connectSocial(provider: 'google' | 'facebook'): Promise<void> {
+  if (connectingProvider.value) {
+    return
+  }
+  connectingProvider.value = provider
+  error.value = null
+  try {
+    window.location.href = await authApi.socialLoginUrl(provider)
+  } catch (e) {
+    error.value = e instanceof ApiError ? e.message : 'No se pudo continuar con ese proveedor. Intenta de nuevo.'
+    connectingProvider.value = null
   }
 }
 </script>
@@ -178,17 +201,27 @@ async function submit(): Promise<void> {
         <div class="auth-view__divider"><span>o regístrate con</span></div>
 
         <div class="auth-view__social">
-          <button type="button" class="auth-view__social-btn" disabled title="Todavía no disponible en galgoth-studio">
+          <button
+            type="button"
+            class="auth-view__social-btn"
+            :disabled="connectingProvider !== null"
+            @click="connectSocial('google')"
+          >
             <svg viewBox="0 0 24 24" width="18" height="18">
               <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.24 1.4-1.7 4.1-5.5 4.1-3.3 0-6-2.7-6-6.1s2.7-6.1 6-6.1c1.9 0 3.1.8 3.9 1.5l2.6-2.5C16.8 3.3 14.6 2.3 12 2.3 6.9 2.3 2.7 6.5 2.7 11.6S6.9 21 12 21c6.9 0 8.9-4.9 8.9-7.4 0-.5-.1-.9-.1-1.3H12Z" />
             </svg>
-            Google <em>Próximamente</em>
+            {{ connectingProvider === 'google' ? 'Redirigiendo…' : 'Google' }}
           </button>
-          <button type="button" class="auth-view__social-btn" disabled title="Todavía no disponible en galgoth-studio">
+          <button
+            type="button"
+            class="auth-view__social-btn"
+            :disabled="connectingProvider !== null"
+            @click="connectSocial('facebook')"
+          >
             <svg viewBox="0 0 24 24" width="18" height="18">
               <path fill="#1877F2" d="M22 12.06C22 6.5 17.5 2 12 2S2 6.5 2 12.06c0 5 3.66 9.17 8.44 9.94v-7.03H7.9v-2.9h2.54V9.85c0-2.5 1.49-3.9 3.77-3.9 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.88h2.78l-.44 2.9h-2.34V22c4.78-.77 8.44-4.94 8.44-9.94Z" />
             </svg>
-            Facebook <em>Próximamente</em>
+            {{ connectingProvider === 'facebook' ? 'Redirigiendo…' : 'Facebook' }}
           </button>
         </div>
 
@@ -486,17 +519,16 @@ async function submit(): Promise<void> {
   border-radius: var(--radius-md);
   color: var(--text);
   font-size: var(--text-base);
-  cursor: not-allowed;
-  opacity: 0.6;
+  cursor: pointer;
 }
 
-.auth-view__social-btn em {
-  margin-left: var(--space-1);
-  color: var(--warning);
-  font-style: normal;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+.auth-view__social-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.auth-view__social-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .auth-view__link {

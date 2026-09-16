@@ -5,7 +5,7 @@ import { useSessionStore } from '../sessionStore'
 
 vi.mock('../authApi', async () => {
   const actual = await vi.importActual<typeof authApi>('../authApi')
-  return { ...actual, register: vi.fn(), login: vi.fn(), refreshAccessToken: vi.fn() }
+  return { ...actual, register: vi.fn(), login: vi.fn(), refreshAccessToken: vi.fn(), exchangeSocialCode: vi.fn() }
 })
 
 const user: authApi.RegisteredUser = {
@@ -56,6 +56,32 @@ describe('sessionStore', () => {
     const store = useSessionStore()
 
     const result = await store.login('ada@example.com', 'abcd1234')
+
+    expect(result).toBe('two-factor-required')
+    expect(store.isAuthenticated).toBe(false)
+  })
+
+  // Ticket 072 de auth-core-mc -- login social real, mismo contrato que login().
+  it('loginWithSocialCode exitoso guarda tokens+user y queda autenticado', async () => {
+    vi.mocked(authApi.exchangeSocialCode).mockResolvedValue({
+      user,
+      tokens: { accessToken: 'a1', refreshToken: 'r1', tokenType: 'Bearer', expiresInSeconds: 900 },
+    })
+    const store = useSessionStore()
+
+    const result = await store.loginWithSocialCode('code-abc')
+
+    expect(authApi.exchangeSocialCode).toHaveBeenCalledWith('code-abc')
+    expect(result).toBe('ok')
+    expect(store.isAuthenticated).toBe(true)
+    expect(store.user).toEqual(user)
+  })
+
+  it('loginWithSocialCode con 2FA activo devuelve two-factor-required sin guardar sesión', async () => {
+    vi.mocked(authApi.exchangeSocialCode).mockResolvedValue({ twoFactorRequired: true, pendingToken: 'p1', method: 'TOTP' })
+    const store = useSessionStore()
+
+    const result = await store.loginWithSocialCode('code-abc')
 
     expect(result).toBe('two-factor-required')
     expect(store.isAuthenticated).toBe(false)
