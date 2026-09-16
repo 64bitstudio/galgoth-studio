@@ -47,7 +47,7 @@ class PrimaryGeometryGeneratorTest {
 
 		// 15 bones esperados: root (body) + torso + head + 2*(arm+forearm+hand) + 2*(leg+shin+foot).
 		assertThat(model.bones()).hasSize(15);
-		// 14 cuboides esperados (todo bone salvo el root "body" tiene cuboid propio;
+		// 14 cuboides esperados (cada bone salvo el root "body" tiene cuboid propio;
 		// semanticPart del template aún no se persiste en Cuboid -- llega en el
 		// ticket 099 -- la identidad de cada parte se verifica por nombre, ver
 		// semanticaEsperadaDeLaAnatomiaPrimaria_presenteEnLosCuboidesGenerados).
@@ -113,8 +113,8 @@ class PrimaryGeometryGeneratorTest {
 	@Test
 	void boundingBoxDelPersonajeCompletoEsRazonable_enTodoElRangoValidoDeProporciones() {
 		double[][] extremeCombinations = {
-				{ 0.6, 0.7, 0.7, 0.8 }, // todo al mínimo
-				{ 1.8, 1.6, 2.2, 1.6 }, // todo al máximo
+				{ 0.6, 0.7, 0.7, 0.8 }, // valores al mínimo
+				{ 1.8, 1.6, 2.2, 1.6 }, // valores al máximo
 				{ 1.0, 1.0, 1.0, 1.0 }, // neutral
 		};
 
