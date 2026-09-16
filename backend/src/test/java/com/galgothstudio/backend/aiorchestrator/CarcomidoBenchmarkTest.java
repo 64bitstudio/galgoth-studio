@@ -208,6 +208,18 @@ class CarcomidoBenchmarkTest {
 
 		assertThat(report.geometryComplexity()).isPositive();
 		assertThat(report.featureCoverage().available()).isTrue();
+
+		// Ticket 110 (HU-4): la métrica que destapó el problema real de
+		// textura. A la densidad del ticket 109 ninguna cara no degenerada
+		// puede quedar por debajo del mínimo legible -- si esto se rompe,
+		// volvimos a generar caras de 1-2 téxeles donde la IA no puede
+		// pintar nada, que es exactamente la regresión que costó una sesión
+		// entera de diagnóstico manual descubrir.
+		assertThat(report.faceArea()).as("el benchmark debe producir UV con área real").isNotNull();
+		assertThat(report.faceArea().facesBelowMinimumLegible())
+				.as("caras no degeneradas bajo %s px² (mín=%s, mediana=%s)", ModelGenerationQualityReport.MINIMUM_LEGIBLE_PX2,
+						report.faceArea().minPx2(), report.faceArea().medianPx2())
+				.isZero();
 	}
 
 	@Test

@@ -85,6 +85,26 @@ public final class UvLayoutSelector implements UvLayoutStrategy {
 		return resolve(previousLayout).layout(cuboids, textureWidth, textureHeight, previousLayout, confirmPaintLoss);
 	}
 
+
+	/**
+	 * Ticket 110 -- propaga la densidad a la estrategia elegida.
+	 *
+	 * <p>Sin este override, el {@code default} de {@link UvLayoutStrategy}
+	 * delegaba en la sobrecarga sin densidad y el packing volvía a
+	 * {@link TexelDensity#X1}. Como este selector es el bean {@code @Primary}
+	 * -- o sea, el que realmente se inyecta en producción -- la densidad
+	 * elegida por el usuario moría acá aunque {@link AlphaAutoPackStrategy}
+	 * sí la soportara: el ticket 109 la conectó una capa más abajo y el
+	 * benchmark del 110 lo destapó midiendo caras de 1×1 téxel en un cuboid
+	 * de 1×1×1 (a X4 tendrían que ser 4×4).
+	 */
+	@Override
+	public Result layout(
+			List<Cuboid> cuboids, int textureWidth, int textureHeight, UvLayout previousLayout, boolean confirmPaintLoss,
+			TexelDensity density) {
+		return resolve(previousLayout).layout(cuboids, textureWidth, textureHeight, previousLayout, confirmPaintLoss, density);
+	}
+
 	private UvLayoutStrategy resolve(UvLayout previousLayout) {
 		return requiresStableLayout(previousLayout) ? stableUvStrategy : alphaAutoPackStrategy;
 	}
