@@ -64,13 +64,14 @@ public class UserProfileService {
 		profile.setUpdatedAt(Instant.now());
 		userProfileRepository.save(profile);
 
-		return new AvatarResponse(avatarUrlFor(userId));
+		return new AvatarResponse(avatarUrlFor(profile.getPublicAvatarId()));
 	}
 
+	/** {@code publicAvatarId} -- NUNCA el {@code userId} real, ver docstring de {@code UserProfileEntity.publicAvatarId}. */
 	@Transactional(readOnly = true)
-	public Optional<StoredAvatar> downloadAvatar(UUID userId) {
+	public Optional<StoredAvatar> downloadAvatar(UUID publicAvatarId) {
 		return userProfileRepository
-				.findById(userId)
+				.findByPublicAvatarId(publicAvatarId)
 				.filter(profile -> profile.getAvatarKey() != null)
 				.flatMap(profile -> assetStorageService
 						.get(profile.getAvatarKey())
@@ -92,7 +93,7 @@ public class UserProfileService {
 	@Transactional(readOnly = true)
 	public Optional<String> avatarUrlIfPresent(UUID userId) {
 		return userProfileRepository.findById(userId).filter(profile -> profile.getAvatarKey() != null).map(profile -> avatarUrlFor(
-				profile.getUserId()));
+				profile.getPublicAvatarId()));
 	}
 
 	@Transactional
@@ -116,12 +117,12 @@ public class UserProfileService {
 		return userProfileRepository.findById(userId).orElseGet(() -> new UserProfileEntity(userId));
 	}
 
-	private static String avatarUrlFor(UUID userId) {
-		return "/api/account/avatar/" + userId;
+	private static String avatarUrlFor(UUID publicAvatarId) {
+		return "/api/account/avatar/" + publicAvatarId;
 	}
 
 	private UserProfileResponse toResponse(UserProfileEntity profile) {
-		String avatarUrl = profile.getAvatarKey() == null ? null : avatarUrlFor(profile.getUserId());
+		String avatarUrl = profile.getAvatarKey() == null ? null : avatarUrlFor(profile.getPublicAvatarId());
 		return new UserProfileResponse(
 				avatarUrl, profile.isNotifyEmail(), profile.isNotifyProductNews(), profile.isNotifySaveReminders());
 	}

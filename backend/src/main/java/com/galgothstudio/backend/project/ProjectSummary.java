@@ -26,8 +26,10 @@ import java.util.List;
  * (mismo shape que una tarjeta de "Mis proyectos") -- sin un DTO nuevo.
  *
  * Ticket 092 -- `avatarUrl` (`null` si el dueño no tiene avatar subido,
- * ticket 091): ruta servible (`/api/account/avatar/{userId}`, pública),
- * nunca una URL rota. Ver `ProjectService.avatarUrlFor`/`UserProfileService.avatarUrlIfPresent`.
+ * ticket 091): ruta servible (`/api/account/avatar/{publicAvatarId}`,
+ * pública -- id de servicio aparte desde el ticket 106, nunca el
+ * `userId` real, ver `UserProfileEntity.publicAvatarId`), nunca una URL
+ * rota. Ver `ProjectService.avatarUrlFor`/`UserProfileService.avatarUrlIfPresent`.
  */
 public record ProjectSummary(
 		String id,

@@ -23,10 +23,21 @@ import org.springframework.web.bind.annotation.RestController;
  * content-type real viaja en el header HTTP `Content-Type`.
  *
  * <p>La subida ({@code POST}) exige sesión -- solo el dueño sube SU propio
- * avatar, nunca el de otro id. La descarga ({@code GET .../{userId}}) es
- * pública a propósito: el avatar de un usuario debe poder mostrarse a
+ * avatar, nunca el de otro id. La descarga ({@code GET .../{publicAvatarId}})
+ * es pública a propósito: el avatar de un usuario debe poder mostrarse a
  * cualquiera (ej. como autor de un proyecto público en Explorar, ticket
  * 092), igual que la imagen de un proyecto público es visible sin sesión.
+ *
+ * <p><b>Hallazgo real de seguridad (ticket 106, auth-core-mc#071):</b>
+ * hasta esta corrección, la ruta de descarga usaba el {@code userId}
+ * real (el mismo {@code sub} del JWT de auth-core-mc) -- exponer ese id
+ * a cualquier visitante sin sesión (vía `ProjectSummary.avatarUrl` en
+ * Explorar) era exactamente el dato que hacía explotable un secuestro de
+ * cuenta contra endpoints de auth-core-mc que confiaban un `userId` sin
+ * autenticar (ya cerrado del lado de auth-core-mc). Se reemplazó por
+ * {@code publicAvatarId}: un id de servicio aparte, sin relación
+ * reconstruible con la identidad real (ver
+ * {@code UserProfileEntity.publicAvatarId}).
  */
 @RestController
 @RequestMapping("/api/account/avatar")
@@ -44,10 +55,10 @@ public class AccountAvatarController {
 		return userProfileService.uploadAvatar(requireUserId(jwt), contentType, content);
 	}
 
-	@GetMapping("/{userId}")
-	public ResponseEntity<byte[]> download(@PathVariable UUID userId) {
+	@GetMapping("/{publicAvatarId}")
+	public ResponseEntity<byte[]> download(@PathVariable UUID publicAvatarId) {
 		return userProfileService
-				.downloadAvatar(userId)
+				.downloadAvatar(publicAvatarId)
 				.map(avatar -> ResponseEntity.ok().contentType(MediaType.parseMediaType(avatar.contentType())).body(avatar.content()))
 				.orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
 	}

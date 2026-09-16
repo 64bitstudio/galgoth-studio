@@ -69,14 +69,16 @@ class ExploreProjectControllerTest {
 	@Test
 	void un_dueno_con_avatar_agrega_avatarUrl_en_la_respuesta() throws Exception {
 		String ownerId = UUID.randomUUID().toString();
+		UUID publicAvatarId = UUID.randomUUID();
 		jdbc.update(
-				"insert into user_profile (user_id, avatar_key, avatar_content_type, notify_email, notify_product_news, notify_save_reminders, updated_at) values (?, ?, ?, true, true, true, now())",
-				UUID.fromString(ownerId), "users/" + ownerId + "/avatar-x.png", "image/png");
+				"insert into user_profile (user_id, avatar_key, avatar_content_type, public_avatar_id, notify_email, notify_product_news, notify_save_reminders, updated_at) values (?, ?, ?, ?, true, true, true, now())",
+				UUID.fromString(ownerId), "users/" + ownerId + "/avatar-x.png", "image/png", publicAvatarId);
 		aProjectOf(ownerId, "PUBLIC", "Con avatar", "Ada Lovelace");
 
 		mockMvc.perform(get("/api/explore/projects"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[0].avatarUrl", is("/api/account/avatar/" + ownerId)));
+				// Hallazgo real de seguridad (auth-core-mc#071): la URL pública NUNCA debe llevar el userId real.
+				.andExpect(jsonPath("$[0].avatarUrl", is("/api/account/avatar/" + publicAvatarId)));
 	}
 
 	@Test

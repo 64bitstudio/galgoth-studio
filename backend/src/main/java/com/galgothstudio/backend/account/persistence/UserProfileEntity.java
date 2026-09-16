@@ -27,6 +27,19 @@ public class UserProfileEntity {
 	@Column(name = "avatar_content_type")
 	private String avatarContentType;
 
+	/**
+	 * Hallazgo real de seguridad (auth-core-mc#071): la URL pública del
+	 * avatar NUNCA debe llevar {@code userId} (el mismo id de identidad
+	 * real que auth-core-mc usa en sus JWTs) -- este id es un identificador
+	 * de servicio aparte, sin relación reconstruible con la identidad, que
+	 * sí es seguro exponer a cualquier visitante sin sesión (ver
+	 * `AccountAvatarController`). Generado una vez, en Java (no confía en
+	 * el DEFAULT de la columna para las filas nuevas -- mismo criterio ya
+	 * usado en este constructor para las 3 preferencias).
+	 */
+	@Column(name = "public_avatar_id", nullable = false)
+	private UUID publicAvatarId;
+
 	@Column(name = "notify_email", nullable = false)
 	private boolean notifyEmail;
 
@@ -46,6 +59,7 @@ public class UserProfileEntity {
 	/** Fila nueva -- nace con las 3 preferencias en {@code true} (default de negocio, ticket 091). */
 	public UserProfileEntity(UUID userId) {
 		this.userId = userId;
+		this.publicAvatarId = UUID.randomUUID();
 		this.notifyEmail = true;
 		this.notifyProductNews = true;
 		this.notifySaveReminders = true;
@@ -62,6 +76,10 @@ public class UserProfileEntity {
 
 	public void setAvatarKey(String avatarKey) {
 		this.avatarKey = avatarKey;
+	}
+
+	public UUID getPublicAvatarId() {
+		return publicAvatarId;
 	}
 
 	public String getAvatarContentType() {

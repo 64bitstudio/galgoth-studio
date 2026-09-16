@@ -10,7 +10,7 @@ import { API_BASE_URL } from '../api/apiConfig'
 import { ApiError } from '../api/ApiError'
 
 export interface ProductProfile {
-  /** Ruta relativa servible (`/api/account/avatar/{userId}`), `null` si no hay avatar subido. Usar `avatarUrl()` de `apiConfig.ts` para resolverla a una URL completa. */
+  /** Ruta relativa servible (`/api/account/avatar/{publicAvatarId}`, id de servicio aparte -- nunca el `userId` real), `null` si no hay avatar subido. Usar `avatarUrl()` de `apiConfig.ts` para resolverla a una URL completa. */
   avatarUrl: string | null
   notifyEmail: boolean
   notifyProductNews: boolean
