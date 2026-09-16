@@ -88,6 +88,27 @@ export function exchangeSocialCode(code: string): Promise<LoginSuccess | TwoFact
   return requestJson<LoginSuccess | TwoFactorRequired>('/api/v1/oauth2/social-exchange', { code })
 }
 
+/**
+ * Ticket 108 -- completa un login (con contraseña o social) que quedó
+ * pendiente de 2FA. A diferencia de {@link login}/{@link exchangeSocialCode},
+ * esta llamada nunca puede volver a devolver `twoFactorRequired` --
+ * `TwoFactorLoginController` de auth-core-mc siempre emite tokens reales o
+ * falla (`400 invalid_token`/`429 too_many_attempts`).
+ */
+export function verifyTwoFactorLogin(pendingToken: string, code: string): Promise<LoginSuccess> {
+  return requestJson<LoginSuccess>('/api/v1/login/2fa-verify', { pendingToken, code })
+}
+
+/**
+ * Ticket 108 -- reenvía el código OTP de un `pendingToken` todavía
+ * vigente. No-op del lado de auth-core-mc para `TOTP` (nada que
+ * reenviar, el código vive en la app autenticadora) -- este frontend ni
+ * siquiera ofrece el botón para ese método (ver `TwoFactorChallenge.vue`).
+ */
+export function resendTwoFactorCode(pendingToken: string): Promise<void> {
+  return requestJson<void>('/api/v1/login/2fa-resend', { pendingToken })
+}
+
 /** `/api/v1/token/refresh` no exige `X-Client-Id` -- el refresh token ya identifica de qué cliente/usuario es (auth-core-mc, TokenController). */
 export function refreshAccessToken(refreshToken: string): Promise<TokenPair> {
   return requestJson<TokenPair>('/api/v1/token/refresh', { refreshToken }, false)

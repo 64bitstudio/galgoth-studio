@@ -8,7 +8,7 @@ import AuthCallbackView from '../AuthCallbackView.vue'
 
 vi.mock('../authApi', async () => {
   const actual = await vi.importActual<typeof authApi>('../authApi')
-  return { ...actual, exchangeSocialCode: vi.fn() }
+  return { ...actual, exchangeSocialCode: vi.fn(), verifyTwoFactorLogin: vi.fn(), resendTwoFactorCode: vi.fn() }
 })
 
 const user: authApi.RegisteredUser = {
@@ -96,13 +96,42 @@ describe('AuthCallbackView.vue', () => {
     expect(wrapper.text()).toContain('The exchange code is invalid, expired, or already used')
   })
 
-  it('2FA activo muestra el mensaje explícito sin navegar (galgoth-studio no lo soporta todavía)', async () => {
+  // Ticket 108 -- ya no muestra un mensaje fijo, sino TwoFactorChallenge.vue.
+  it('2FA activo muestra el paso de código en vez de navegar', async () => {
     vi.mocked(authApi.exchangeSocialCode).mockResolvedValue({ twoFactorRequired: true, pendingToken: 'p1', method: 'TOTP' })
 
     const { wrapper, router } = await mountAtCallback({ code: 'code-abc' })
 
-    expect(wrapper.text()).toContain('verificación en dos pasos')
+    expect(wrapper.text()).toContain('Verificación en dos pasos')
     expect(router.currentRoute.value.path).toBe('/auth/callback')
+  })
+
+  it('completar el código de 2FA guarda la sesión y retoma el redirect pendiente', async () => {
+    sessionStorage.setItem('galgoth-studio.postLoginRedirect', '/projects')
+    vi.mocked(authApi.exchangeSocialCode).mockResolvedValue({ twoFactorRequired: true, pendingToken: 'p1', method: 'TOTP' })
+    vi.mocked(authApi.verifyTwoFactorLogin).mockResolvedValue({
+      user,
+      tokens: { accessToken: 'a1', refreshToken: 'r1', tokenType: 'Bearer', expiresInSeconds: 900 },
+    })
+
+    const { wrapper, router } = await mountAtCallback({ code: 'code-abc' })
+    await wrapper.find('input[aria-label="Código de verificación"]').setValue('123456')
+    await wrapper.find('.two-factor').trigger('submit')
+    await flushPromises()
+
+    expect(authApi.verifyTwoFactorLogin).toHaveBeenCalledWith('p1', '123456')
+    expect(router.currentRoute.value.path).toBe('/projects')
+    expect(sessionStorage.getItem('galgoth-studio.postLoginRedirect')).toBeNull()
+  })
+
+  it('"Volver" desde el paso de 2FA manda a /login', async () => {
+    vi.mocked(authApi.exchangeSocialCode).mockResolvedValue({ twoFactorRequired: true, pendingToken: 'p1', method: 'TOTP' })
+
+    const { wrapper, router } = await mountAtCallback({ code: 'code-abc' })
+    await wrapper.findAll('button').find((b) => b.text() === 'Volver')!.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/login')
   })
 
   it('sin ?code= ni ?error= muestra el error genérico', async () => {
