@@ -85,17 +85,40 @@ public final class TextureSheetPromptComposer {
 				.append(".\n");
 	}
 
+	/**
+	 * <b>Ticket 113 -- por qué el prompt ya NO pide reservar el margen</b>: el
+	 * texto anterior pedía "regiones separadas por un margen de Xpx sin
+	 * contenido... sin invadir el margen entre ellas", y el modelo cumplía de
+	 * la forma más prudente posible: reservaba ese margen DENTRO de cada
+	 * rectángulo y lo pintaba oscuro. Medido sobre un atlas real
+	 * (`Carcomido v3`): bandas totalmente negras de 1-2 px en el borde de
+	 * buena parte de las caras (12 de 40 a la izquierda, 16 arriba, 20
+	 * abajo), visibles en el render como costuras negras entre cuboids.
+	 *
+	 * <p>El gutter sigue existiendo en el layout de {@link ShelfBinPacker} y
+	 * {@link TextureSheetSlicer} sigue recortando por el {@code sheetRect}
+	 * exacto -- o sea que el bleed hacia afuera YA se descarta solo (diseño
+	 * del ticket 053, "cualquier bleed... queda simplemente fuera de la
+	 * subimagen pedida"). Pedirle además al modelo que lo reserve era pedir
+	 * dos veces lo mismo, y encima le costaba píxeles útiles de la cara.
+	 * Ahora se le pide lo contrario: llenar cada rectángulo de borde a borde.
+	 *
+	 * <p>El AC del ticket 053 ("el prompt incluye un background/mask
+	 * determinista que delimita visualmente cada sheetRect") se sigue
+	 * cumpliendo: la delimitación son las coordenadas exactas de cada región,
+	 * que siguen listándose una por línea.
+	 */
 	private static void appendGrid(StringBuilder sb, TextureGenerationSheet sheet, int inflatedWidth, int inflatedHeight, TextureGenerationPlan plan) {
 		double scaleX = inflatedWidth / (double) sheet.sheetWidth();
 		double scaleY = inflatedHeight / (double) sheet.sheetHeight();
-		long scaledGutter = Math.round(TextureGenerationSheetPlanner.GUTTER_PX * scaleX);
 		sb.append("\nLa imagen se divide en ")
 				.append(sheet.placements().size())
-				.append(" regiones fijas, separadas por un margen de ")
-				.append(scaledGutter)
-				.append("px sin contenido. Respetá EXACTAMENTE estos límites -- el contenido de cada región debe "
-						+ "quedar contenido dentro de su rectángulo [x0,y0]-[x1,y1], sin invadir el de las demás "
-						+ "regiones ni el margen entre ellas:\n");
+				.append(" regiones fijas, uno por cara. Pintá CADA región COMPLETA, de borde a borde: el contenido "
+						+ "tiene que llegar hasta los cuatro lados de su rectángulo [x0,y0]-[x1,y1]. NO dibujes "
+						+ "marcos, bordes oscuros, contornos ni márgenes internos alrededor de ninguna región -- una "
+						+ "franja vacía u oscura pegada al borde arruina la cara al aplicarse sobre el modelo 3D. "
+						+ "Lo que quede FUERA de los rectángulos se descarta, así que no hace falta que cuides el "
+						+ "espacio entre ellos:\n");
 		for (CuboidFacePlacement placement : sheet.placements()) {
 			appendPlacementLine(sb, placement, scaleX, scaleY, plan);
 		}
