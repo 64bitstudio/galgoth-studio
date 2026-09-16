@@ -35,9 +35,26 @@ final class HumanoidCanonicalTemplate {
 	private static final double UPPER_ARM_LEN = 8; // shoulder (24) -> elbow (16)
 	private static final double FOREARM_LEN = 6; // elbow (16) -> wrist (10)
 	private static final double BASE_SHOULDER_X = 6; // positivo=izquierda, negativo=derecha
+	private static final double HIP_X = 2; // positivo=izquierda, negativo=derecha
 	private static final double LIMB_HALF_WIDTH = 2;
 	private static final double ARM_HALF_DEPTH = 2;
 	private static final double HAND_HALF_SIZE = 2; // half-size en X/Z; largo Y = 2*HAND_HALF_SIZE en rest-pose
+
+	// Ids/nombres reutilizados entre bones y cuboides -- constantes en vez de
+	// literales repetidos (hallazgo real de SonarQube, ticket 097: un typo en
+	// alguna de las repeticiones habría producido un boneId que no matchea
+	// ningún bone, no solo una advertencia de estilo).
+	private static final String LEFT = "left";
+	private static final String RIGHT = "right";
+	private static final String BODY_ID = "body";
+	private static final String TORSO_ID = "torso";
+	private static final String HEAD_ID = "head";
+	private static final String ARM_SUFFIX = "_arm";
+	private static final String FOREARM_SUFFIX = "_forearm";
+	private static final String HAND_SUFFIX = "_hand";
+	private static final String LEG_SUFFIX = "_leg";
+	private static final String SHIN_SUFFIX = "_shin";
+	private static final String FOOT_SUFFIX = "_foot";
 
 	static CanonicalTemplate build() {
 		List<TemplateBoneSpec> bones = baseBones();
@@ -50,11 +67,15 @@ final class HumanoidCanonicalTemplate {
 		return new CanonicalTemplate(BaseType.HUMANOID, bones, cuboids, ranges, HumanoidCanonicalTemplate::applyProportions);
 	}
 
+	private static String sideName(int sign) {
+		return sign > 0 ? LEFT : RIGHT;
+	}
+
 	private static List<TemplateBoneSpec> baseBones() {
 		List<TemplateBoneSpec> bones = new ArrayList<>();
-		bones.add(new TemplateBoneSpec("body", "body", null, new Vec3(0, 12, 0), Vec3.of(0, 0, 0)));
-		bones.add(new TemplateBoneSpec("torso", "torso", "body", new Vec3(0, 12, 0), Vec3.of(0, 0, 0)));
-		bones.add(new TemplateBoneSpec("head", "head", "torso", new Vec3(0, 24, 0), Vec3.of(0, 0, 0)));
+		bones.add(new TemplateBoneSpec(BODY_ID, BODY_ID, null, new Vec3(0, 12, 0), Vec3.of(0, 0, 0)));
+		bones.add(new TemplateBoneSpec(TORSO_ID, TORSO_ID, BODY_ID, new Vec3(0, 12, 0), Vec3.of(0, 0, 0)));
+		bones.add(new TemplateBoneSpec(HEAD_ID, HEAD_ID, TORSO_ID, new Vec3(0, 24, 0), Vec3.of(0, 0, 0)));
 		bones.addAll(armBones(1));
 		bones.addAll(armBones(-1));
 		bones.addAll(legBones(1));
@@ -63,29 +84,29 @@ final class HumanoidCanonicalTemplate {
 	}
 
 	private static List<TemplateBoneSpec> armBones(int sign) {
-		String side = sign > 0 ? "left" : "right";
+		String side = sideName(sign);
 		double shoulderX = sign * BASE_SHOULDER_X;
 		double elbowY = SHOULDER_Y - UPPER_ARM_LEN;
 		double wristY = elbowY - FOREARM_LEN;
 		return List.of(
-				new TemplateBoneSpec(side + "_arm", side + "Arm", "torso", new Vec3(shoulderX, SHOULDER_Y, 0), Vec3.of(0, 0, 0)),
-				new TemplateBoneSpec(side + "_forearm", side + "Forearm", side + "_arm", new Vec3(shoulderX, elbowY, 0), Vec3.of(0, 0, 0)),
-				new TemplateBoneSpec(side + "_hand", side + "Hand", side + "_forearm", new Vec3(shoulderX, wristY, 0), Vec3.of(0, 0, 0)));
+				new TemplateBoneSpec(side + ARM_SUFFIX, side + "Arm", TORSO_ID, new Vec3(shoulderX, SHOULDER_Y, 0), Vec3.of(0, 0, 0)),
+				new TemplateBoneSpec(side + FOREARM_SUFFIX, side + "Forearm", side + ARM_SUFFIX, new Vec3(shoulderX, elbowY, 0), Vec3.of(0, 0, 0)),
+				new TemplateBoneSpec(side + HAND_SUFFIX, side + "Hand", side + FOREARM_SUFFIX, new Vec3(shoulderX, wristY, 0), Vec3.of(0, 0, 0)));
 	}
 
 	private static List<TemplateBoneSpec> legBones(int sign) {
-		String side = sign > 0 ? "left" : "right";
-		double hipX = sign * 2;
+		String side = sideName(sign);
+		double hipX = sign * HIP_X;
 		return List.of(
-				new TemplateBoneSpec(side + "_leg", side + "Leg", "body", new Vec3(hipX, 12, 0), Vec3.of(0, 0, 0)),
-				new TemplateBoneSpec(side + "_shin", side + "Shin", side + "_leg", new Vec3(hipX, 6, 0), Vec3.of(0, 0, 0)),
-				new TemplateBoneSpec(side + "_foot", side + "Foot", side + "_shin", new Vec3(hipX, 2, 0), Vec3.of(0, 0, 0)));
+				new TemplateBoneSpec(side + LEG_SUFFIX, side + "Leg", BODY_ID, new Vec3(hipX, 12, 0), Vec3.of(0, 0, 0)),
+				new TemplateBoneSpec(side + SHIN_SUFFIX, side + "Shin", side + LEG_SUFFIX, new Vec3(hipX, 6, 0), Vec3.of(0, 0, 0)),
+				new TemplateBoneSpec(side + FOOT_SUFFIX, side + "Foot", side + SHIN_SUFFIX, new Vec3(hipX, 2, 0), Vec3.of(0, 0, 0)));
 	}
 
 	private static List<TemplateCuboidSpec> baseCuboids() {
 		List<TemplateCuboidSpec> cuboids = new ArrayList<>();
-		cuboids.add(new TemplateCuboidSpec("torso", "torso", "torso", new Vec3(-4, 12, -2), new Vec3(4, 24, 2), new Vec3(0, 12, 0), Vec3.of(0, 0, 0), "TORSO"));
-		cuboids.add(new TemplateCuboidSpec("head", "head", "head", new Vec3(-4, 24, -4), new Vec3(4, 32, 4), new Vec3(0, 24, 0), Vec3.of(0, 0, 0), "HEAD"));
+		cuboids.add(new TemplateCuboidSpec(TORSO_ID, TORSO_ID, TORSO_ID, new Vec3(-4, 12, -2), new Vec3(4, 24, 2), new Vec3(0, 12, 0), Vec3.of(0, 0, 0), "TORSO"));
+		cuboids.add(new TemplateCuboidSpec(HEAD_ID, HEAD_ID, HEAD_ID, new Vec3(-4, 24, -4), new Vec3(4, 32, 4), new Vec3(0, 24, 0), Vec3.of(0, 0, 0), "HEAD"));
 		cuboids.addAll(armCuboids(1));
 		cuboids.addAll(armCuboids(-1));
 		cuboids.addAll(legCuboids(1));
@@ -94,36 +115,36 @@ final class HumanoidCanonicalTemplate {
 	}
 
 	private static List<TemplateCuboidSpec> armCuboids(int sign) {
-		String side = sign > 0 ? "left" : "right";
+		String side = sideName(sign);
 		double shoulderX = sign * BASE_SHOULDER_X;
 		double elbowY = SHOULDER_Y - UPPER_ARM_LEN;
 		double wristY = elbowY - FOREARM_LEN;
 		double xMin = shoulderX - LIMB_HALF_WIDTH;
 		double xMax = shoulderX + LIMB_HALF_WIDTH;
 		return List.of(
-				new TemplateCuboidSpec(side + "_upper_arm", side + " upper arm", side + "_arm",
+				new TemplateCuboidSpec(side + "_upper_arm", side + " upper arm", side + ARM_SUFFIX,
 						new Vec3(xMin, elbowY, -ARM_HALF_DEPTH), new Vec3(xMax, SHOULDER_Y, ARM_HALF_DEPTH),
 						new Vec3(shoulderX, SHOULDER_Y, 0), Vec3.of(0, 0, 0), "ARM"),
-				new TemplateCuboidSpec(side + "_forearm", side + " forearm", side + "_forearm",
+				new TemplateCuboidSpec(side + FOREARM_SUFFIX, side + " forearm", side + FOREARM_SUFFIX,
 						new Vec3(xMin, wristY, -ARM_HALF_DEPTH), new Vec3(xMax, elbowY, ARM_HALF_DEPTH),
 						new Vec3(shoulderX, elbowY, 0), Vec3.of(0, 0, 0), "FOREARM"),
-				new TemplateCuboidSpec(side + "_hand", side + " hand", side + "_hand",
+				new TemplateCuboidSpec(side + HAND_SUFFIX, side + " hand", side + HAND_SUFFIX,
 						new Vec3(shoulderX - HAND_HALF_SIZE, wristY - 2 * HAND_HALF_SIZE, -HAND_HALF_SIZE),
 						new Vec3(shoulderX + HAND_HALF_SIZE, wristY, HAND_HALF_SIZE),
 						new Vec3(shoulderX, wristY, 0), Vec3.of(0, 0, 0), "HAND"));
 	}
 
 	private static List<TemplateCuboidSpec> legCuboids(int sign) {
-		String side = sign > 0 ? "left" : "right";
-		double hipX = sign * 2;
+		String side = sideName(sign);
+		double hipX = sign * HIP_X;
 		double xMin = hipX - LIMB_HALF_WIDTH;
 		double xMax = hipX + LIMB_HALF_WIDTH;
 		return List.of(
-				new TemplateCuboidSpec(side + "_thigh", side + " thigh", side + "_leg",
+				new TemplateCuboidSpec(side + "_thigh", side + " thigh", side + LEG_SUFFIX,
 						new Vec3(xMin, 6, -2), new Vec3(xMax, 12, 2), new Vec3(hipX, 12, 0), Vec3.of(0, 0, 0), "LEG"),
-				new TemplateCuboidSpec(side + "_shin_cuboid", side + " shin", side + "_shin",
+				new TemplateCuboidSpec(side + "_shin_cuboid", side + " shin", side + SHIN_SUFFIX,
 						new Vec3(xMin, 2, -2), new Vec3(xMax, 6, 2), new Vec3(hipX, 6, 0), Vec3.of(0, 0, 0), "SHIN"),
-				new TemplateCuboidSpec(side + "_foot_cuboid", side + " foot", side + "_foot",
+				new TemplateCuboidSpec(side + "_foot_cuboid", side + " foot", side + FOOT_SUFFIX,
 						new Vec3(xMin, 0, -2), new Vec3(xMax, 2, 2), new Vec3(hipX, 2, 0), Vec3.of(0, 0, 0), "FOOT"));
 	}
 
@@ -166,7 +187,8 @@ final class HumanoidCanonicalTemplate {
 
 	private static TemplateBoneSpec scaledArmBone(TemplateBoneSpec bone, int sign, double armLength, double shoulderWidth) {
 		double shoulderX = sign * BASE_SHOULDER_X * shoulderWidth;
-		double y = switch (bone.id().substring(bone.id().indexOf('_') + 1)) {
+		String segment = bone.id().substring(bone.id().indexOf('_') + 1);
+		double y = switch (segment) {
 			case "arm" -> SHOULDER_Y;
 			case "forearm" -> SHOULDER_Y - UPPER_ARM_LEN * armLength;
 			case "hand" -> SHOULDER_Y - (UPPER_ARM_LEN + FOREARM_LEN) * armLength;

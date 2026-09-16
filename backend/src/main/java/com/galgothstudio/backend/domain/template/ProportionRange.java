@@ -19,7 +19,7 @@ public record ProportionRange(double min, double max) {
 
 	/** Clampa {@code value} a este rango. */
 	public double clamp(double value) {
-		return Math.max(min, Math.min(max, value));
+		return Math.clamp(value, min, max);
 	}
 
 	public boolean contains(double value) {

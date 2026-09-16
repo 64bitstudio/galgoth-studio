@@ -108,7 +108,7 @@ class ProportionEstimatorTest {
 			assertThat(forearm.from().y()).as("armLength=" + armLength)
 					.isCloseTo(hand.to().y(), within(EPS));
 
-			// Todo cuboid del brazo sigue siendo una caja válida (from < to en cada eje).
+			// Cada cuboid del brazo sigue siendo una caja válida (from < to en cada eje).
 			for (TemplateCuboidSpec c : List.of(upperArm, forearm, hand)) {
 				assertThat(c.from().x()).isLessThan(c.to().x());
 				assertThat(c.from().y()).isLessThan(c.to().y());
