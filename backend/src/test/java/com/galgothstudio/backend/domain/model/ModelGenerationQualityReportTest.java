@@ -22,10 +22,19 @@ class ModelGenerationQualityReportTest {
 	}
 
 	private static MobProjectModel modelWith(List<Cuboid> cuboids) {
+		return modelWith(cuboids, List.of());
+	}
+
+	private static MobProjectModel modelWith(List<Cuboid> cuboids, List<UvRegion> regions) {
 		return new MobProjectModel(
 				"mob-1", "project-1", "Test Mob", BaseType.HUMANOID, MobProjectModel.UNITS_MINECRAFT_PIXELS,
 				List.of(new Bone("bone-1", "body", null, new Vec3(0, 0, 0), new Vec3(0, 0, 0))), cuboids,
-				new TextureDocument(64, 64, null), new UvLayout(64, 64, List.of()), List.of(), new ExportSettings(FormatVersion.V5), List.of());
+				new TextureDocument(64, 64, null), new UvLayout(64, 64, regions), List.of(), new ExportSettings(FormatVersion.V5), List.of());
+	}
+
+	/** Región cuadrada de `lado`x`lado` -- de esta métrica solo importa el área. */
+	private static UvRegion regionOf(String cuboidId, FaceName face, int lado) {
+		return new UvRegion(cuboidId, face, new Vec4(0, 0, lado, lado));
 	}
 
 	private static ModelIntent intentWith(List<String> features, List<SemanticPartCategory> categories) {
@@ -130,6 +139,52 @@ class ModelGenerationQualityReportTest {
 		ModelIntent desalineado = intentWith(List.of("claw", "horn"), List.of(SemanticPartCategory.CLAW));
 
 		assertThat(desalineado.categoriesOrDerived()).containsExactly(SemanticPartCategory.CLAW, SemanticPartCategory.HORN);
+	}
+
+	// ---- Ticket 110: distribución de área por cara ----
+
+	@Test
+	void exponeMinimoMedianaYConteoDeCarasBajoElMinimoLegible_AC() {
+		// Áreas (lado²): 1, 4, 16, 64, 100 -- el umbral es "menor que 16",
+		// así que la de 16 px² NO cuenta como ilegible.
+		List<UvRegion> regions = List.of(
+				regionOf("c1", FaceName.NORTH, 1), regionOf("c1", FaceName.SOUTH, 2), regionOf("c1", FaceName.EAST, 4),
+				regionOf("c1", FaceName.WEST, 8), regionOf("c1", FaceName.UP, 10));
+		MobProjectModel model = modelWith(List.of(cuboidWith("c1", "TORSO")), regions);
+
+		ModelGenerationQualityReport report = ModelGenerationQualityReport.of(
+				intentWith(List.of("torso"), List.of(SemanticPartCategory.TORSO)), model, Metric.of(1));
+
+		assertThat(report.faceArea().minPx2()).isEqualTo(1);
+		assertThat(report.faceArea().medianPx2()).isEqualTo(16);
+		assertThat(report.faceArea().facesBelowMinimumLegible()).isEqualTo(2);
+	}
+
+	/** Hallazgo real del ticket 064: un cuboid con una dimensión colapsada produce caras de área cero legítimas. */
+	@Test
+	void lasCarasDegeneradasSeCuentanAparteYNoHundenLosPercentiles_AC() {
+		List<UvRegion> regions = List.of(
+				regionOf("c1", FaceName.NORTH, 0), regionOf("c1", FaceName.SOUTH, 0), regionOf("c1", FaceName.EAST, 8),
+				regionOf("c1", FaceName.WEST, 8));
+		MobProjectModel model = modelWith(List.of(cuboidWith("c1", "TORSO")), regions);
+
+		ModelGenerationQualityReport report = ModelGenerationQualityReport.of(
+				intentWith(List.of("torso"), List.of(SemanticPartCategory.TORSO)), model, Metric.of(1));
+
+		assertThat(report.faceArea().degenerateFaces()).isEqualTo(2);
+		assertThat(report.faceArea().minPx2()).isEqualTo(64);
+		assertThat(report.faceArea().facesBelowMinimumLegible()).isZero();
+	}
+
+	@Test
+	void sinNingunaCaraConArea_laMetricaNoEstaDisponible_nuncaCerosInventados_AC() {
+		MobProjectModel model = modelWith(List.of(cuboidWith("c1", "TORSO")), List.of());
+
+		ModelGenerationQualityReport report = ModelGenerationQualityReport.of(
+				intentWith(List.of("torso"), List.of(SemanticPartCategory.TORSO)), model, Metric.of(1));
+
+		assertThat(report.faceArea()).isNull();
+		assertThat(report.describe()).contains("áreaPorCara=no disponible");
 	}
 
 }
