@@ -279,6 +279,7 @@ POST   /api/jobs/{jobId}/apply         -- "Usar este modelo": crea la primera re
 ```
 
 **`POST /api/mobs/{mobId}/generate`**
+- Body opcional (ticket 100): `{"geometryDetail": "LOW"|"MEDIUM"|"HIGH"}` — presupuesto orientativo de cuboides totales (primaria+secundaria): `LOW` 8-18, `MEDIUM` 18-45, `HIGH` 35-80. Sin body, o con `geometryDetail` ausente/null, usa `MEDIUM` (compatibilidad con el contrato anterior a este ticket, que no tenía body). Nunca falla el job por quedar fuera de rango — solo se registra para diagnóstico si el resultado final queda fuera del presupuesto elegido.
 - `202 Accepted` — `{"jobId": "<uuid>"}`. Crea la fila `ai_jobs` (`status='running'`) de inmediato y devuelve el `jobId` sin esperar a ninguna llamada de IA — el pipeline real corre en otro hilo.
 - `404 Not Found` (`MOB_NOT_FOUND`) si el mob no existe.
 - `400 Bad Request` (`NO_REFERENCE_IMAGE`) si el mob no tiene ninguna imagen de referencia subida (024) todavía.

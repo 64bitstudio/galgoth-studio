@@ -1,5 +1,6 @@
 package com.galgothstudio.backend.aiorchestrator;
 
+import com.galgothstudio.backend.domain.model.GeometryDetail;
 import java.util.UUID;
 
 /**
@@ -9,7 +10,12 @@ import java.util.UUID;
  * (riesgo de `LazyInitializationException`/sesión cerrada), solo estos
  * valores planos ya leídos en el hilo síncrono de {@code startGeneration}.
  * Agrupados en un record también por Sonar `S107` (máximo de parámetros).
+ *
+ * @param geometryDetail presupuesto de detalle geométrico elegido en
+ *                       Configuración (ticket 100) -- {@code MEDIUM} si el
+ *                       caller no mandó ninguno (compatibilidad).
  */
 record GenerationJobContext(
-		UUID jobId, UUID mobId, UUID projectId, String mobName, String baseType, UUID referenceId, String storageKey, String contentType) {
+		UUID jobId, UUID mobId, UUID projectId, String mobName, String baseType, UUID referenceId, String storageKey,
+		String contentType, GeometryDetail geometryDetail) {
 }

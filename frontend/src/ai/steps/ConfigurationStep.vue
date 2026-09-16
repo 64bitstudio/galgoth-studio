@@ -47,6 +47,7 @@ import IconMosaic from '../../design-system/icons/IconMosaic.vue'
 import IconQuadruped from '../../design-system/icons/IconQuadruped.vue'
 import IconSparkle from '../../design-system/icons/IconSparkle.vue'
 import type { BaseType } from '../../projects/mobsApi'
+import type { GeometryDetail } from '../../api/generationApi'
 
 const NAME_MAX_LENGTH = 32
 
@@ -73,12 +74,24 @@ const TEXTURE_RESOLUTION_OPTIONS: GSelectOption[] = [
   { value: '256×256', label: '256×256' },
 ]
 
+/** Ticket 100, HU-4 -- a diferencia de "Resolución de textura" (arriba), esta selección SÍ viaja al backend y condiciona de verdad el presupuesto de cuboides secundarios (`SecondaryGeometryPlanner`). Default "Detallado"=MEDIUM, decisión ya tomada en el documento de definición. */
+const GEOMETRY_DETAIL_OPTIONS: GSelectOption[] = [
+  { value: 'LOW', label: 'Simple' },
+  { value: 'MEDIUM', label: 'Detallado (recomendado)' },
+  { value: 'HIGH', label: 'Alto' },
+]
+
 const props = defineProps<{ referencePreviewUrl: string; submitting: boolean; submitError: string | null }>()
-const emit = defineEmits<{ confirm: [{ name: string; baseType: BaseType }]; back: [] }>()
+const emit = defineEmits<{ confirm: [{ name: string; baseType: BaseType; geometryDetail: GeometryDetail }]; back: [] }>()
 
 const name = ref('')
 const baseType = ref<BaseType>('humanoid')
 const textureResolution = ref('128×128')
+// GSelect.modelValue es siempre `string` (ver su propio Javadoc) -- mismo
+// patrón que textureResolution arriba, se estrecha a GeometryDetail recién
+// al emitir (los valores posibles los controlan GEOMETRY_DETAIL_OPTIONS,
+// nunca puede ser otra cosa).
+const geometryDetail = ref('MEDIUM')
 const validationError = ref<string | null>(null)
 
 const rigEstimate = computed(() => RIG_ESTIMATE_BY_TYPE[baseType.value])
@@ -90,7 +103,7 @@ function confirm(): void {
     return
   }
   validationError.value = null
-  emit('confirm', { name: trimmed, baseType: baseType.value })
+  emit('confirm', { name: trimmed, baseType: baseType.value, geometryDetail: geometryDetail.value as GeometryDetail })
 }
 </script>
 
@@ -137,6 +150,14 @@ function confirm(): void {
       </fieldset>
 
       <!-- Ticket 076 (hallazgo real de Sonar, S6853): un <label> nativo solo asocia implícitamente con un control NATIVO envuelto (como el input de "Nombre" arriba) -- GSelect no lo es, envolverlo en <label> es una asociación rota para lectores de pantalla. El nombre accesible real ya lo da el prop `label` de GSelect (aria-label en su propio trigger); este texto es solo visual. -->
+      <div class="configuration-step__label">
+        Detalle geométrico
+        <GSelect v-model="geometryDetail" :options="GEOMETRY_DETAIL_OPTIONS" label="Detalle geométrico">
+          <template #icon><IconCuboid :size="16" /></template>
+        </GSelect>
+        <span class="configuration-step__field-hint">Más detalle agrega más cuboides secundarios (ropa, garras, cuernos), pero aumenta el tiempo de generación.</span>
+      </div>
+
       <div class="configuration-step__label">
         Resolución de textura
         <GSelect v-model="textureResolution" :options="TEXTURE_RESOLUTION_OPTIONS" label="Resolución de textura">

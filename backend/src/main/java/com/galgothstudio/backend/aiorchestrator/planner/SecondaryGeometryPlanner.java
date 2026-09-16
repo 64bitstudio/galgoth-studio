@@ -37,15 +37,6 @@ public class SecondaryGeometryPlanner {
 	static final String PROMPT_VERSION = "secondary-planner-v1";
 	static final String SCHEMA_VERSION = "geometry-operations-secondary-v1";
 
-	/**
-	 * Presupuesto por defecto de cuboides secundarios mientras no existe
-	 * todavía un selector de detalle geométrico conectado de punta a punta
-	 * (eso es alcance del ticket 100) -- equivalente al extremo inferior del
-	 * presupuesto MEDIUM del documento de definición (18-45 total, ~14 ya
-	 * los cubre la anatomía primaria del template humanoide).
-	 */
-	public static final int DEFAULT_SECONDARY_BUDGET = 20;
-
 	private static final String SYSTEM_PROMPT =
 			"""
 			Sos un especialista en geometría SECUNDARIA de mobs de Minecraft Java \

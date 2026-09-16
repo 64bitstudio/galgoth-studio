@@ -29,7 +29,7 @@ describe('ConfigurationStep.vue', () => {
     await wrapper.find('input[aria-label="Nombre del mob"]').setValue('Carcomido')
     await wrapper.find('button.g-button--primary').trigger('click')
 
-    expect(wrapper.emitted('confirm')).toEqual([[{ name: 'Carcomido', baseType: 'humanoid' }]])
+    expect(wrapper.emitted('confirm')).toEqual([[{ name: 'Carcomido', baseType: 'humanoid', geometryDetail: 'MEDIUM' }]])
   })
 
   it('elegir otro tipo base lo refleja en el confirm emitido', async () => {
@@ -40,7 +40,7 @@ describe('ConfigurationStep.vue', () => {
     await arachnidButton.trigger('click')
     await wrapper.find('button.g-button--primary').trigger('click')
 
-    expect(wrapper.emitted('confirm')).toEqual([[{ name: 'Tejedora', baseType: 'arachnid' }]])
+    expect(wrapper.emitted('confirm')).toEqual([[{ name: 'Tejedora', baseType: 'arachnid', geometryDetail: 'MEDIUM' }]])
   })
 
   it('click en "Cambiar imagen" emite "back"', async () => {
@@ -88,6 +88,23 @@ describe('ConfigurationStep.vue', () => {
 
       expect(wrapper.find('select').exists()).toBe(false)
       expect(wrapper.findComponent({ name: 'GSelect' }).exists()).toBe(true)
+    })
+
+    // Ticket 100, HU-4 -- a diferencia de "Resolución de textura" (cosmética,
+    // ver ticket 103), esta selección SÍ debe viajar en el payload real.
+    it('elegir "Alto" en Detalle geométrico cambia el geometryDetail del confirm emitido', async () => {
+      const wrapper = mountStep()
+      await wrapper.find('input[aria-label="Nombre del mob"]').setValue('Carcomido')
+
+      // aria-label scopea el trigger correcto -- hay 2 GSelect en esta
+      // pantalla (Detalle geométrico + Resolución de textura), un selector
+      // ambiguo tipo ".g-select__trigger" a secas matchearía el equivocado.
+      await wrapper.find('button[aria-label="Detalle geométrico"]').trigger('click')
+      const highOption = wrapper.findAll('.g-select__option').find((o) => o.text() === 'Alto')!
+      await highOption.trigger('click')
+      await wrapper.find('button.g-button--primary').trigger('click')
+
+      expect(wrapper.emitted('confirm')).toEqual([[{ name: 'Carcomido', baseType: 'humanoid', geometryDetail: 'HIGH' }]])
     })
 
     it('muestra la fila informativa fija (Vista previa / Formato de salida)', () => {

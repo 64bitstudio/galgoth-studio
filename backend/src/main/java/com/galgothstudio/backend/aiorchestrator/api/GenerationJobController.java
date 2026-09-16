@@ -8,6 +8,7 @@ import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEventEntity;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEventRepository;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobRepository;
 import com.galgothstudio.backend.aiorchestrator.progress.GenerationEventBroadcaster;
+import com.galgothstudio.backend.domain.model.GeometryDetail;
 import com.galgothstudio.backend.project.draft.ApplyGenerationResponse;
 import java.util.List;
 import java.util.UUID;
@@ -16,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -43,9 +45,11 @@ public class GenerationJobController {
 		this.eventBroadcaster = eventBroadcaster;
 	}
 
+	/** Ticket 100 -- {@code body} opcional (compatibilidad con el contrato anterior a este ticket, que no tenía body); sin {@code geometryDetail} explícito se usa {@link GeometryDetail#MEDIUM}. */
 	@PostMapping("/api/mobs/{mobId}/generate")
-	public ResponseEntity<StartGenerationResponse> start(@PathVariable UUID mobId) {
-		UUID jobId = mobGenerationService.startGeneration(mobId);
+	public ResponseEntity<StartGenerationResponse> start(@PathVariable UUID mobId, @RequestBody(required = false) StartGenerationRequest body) {
+		GeometryDetail geometryDetail = body != null && body.geometryDetail() != null ? body.geometryDetail() : GeometryDetail.MEDIUM;
+		UUID jobId = mobGenerationService.startGeneration(mobId, geometryDetail);
 		return ResponseEntity.accepted().body(new StartGenerationResponse(jobId));
 	}
 

@@ -14,8 +14,16 @@ export interface StartGenerationResponse {
   jobId: string
 }
 
-export async function startGeneration(mobId: string): Promise<StartGenerationResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/mobs/${mobId}/generate`, { method: 'POST' })
+/** Presupuesto orientativo de cuboides totales (ticket 100, HU-4) -- LOW 8-18, MEDIUM 18-45, HIGH 35-80. Espejo de `GeometryDetail` (backend). */
+export type GeometryDetail = 'LOW' | 'MEDIUM' | 'HIGH'
+
+/** `geometryDetail` ausente/undefined usa el default del backend (`MEDIUM`) -- mismo contrato que un request sin body. */
+export async function startGeneration(mobId: string, geometryDetail?: GeometryDetail): Promise<StartGenerationResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/mobs/${mobId}/generate`, {
+    method: 'POST',
+    headers: geometryDetail ? { 'Content-Type': 'application/json' } : undefined,
+    body: geometryDetail ? JSON.stringify({ geometryDetail }) : undefined,
+  })
 
   const body = await response.json().catch(() => null)
   if (!response.ok) {

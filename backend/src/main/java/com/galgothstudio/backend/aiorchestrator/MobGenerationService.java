@@ -39,6 +39,7 @@ import com.galgothstudio.backend.domain.export.validation.ValidationResult;
 import com.galgothstudio.backend.domain.model.BaseType;
 import com.galgothstudio.backend.domain.model.ExportSettings;
 import com.galgothstudio.backend.domain.model.FormatVersion;
+import com.galgothstudio.backend.domain.model.GeometryDetail;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.ModelIntent;
 import com.galgothstudio.backend.domain.model.TextureDocument;
@@ -172,8 +173,13 @@ public class MobGenerationService {
 		this.generationExecutor = generationExecutor;
 	}
 
-	/** Preflight síncrono (mob/referencia deben existir, AC implícito del ticket 028 preservado) + creación inmediata de la fila `running` -- el pipeline real se dispara después, en {@code generationExecutor}. */
+	/** Igual que {@link #startGeneration(UUID, GeometryDetail)} con el presupuesto por defecto (ticket 100) -- mantenido por compatibilidad con callers que no eligen detalle geométrico. */
 	public UUID startGeneration(UUID mobId) {
+		return startGeneration(mobId, GeometryDetail.MEDIUM);
+	}
+
+	/** Preflight síncrono (mob/referencia deben existir, AC implícito del ticket 028 preservado) + creación inmediata de la fila `running` -- el pipeline real se dispara después, en {@code generationExecutor}. */
+	public UUID startGeneration(UUID mobId, GeometryDetail geometryDetail) {
 		MobEntity mob = mobRepository.findById(mobId).orElseThrow(() -> new MobNotFoundException(mobId));
 		ReferenceImageEntity reference = mostRecentReference(mobId);
 
@@ -182,7 +188,7 @@ public class MobGenerationService {
 
 		GenerationJobContext context = new GenerationJobContext(
 				job.getId(), mob.getId(), mob.getProjectId(), mob.getName(), mob.getBaseType(), reference.getId(), reference.getStorageKey(),
-				reference.getContentType());
+				reference.getContentType(), geometryDetail != null ? geometryDetail : GeometryDetail.MEDIUM);
 
 		generationExecutor.execute(() -> runPipeline(context));
 		return context.jobId();
@@ -236,14 +242,20 @@ public class MobGenerationService {
 					previewSnapshotPayload(primaryModel));
 			checkCancellation(jobId);
 
+			// Ticket 100 -- presupuesto elegido en Configuración, traducido a
+			// cuboides SECUNDARIOS reales (el extremo superior del rango total
+			// menos lo que la anatomía primaria ya cubre) -- nunca solo texto
+			// cosmético de prompt.
+			int secondaryBudget = context.geometryDetail().secondaryBudget(primaryModel.cuboids().size());
+
 			// Ticket 038 -- hallazgo real (ver ai_job_events de jobs reales en
 			// dev, 2026-09-09): esta era la llamada que dejaba la UI "pegada"
 			// 70-90s sin ningún evento. Con streaming=true, cada operación
 			// real dispara su propio evento acá abajo (via applySecondaryStepAndEmit),
 			// en vez de un replay post-hoc instantáneo.
 			GeometryPlanExecution secondaryExecution = geometryStreamingEnabled
-					? planSecondaryWithStreaming(jobId, seq, visionResult.modelIntent(), primaryModel)
-					: planSecondaryWithHeartbeat(jobId, seq, visionResult.modelIntent(), primaryModel);
+					? planSecondaryWithStreaming(jobId, seq, visionResult.modelIntent(), primaryModel, secondaryBudget)
+					: planSecondaryWithHeartbeat(jobId, seq, visionResult.modelIntent(), primaryModel, secondaryBudget);
 			updateJobProviderInfo(jobId, secondaryExecution.providerResponse());
 			checkCancellation(jobId);
 
@@ -254,6 +266,14 @@ public class MobGenerationService {
 			// es agnóstico de quién produjo las operaciones, mismo cálculo de
 			// atlas/UV de siempre, ahora sobre el batch combinado real.
 			MobProjectModel finalModel = geometryPlannerService.applyOperations(secondaryExecution.operations(), secondaryExecution.providerResponse(), primaryModel);
+			// Ticket 100, HU-4: el presupuesto es orientativo -- un resultado
+			// fuera de rango no falla el job, solo se registra para diagnóstico.
+			if (!context.geometryDetail().isWithinBudget(finalModel.cuboids().size())) {
+				log.info(
+						"Job {}: el conteo final de cuboides ({}) queda fuera del presupuesto orientativo {} [{},{}]",
+						jobId, finalModel.cuboids().size(), context.geometryDetail(),
+						context.geometryDetail().minTotalCuboids(), context.geometryDetail().maxTotalCuboids());
+			}
 			checkCancellation(jobId);
 
 			emit(jobId, seq, GenerationStage.VALIDANDO_GEOMETRIA, "Validando compatibilidad con Blockbench/FMM…", 95, null);
@@ -297,7 +317,7 @@ public class MobGenerationService {
 	 * cada rechazo queda como advertencia logueada, no como algo que el
 	 * usuario ve aparecer y luego desaparecer).
 	 */
-	private GeometryPlanExecution planSecondaryWithStreaming(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel primaryModel) {
+	private GeometryPlanExecution planSecondaryWithStreaming(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel primaryModel, int secondaryBudget) {
 		List<GeometryOperation> collected = new ArrayList<>();
 		List<SecondaryGeometryConstraints.Rejection> rejections = new ArrayList<>();
 		MobProjectModel[] previewBox = {primaryModel};
@@ -317,7 +337,7 @@ public class MobGenerationService {
 					},
 					heartbeatInitialDelaySeconds, heartbeatPeriodSeconds, TimeUnit.SECONDS);
 			try {
-				raw = secondaryGeometryPlanner.planStreaming(modelIntent, primaryBones, SecondaryGeometryPlanner.DEFAULT_SECONDARY_BUDGET, op -> {
+				raw = secondaryGeometryPlanner.planStreaming(modelIntent, primaryBones, secondaryBudget, op -> {
 					checkCancellation(jobId);
 					firstOperationReceived.set(true);
 					SecondaryGeometryConstraints.ValidationResult validated = SecondaryGeometryConstraints.validate(List.of(op), primaryModel);
@@ -342,7 +362,7 @@ public class MobGenerationService {
 	 * (switch operativo apagado): espera la respuesta completa, valida el
 	 * batch entero de una vez, y reproduce SOLO las operaciones aceptadas.
 	 */
-	private GeometryPlanExecution planSecondaryWithHeartbeat(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel primaryModel) {
+	private GeometryPlanExecution planSecondaryWithHeartbeat(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel primaryModel, int secondaryBudget) {
 		List<SecondaryGeometryPlanner.BoneDescriptor> primaryBones = boneDescriptorsFrom(primaryModel);
 		RawOperationsResult raw;
 		try (ScheduledExecutorService heartbeatScheduler = Executors.newSingleThreadScheduledExecutor()) {
@@ -356,7 +376,7 @@ public class MobGenerationService {
 					},
 					heartbeatInitialDelaySeconds, heartbeatPeriodSeconds, TimeUnit.SECONDS);
 			try {
-				raw = secondaryGeometryPlanner.requestOperations(modelIntent, primaryBones, SecondaryGeometryPlanner.DEFAULT_SECONDARY_BUDGET);
+				raw = secondaryGeometryPlanner.requestOperations(modelIntent, primaryBones, secondaryBudget);
 			} finally {
 				heartbeat.cancel(true);
 			}
