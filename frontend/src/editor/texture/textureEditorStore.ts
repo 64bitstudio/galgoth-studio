@@ -73,6 +73,25 @@ export const useTextureEditorStore = defineStore('textureEditor', () => {
     redoStack.value = []
   }
 
+  /**
+   * Deja el store SIN atlas -- ticket 115. No es lo mismo que cargar uno
+   * en blanco: un atlas en blanco es contenido (se puede pintar y guardar,
+   * y sobrescribe la textura persistida); "sin atlas" es la ausencia de
+   * contenido, y es lo único que hace que `flushPaintedTexture` no suba
+   * nada.
+   *
+   * <p>Existe porque este store es GLOBAL y no se resetea al desmontar
+   * `TextureCanvas`: si la carga del atlas de un mob falla y se deja ahí
+   * el del mob anterior, el "Guardar" de la tab Modelo
+   * (`EditorToolbar.vue`, que no conoce `atlasLoadError`) lo sube como
+   * textura de este mob.
+   */
+  function clearAtlas(): void {
+    atlas.value = null
+    undoStack.value = []
+    redoStack.value = []
+  }
+
   /** Copia de los píxeles vigentes de `rect` -- para que el caller capture `beforePixels` antes de pintar (el canvas real llega en el ticket 047). `null` si no hay atlas cargado. */
   function readRegion(rect: TextureRect): Uint8ClampedArray | null {
     return atlas.value ? readRectFrom(atlas.value.pixels, atlas.value.width, rect) : null
@@ -125,6 +144,7 @@ export const useTextureEditorStore = defineStore('textureEditor', () => {
     canUndo,
     canRedo,
     loadAtlas,
+    clearAtlas,
     readRegion,
     recordPatch,
     undo,

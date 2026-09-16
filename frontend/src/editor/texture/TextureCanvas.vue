@@ -543,6 +543,25 @@ function redraw(sourcePixels?: Uint8ClampedArray): void {
  * sobrescribiría la textura real con un lienzo prácticamente en blanco
  * (regla "sin parches silenciosos").
  */
+/**
+ * Ticket 115. Un solo camino de fallo para toda la carga del atlas, y lo
+ * importante es lo que hace ADEMÁS de mostrar el error: VACÍA el store.
+ *
+ * <p>Deshabilitar "Guardar" no alcanzaba. Este store es global y no se
+ * resetea al desmontar el componente, y el "Guardar" de la tab Modelo
+ * (`EditorToolbar.vue`) no conoce `atlasLoadError` -- con el atlas anterior
+ * todavía en el store, ese botón lo sube como textura de este mob.
+ * `flushPaintedTexture` no sube nada cuando no hay atlas, así que vaciarlo
+ * es lo que cierra el camino de verdad, desde las dos tabs.
+ */
+function failAtlasLoad(reason: unknown, message?: string): void {
+  console.error('[TextureCanvas] no se pudo cargar la textura persistida:', reason)
+  textureEditorStore.clearAtlas()
+  atlasLoadError.value =
+    message ??
+    'No se pudo cargar la textura guardada de este mob. Recarga la página antes de continuar -- si guardas ahora, se sobrescribirá con un lienzo en blanco.'
+}
+
 async function loadModelAtlas(model: MobProjectModel): Promise<void> {
   const width = model.uv.textureWidth
   const height = model.uv.textureHeight
@@ -552,21 +571,46 @@ async function loadModelAtlas(model: MobProjectModel): Promise<void> {
   if (model.texture.storageKey) {
     try {
       const png = await downloadTexture(model.mobId)
-      if (png) {
-        pixels = (await decodePngBytesToAtlasBuffer(png)).pixels
+      if (!png) {
+        // `storageKey` presente pero el backend no tiene el PNG (404). Es
+        // una inconsistencia real, no un mob sin textura: tratarla como
+        // "lienzo vacío" es justo lo que sobrescribe la textura buena.
+        failAtlasLoad(`el modelo declara storageKey '${model.texture.storageKey}' pero el backend no devolvió el PNG`)
+        return
       }
+      const decoded = await decodePngBytesToAtlasBuffer(png)
+      if (decoded.width !== width || decoded.height !== height) {
+        failAtlasLoad(
+          `la textura guardada mide ${decoded.width}x${decoded.height} y el modelo declara ${width}x${height}`,
+          `La textura guardada de este mob mide ${decoded.width}x${decoded.height}, pero el modelo declara un atlas de ${width}x${height}. ` +
+            'No se abre el editor sobre un lienzo que no corresponde: si guardaras ahora, sobrescribirías la textura real. ' +
+            'Vuelve a generar la textura para que coincida con la geometría actual.',
+        )
+        return
+      }
+      pixels = decoded.pixels
     } catch (error) {
-      console.error('[TextureCanvas] no se pudo cargar la textura persistida:', error)
-      atlasLoadError.value =
-        'No se pudo cargar la textura guardada de este mob. Recarga la página antes de continuar -- si guardas ahora, se sobrescribirá con un lienzo en blanco.'
+      failAtlasLoad(error)
       return
     }
   }
 
   textureEditorStore.loadAtlas(width, height, pixels)
   syncDataTexture()
-  redraw()
+  // El estado se fija ANTES del await: un atlas recién cargado es, por
+  // definición, igual a lo persistido. Diferirlo junto con el pintado haría
+  // que este 'saved' aterrizara DESPUÉS de un trazo del usuario y le pisara
+  // el "Cambios sin guardar" (lo detectaron dos tests del 058).
   saveState.value = 'saved'
+  // Ticket 115: el `nextTick` NO es cosmético ni defensivo, es la corrección.
+  // El `<canvas>` se dimensiona desde el store (`:width="atlasWidth"`), así
+  // que hasta que Vue no aplique esta carga sigue midiendo 0x0: pintar
+  // ahora haría un `putImageData` que se recorta a nada (sin lanzar), y
+  // acto seguido Vue le asignaría el tamaño real, lo que en un canvas
+  // RESETEA el bitmap a transparente. Resultado medido en vivo: store con
+  // los 47.968 píxeles correctos y canvas con cero, sin ningún error.
+  await nextTick()
+  redraw()
 }
 
 // -- Selección cruzada cuboid<->UV en el preview 3D (ticket 049, HU-25) --
