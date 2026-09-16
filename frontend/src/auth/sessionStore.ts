@@ -11,6 +11,9 @@ import * as authApi from './authApi'
 
 const STORAGE_KEY = 'galgoth-studio.session'
 
+/** Ticket 108 -- {@link login}/{@link loginWithSocialCode} devuelven esto en vez de descartar el `pendingToken`/`method` cuando la cuenta tiene 2FA activo. */
+export type LoginOutcome = { status: 'ok' } | { status: 'two-factor-required'; pendingToken: string; method: string }
+
 interface StoredSession {
   accessToken: string
   refreshToken: string
@@ -69,23 +72,35 @@ export const useSessionStore = defineStore('session', () => {
     return authApi.register(request)
   }
 
-  async function login(identifier: string, password: string): Promise<'ok' | 'two-factor-required'> {
+  async function login(identifier: string, password: string): Promise<LoginOutcome> {
     const result = await authApi.login(identifier, password)
-    if (authApi.isTwoFactorRequired(result)) {
-      return 'two-factor-required'
-    }
-    setSession(result.tokens, result.user)
-    return 'ok'
+    return completeOrPend(result)
   }
 
   /** Ticket 072 -- mismo contrato que {@link login}, para el canje de código de `/auth/callback`. */
-  async function loginWithSocialCode(code: string): Promise<'ok' | 'two-factor-required'> {
+  async function loginWithSocialCode(code: string): Promise<LoginOutcome> {
     const result = await authApi.exchangeSocialCode(code)
+    return completeOrPend(result)
+  }
+
+  function completeOrPend(result: authApi.LoginSuccess | authApi.TwoFactorRequired): LoginOutcome {
     if (authApi.isTwoFactorRequired(result)) {
-      return 'two-factor-required'
+      return { status: 'two-factor-required', pendingToken: result.pendingToken, method: result.method }
     }
     setSession(result.tokens, result.user)
-    return 'ok'
+    return { status: 'ok' }
+  }
+
+  /**
+   * Ticket 108 -- completa un login que quedó pendiente de 2FA (con
+   * contraseña o social, mismo `pendingToken`/contrato para ambos). A
+   * diferencia de {@link login}/{@link loginWithSocialCode}, esta llamada
+   * nunca vuelve a devolver `two-factor-required` -- o entrega sesión o
+   * lanza (código incorrecto, `pendingToken` inválido/expirado).
+   */
+  async function completeTwoFactorLogin(pendingToken: string, code: string): Promise<void> {
+    const result = await authApi.verifyTwoFactorLogin(pendingToken, code)
+    setSession(result.tokens, result.user)
   }
 
   /**
@@ -120,5 +135,16 @@ export const useSessionStore = defineStore('session', () => {
     sessionStorage.removeItem(STORAGE_KEY)
   }
 
-  return { accessToken, refreshToken, user, isAuthenticated, register, login, loginWithSocialCode, refresh, logout }
+  return {
+    accessToken,
+    refreshToken,
+    user,
+    isAuthenticated,
+    register,
+    login,
+    loginWithSocialCode,
+    completeTwoFactorLogin,
+    refresh,
+    logout,
+  }
 })
