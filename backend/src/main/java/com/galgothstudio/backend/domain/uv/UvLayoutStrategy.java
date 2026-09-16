@@ -71,6 +71,31 @@ public interface UvLayoutStrategy {
 	}
 
 	/**
+	 * Sobrecarga aditiva (ticket 109): misma semántica que la de 5
+	 * argumentos, más la {@link TexelDensity} con la que calcular el
+	 * footprint de cada cara.
+	 *
+	 * <p><b>Por qué hizo falta</b>: hasta este ticket la densidad solo
+	 * llegaba a {@link AtlasResolutionCalculator} (el TAMAÑO del atlas),
+	 * nunca al packing real -- {@code GeometryEngine} invocaba las
+	 * sobrecargas sin densidad y {@link AlphaAutoPackStrategy} usaba
+	 * {@link TexelDensity#X1} fijo. Resultado medido: subir la densidad
+	 * agrandaba el lienzo y dejaba las caras del mismo tamaño, o sea más
+	 * espacio vacío y ninguna mejora de detalle. Cualquier control de
+	 * resolución expuesto al usuario era necesariamente cosmético.
+	 *
+	 * <p>Default: ignora la densidad y delega en la sobrecarga de 5
+	 * argumentos -- cero cambio de comportamiento para una implementación
+	 * que no la soporte (p. ej. {@link StableUvStrategy}, que preserva un
+	 * atlas ya pintado y cuya re-densificación es alcance de otro ticket).
+	 */
+	default Result layout(
+			List<Cuboid> cuboids, int textureWidth, int textureHeight, UvLayout previousLayout, boolean confirmPaintLoss,
+			TexelDensity density) {
+		return layout(cuboids, textureWidth, textureHeight, previousLayout, confirmPaintLoss);
+	}
+
+	/**
 	 * @param reservations tombstones de espacio de atlas abandonado (ticket
 	 *        041) -- aditivo respecto al ticket 006/007: {@link AlphaAutoPackStrategy}
 	 *        sigue usando el constructor de 2 argumentos (reservations vacío)

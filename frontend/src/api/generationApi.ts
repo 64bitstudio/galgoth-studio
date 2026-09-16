@@ -18,25 +18,28 @@ export interface StartGenerationResponse {
 export type GeometryDetail = 'LOW' | 'MEDIUM' | 'HIGH'
 
 /**
- * TOPE de atlas, no tamaño exacto (ticket 103, HU-10) -- espejo de
- * `TextureResolution` (backend): el atlas sigue saliendo del packing real
- * (Diseño técnico §7), y este valor acota qué densidad de texel se usa.
- * Decisión explícita del PO; ver el Javadoc del enum en backend.
+ * Densidad de téxel (ticket 109) -- espejo de `TextureDensity` (backend),
+ * reemplaza al `TextureResolution` del 103.
+ *
+ * Elige cuántos téxeles recibe cada unidad de modelo; el tamaño del atlas
+ * sale del packing a esa densidad, sin tope. El tope del 103 se eliminó
+ * porque, medido contra un mob real, degradaba la densidad justo en los
+ * modelos complejos. Ver el enum del backend para el detalle.
  */
-export type TextureResolution = '64' | '128' | '256'
+export type TextureDensity = 'standard' | 'high' | 'max'
 
-/** Campos ausentes/undefined usan los defaults del backend (`MEDIUM`/`128`) -- mismo contrato que un request sin body. */
+/** Campos ausentes/undefined usan los defaults del backend (`MEDIUM`/`max`) -- mismo contrato que un request sin body. */
 export async function startGeneration(
   mobId: string,
   geometryDetail?: GeometryDetail,
-  textureResolution?: TextureResolution,
+  textureDensity?: TextureDensity,
 ): Promise<StartGenerationResponse> {
   const payload: Record<string, string> = {}
   if (geometryDetail) {
     payload.geometryDetail = geometryDetail
   }
-  if (textureResolution) {
-    payload.textureResolution = textureResolution
+  if (textureDensity) {
+    payload.textureDensity = textureDensity
   }
   const hasPayload = Object.keys(payload).length > 0
   const response = await fetch(`${API_BASE_URL}/api/mobs/${mobId}/generate`, {

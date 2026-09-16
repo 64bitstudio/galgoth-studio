@@ -14,7 +14,7 @@ import com.galgothstudio.backend.domain.model.ModelIntent;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.Proportions;
 import com.galgothstudio.backend.domain.model.TextureDocument;
-import com.galgothstudio.backend.domain.model.TextureResolution;
+import com.galgothstudio.backend.domain.model.TextureDensity;
 import com.galgothstudio.backend.domain.model.UvLayout;
 import com.galgothstudio.backend.domain.uv.AlphaAutoPackStrategy;
 import java.util.List;
@@ -93,16 +93,13 @@ class GeometryPlannerServiceTest {
 	 * deliberadamente distinto del footprint, para probar que se IGNORA) ni
 	 * un valor fijo hardcodeado (128x128, el que existía antes de 042).
 	 *
-	 * <p><b>CAMBIO DE COMPORTAMIENTO REAL, ticket 103</b>: las cifras
-	 * esperadas de este test cambiaron de 32x16 a 64x32. No es un ajuste
-	 * cosmético del test: hasta 103 la densidad estaba hardcodeada en
-	 * {@code TexelDensity.X1}; ahora sale del tope elegido en Configuración
-	 * ({@link TextureResolution}, default {@code MAX_128}), y para este
-	 * cuboid la densidad X2 entra de sobra en ese tope -- así que el
-	 * pipeline elige X2 y el atlas resultante es el doble por lado. El
-	 * footprint sigue siendo el que manda; lo que cambió es a qué densidad
-	 * se mide. Reportado explícitamente en el PR del ticket 103 por ser un
-	 * cambio de comportamiento del flujo por defecto, no solo del selector.
+	 * <p><b>CAMBIO DE COMPORTAMIENTO REAL, tickets 103 y 109</b>: las cifras
+	 * esperadas cambiaron dos veces, y ninguna fue un ajuste cosmético del
+	 * test. Hasta 103 la densidad estaba hardcodeada en {@code TexelDensity.X1}
+	 * (32x16). El 103 la ató a un tope de atlas (64x32 a X2). El 109 elimina
+	 * el tope y la ata a la densidad elegida, default {@link TextureDensity#MAX}
+	 * = X4 -> 128x64. El footprint sigue siendo el que manda; lo que cambia
+	 * es a qué densidad se mide.
 	 */
 	@Test
 	void elAtlasInicial_seCalculaDelFootprintEmpaquetadoRealDeLosCuboids_nuncaDeUnValorFijo() {
@@ -119,50 +116,76 @@ class GeometryPlannerServiceTest {
 		GeometryPlanResult result = service.plan(aModelIntent(), emptyModel());
 
 		// Cuboid 8(x) x 8(y) x 4(z) -- footprint a X1 = 2*(8+4)=24 de ancho,
-		// (4+8)=12 de alto (atlas 32x16); a X2, el doble por lado -> 48x24,
-		// atlas = potencia de 2 inmediatamente contenedora: 64x32. Con el
-		// tope default (128) la densidad X2 entra, así que es la elegida.
-		assertThat(result.model().texture().width()).isEqualTo(64);
-		assertThat(result.model().texture().height()).isEqualTo(32);
-		assertThat(result.model().uv().textureWidth()).isEqualTo(64);
-		assertThat(result.model().uv().textureHeight()).isEqualTo(32);
+		// (4+8)=12 de alto; a X4 (default del 109) cada lado se cuadruplica
+		// -> 96x48, atlas = potencia de 2 inmediatamente contenedora: 128x64.
+		assertThat(result.model().texture().width()).isEqualTo(128);
+		assertThat(result.model().texture().height()).isEqualTo(64);
+		assertThat(result.model().uv().textureWidth()).isEqualTo(128);
+		assertThat(result.model().uv().textureHeight()).isEqualTo(64);
 	}
 
 	/**
-	 * Ticket 103 (HU-10) -- la resolución elegida en Configuración cambia de
-	 * verdad el atlas resultante, reemplazando el hardcode
-	 * {@code TexelDensity.X1}: el MISMO cuboid, con dos topes distintos, da
-	 * dos atlas reales distintos. El tope acota la densidad; el atlas sigue
-	 * saliendo del packing (§7), nunca se infla para "llenar" el tope.
+	 * Ticket 109 (HU-3) -- la densidad elegida en Configuración cambia de
+	 * verdad el atlas resultante: el MISMO cuboid, con dos densidades
+	 * distintas, da dos atlas reales distintos. El atlas es siempre
+	 * consecuencia del packing a esa densidad, sin tope de por medio.
 	 */
 	@Test
-	void laResolucionElegidaCambiaElAtlasReal_yaNoEsElHardcodeX1_AC() {
+	void laDensidadElegidaCambiaElAtlasReal_sinTopeDePorMedio_AC() {
 		MockReasoningProvider mockProvider = new MockReasoningProvider();
-		// Cuboid 16(x) x 16(y) x 8(z): a X1 el footprint empaquetado da un
-		// atlas de 64x32; a X2 (footprint lineal x2) da 128x64.
-		String rig =
+		// Cuboid 16(x) x 16(y) x 8(z): footprint a X1 = 2*(16+8)=48 de ancho,
+		// (8+16)=24 de alto -> atlas 64x32. A X4, cada lado x4 -> 192x96 ->
+		// atlas 256x128.
+		mockProvider.setNextResponse(
 				"""
 				[
 				  {"op":"createBone","tempId":"root","name":"body","parentId":null,"pivot":[0,0,0],"rotation":[0,0,0]},
 				  {"op":"createCuboid","tempId":"c1","name":"body","boneId":"root","from":[-8,0,-4],"to":[8,16,4],"origin":[0,8,0],"rotation":[0,0,0]}
 				]
-				""";
-		mockProvider.setNextResponse(rig);
+				""");
 		GeometryPlannerService service = newService(mockProvider);
 		GeometryPlanResult planned = service.plan(aModelIntent(), emptyModel());
 
-		MobProjectModel conTope64 = service.applyOperations(
-				planned.operations(), planned.providerResponse(), emptyModel(), TextureResolution.MAX_64);
-		MobProjectModel conTope128 = service.applyOperations(
-				planned.operations(), planned.providerResponse(), emptyModel(), TextureResolution.MAX_128);
+		MobProjectModel estandar = service.applyOperations(
+				planned.operations(), planned.providerResponse(), emptyModel(), TextureDensity.STANDARD);
+		MobProjectModel maxima = service.applyOperations(
+				planned.operations(), planned.providerResponse(), emptyModel(), TextureDensity.MAX);
 
-		// Con tope 64, la densidad alta (atlas 128) no entra -> se usa X1.
-		assertThat(conTope64.texture().width()).isEqualTo(64);
-		assertThat(conTope64.texture().height()).isEqualTo(32);
-		// Con tope 128 sí entra la densidad alta -> atlas real más grande.
-		assertThat(conTope128.texture().width()).isEqualTo(128);
-		assertThat(conTope128.texture().height()).isEqualTo(64);
-		assertThat(conTope128.uv().textureWidth()).isEqualTo(128);
+		assertThat(estandar.texture().width()).isEqualTo(64);
+		assertThat(estandar.texture().height()).isEqualTo(32);
+		assertThat(maxima.texture().width()).isEqualTo(256);
+		assertThat(maxima.texture().height()).isEqualTo(128);
+		assertThat(maxima.uv().textureWidth()).isEqualTo(256);
+	}
+
+	/**
+	 * AC central del ticket 109: un cuboid de 1x1 unidades -- el tamaño real
+	 * de un colmillo del benchmark Carcomido -- debe recibir al menos 4x4
+	 * téxeles por cara. A X1 recibía 1 solo píxel, que es la causa medida de
+	 * que la textura saliera como ruido.
+	 */
+	@Test
+	void unCuboidDeUnaUnidadRecibeAlMenos4x4Texeles_AC() {
+		MockReasoningProvider mockProvider = new MockReasoningProvider();
+		mockProvider.setNextResponse(
+				"""
+				[
+				  {"op":"createBone","tempId":"root","name":"body","parentId":null,"pivot":[0,0,0],"rotation":[0,0,0]},
+				  {"op":"createCuboid","tempId":"c1","name":"fang","boneId":"root","from":[0,0,0],"to":[1,1,1],"origin":[0,0,0],"rotation":[0,0,0]}
+				]
+				""");
+		GeometryPlannerService service = newService(mockProvider);
+		GeometryPlanResult planned = service.plan(aModelIntent(), emptyModel());
+
+		MobProjectModel model = service.applyOperations(
+				planned.operations(), planned.providerResponse(), emptyModel(), TextureDensity.MAX);
+
+		assertThat(model.uv().regions()).isNotEmpty().allSatisfy(region -> {
+			double ancho = region.rect().c() - region.rect().a();
+			double alto = region.rect().d() - region.rect().b();
+			assertThat(ancho).isGreaterThanOrEqualTo(4);
+			assertThat(alto).isGreaterThanOrEqualTo(4);
+		});
 	}
 
 	@Test

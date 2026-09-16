@@ -12,16 +12,13 @@ import com.galgothstudio.backend.domain.model.Cuboid;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.ModelIntent;
 import com.galgothstudio.backend.domain.model.TextureDocument;
-import com.galgothstudio.backend.domain.model.TextureResolution;
+import com.galgothstudio.backend.domain.model.TextureDensity;
 import com.galgothstudio.backend.domain.model.UvLayout;
 import com.galgothstudio.backend.domain.uv.AtlasResolutionCalculator;
-import com.galgothstudio.backend.domain.uv.TexelDensity;
 import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -38,8 +35,6 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class GeometryPlannerService {
-
-	private static final Logger log = LoggerFactory.getLogger(GeometryPlannerService.class);
 
 	static final String PROMPT_VERSION = "planner-v1";
 	static final String SCHEMA_VERSION = "geometry-operations-v1";
@@ -165,9 +160,9 @@ public class GeometryPlannerService {
 		return new RawOperationsResult(List.copyOf(collected), response);
 	}
 
-	/** Igual que {@link #applyOperations(List, AiProviderResponse, MobProjectModel, TextureResolution)} con el tope por defecto (ticket 103). */
+	/** Igual que {@link #applyOperations(List, AiProviderResponse, MobProjectModel, TextureDensity)} con la densidad por defecto (ticket 109). */
 	public MobProjectModel applyOperations(List<GeometryOperation> operations, AiProviderResponse providerResponse, MobProjectModel startingModel) {
-		return applyOperations(operations, providerResponse, startingModel, TextureResolution.MAX_128);
+		return applyOperations(operations, providerResponse, startingModel, TextureDensity.MAX);
 	}
 
 	/**
@@ -191,11 +186,11 @@ public class GeometryPlannerService {
 	 */
 	public MobProjectModel applyOperations(
 			List<GeometryOperation> operations, AiProviderResponse providerResponse, MobProjectModel startingModel,
-			TextureResolution textureResolution) {
+			TextureDensity textureDensity) {
 		try {
 			List<Cuboid> proposedCuboids = GeometryEngine.apply(startingModel, operations).cuboids();
-			MobProjectModel sizedStartingModel = withInitialAtlas(startingModel, proposedCuboids, textureResolution);
-			return GeometryEngine.apply(sizedStartingModel, operations, uvLayoutStrategy);
+			MobProjectModel sizedStartingModel = withInitialAtlas(startingModel, proposedCuboids, textureDensity);
+			return GeometryEngine.apply(sizedStartingModel, operations, uvLayoutStrategy, false, textureDensity.texelDensity());
 		} catch (GeometryValidationException e) {
 			throw new InvalidGeometryProposalException(
 					"La geometría propuesta no pasó la validación del Geometry Engine: " + e.getMessage(), providerResponse, e);
@@ -208,25 +203,17 @@ public class GeometryPlannerService {
 	 * resto del modelo (bones/cuboids todavía sin operar, siempre vacíos en
 	 * este flujo) queda igual.
 	 *
-	 * <p>Ticket 103 (HU-10): la densidad ya no es el hardcode
-	 * {@code TexelDensity.X1} -- sale de {@code textureResolution}, que
-	 * ACOTA el atlas resultante sin fijarlo (ver {@link TextureResolution}:
-	 * decisión explícita del PO para no contradecir el §7, donde el atlas
-	 * es siempre una consecuencia del packing). Si ni la densidad más baja
-	 * entra en el tope elegido, se usa igual la más baja y se registra la
-	 * advertencia -- nunca se tumba la generación por el tope.
+	 * <p>Ticket 109: la densidad sale directo de {@code textureDensity} y el
+	 * atlas es la potencia de 2 que contiene el packing a esa densidad --
+	 * SIN tope. El tope del ticket 103 se eliminó por decisión del PO (el
+	 * atlas vuelve a ser consecuencia pura del packing, Diseño técnico §7) y
+	 * porque, medido contra un mob real, degradaba la densidad justo en los
+	 * modelos complejos que más la necesitaban. Ver {@link TextureDensity}.
 	 */
 	private static MobProjectModel withInitialAtlas(
-			MobProjectModel startingModel, List<Cuboid> proposedCuboids, TextureResolution textureResolution) {
-		TexelDensity density = textureResolution.highestDensityWithin(
-				candidate -> longestSideAt(proposedCuboids, candidate));
-		AtlasResolutionCalculator.AtlasSize atlas = AtlasResolutionCalculator.computeAtlas(proposedCuboids, density);
-		if (Math.max(atlas.width(), atlas.height()) > textureResolution.maxAtlasSidePx()) {
-			log.info(
-					"El atlas resultante ({}x{}) supera el tope de resolución elegido ({}px por lado) incluso a la densidad más baja -- "
-							+ "se conserva el atlas real, nunca se recorta geometría por el tope.",
-					atlas.width(), atlas.height(), textureResolution.maxAtlasSidePx());
-		}
+			MobProjectModel startingModel, List<Cuboid> proposedCuboids, TextureDensity textureDensity) {
+		AtlasResolutionCalculator.AtlasSize atlas =
+				AtlasResolutionCalculator.computeAtlas(proposedCuboids, textureDensity.texelDensity());
 		TextureDocument sizedTexture = new TextureDocument(atlas.width(), atlas.height(), startingModel.texture().storageKey());
 		return new MobProjectModel(
 				startingModel.mobId(), startingModel.projectId(), startingModel.name(), startingModel.baseType(),
@@ -235,9 +222,5 @@ public class GeometryPlannerService {
 				startingModel.animations(), startingModel.exportSettings(), startingModel.referenceImages());
 	}
 
-	private static int longestSideAt(List<Cuboid> cuboids, TexelDensity density) {
-		AtlasResolutionCalculator.AtlasSize atlas = AtlasResolutionCalculator.computeAtlas(cuboids, density);
-		return Math.max(atlas.width(), atlas.height());
-	}
 
 }

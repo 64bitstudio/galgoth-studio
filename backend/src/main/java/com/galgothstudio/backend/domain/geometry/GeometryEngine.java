@@ -9,6 +9,7 @@ import com.galgothstudio.backend.domain.model.UvLayout;
 import com.galgothstudio.backend.domain.model.UvRegion;
 import com.galgothstudio.backend.domain.model.Vec3;
 import com.galgothstudio.backend.domain.model.Vec4;
+import com.galgothstudio.backend.domain.uv.TexelDensity;
 import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -127,6 +128,22 @@ public final class GeometryEngine {
 	public static MobProjectModel apply(
 			MobProjectModel model, List<GeometryOperation> operations, UvLayoutStrategy uvLayoutStrategy,
 			boolean confirmPaintLoss) {
+		return apply(model, operations, uvLayoutStrategy, confirmPaintLoss, TexelDensity.X1);
+	}
+
+	/**
+	 * Sobrecarga aditiva (ticket 109): misma semántica, más la
+	 * {@link TexelDensity} con la que empaquetar la UV. Las sobrecargas
+	 * anteriores delegan acá con {@link TexelDensity#X1}, que es lo que
+	 * hacían de hecho -- cero cambio de comportamiento para sus callers.
+	 *
+	 * <p>Antes de este ticket la densidad NO tenía forma de llegar hasta
+	 * acá: solo se usaba para dimensionar el atlas, así que agrandarla
+	 * producía un lienzo más grande con las mismas caras diminutas.
+	 */
+	public static MobProjectModel apply(
+			MobProjectModel model, List<GeometryOperation> operations, UvLayoutStrategy uvLayoutStrategy,
+			boolean confirmPaintLoss, TexelDensity density) {
 		MobProjectModel afterOps = apply(model, operations);
 
 		boolean touchesUv = operations.stream()
@@ -138,7 +155,7 @@ public final class GeometryEngine {
 		int atlasWidth = afterOps.texture().width();
 		int atlasHeight = afterOps.texture().height();
 		UvLayoutStrategy.Result uvResult =
-				uvLayoutStrategy.layout(afterOps.cuboids(), atlasWidth, atlasHeight, model.uv(), confirmPaintLoss);
+				uvLayoutStrategy.layout(afterOps.cuboids(), atlasWidth, atlasHeight, model.uv(), confirmPaintLoss, density);
 		return new MobProjectModel(
 				afterOps.mobId(),
 				afterOps.projectId(),

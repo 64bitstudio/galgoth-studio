@@ -65,7 +65,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { BaseType } from '../../projects/mobsApi'
 import type { MobProjectModel } from '../../domain/MobProjectModel'
-import { cancelGeneration, eventsUrl, startGeneration, type GeometryDetail, type TextureResolution } from '../../api/generationApi'
+import { cancelGeneration, eventsUrl, startGeneration, type GeometryDetail, type TextureDensity } from '../../api/generationApi'
 import { emptyPreviewModel, applyPreviewDelta, type GenerationEvent } from '../generationEvents'
 import { ApiError } from '../../api/ApiError'
 import GButton from '../../design-system/components/GButton.vue'
@@ -80,7 +80,7 @@ import IconWarning from '../../design-system/icons/IconWarning.vue'
 import GenerationPreviewViewport from '../GenerationPreviewViewport.vue'
 import { STAGE_ORDER, outcomeForStage, findStageIndex, stageStatusFor, type GenerationOutcome } from '../generationStages'
 
-const props = defineProps<{ mobId: string; projectId: string; mobName: string; baseType: BaseType; geometryDetail: GeometryDetail; textureResolution: TextureResolution }>()
+const props = defineProps<{ mobId: string; projectId: string; mobName: string; baseType: BaseType; geometryDetail: GeometryDetail; textureDensity: TextureDensity }>()
 const emit = defineEmits<{ 'back-to-project': []; completed: [jobId: string, finalModel: MobProjectModel] }>()
 
 type Outcome = GenerationOutcome
@@ -273,7 +273,7 @@ async function beginGeneration(): Promise<void> {
     return
   }
   try {
-    const response = await startGeneration(props.mobId, props.geometryDetail, props.textureResolution)
+    const response = await startGeneration(props.mobId, props.geometryDetail, props.textureDensity)
     jobId.value = response.jobId
     persistJobId(response.jobId)
     debugLog(`[AI JOB] connected jobId=${response.jobId}`)
