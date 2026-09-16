@@ -8,7 +8,9 @@ import {
   refreshAccessToken,
   register,
   requestPasswordReset,
+  resendTwoFactorCode,
   socialLoginUrl,
+  verifyTwoFactorLogin,
 } from '../authApi'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -171,5 +173,47 @@ describe('authApi', () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => jsonResponse({ error: 'invalid_token', message: 'The exchange code is invalid, expired, or already used' }, 400)))
 
     await expect(exchangeSocialCode('bad-code')).rejects.toMatchObject({ status: 400, code: 'invalid_token' })
+  })
+
+  // Ticket 108 -- completar login con 2FA activo.
+  it('verifyTwoFactorLogin hace POST a /api/v1/login/2fa-verify con X-Client-Id y devuelve tokens+user', async () => {
+    const success = {
+      user: { id: 'u1', email: 'ada@example.com', phone: null, nombre: 'Ada', apellidos: 'Lovelace', emailVerified: true, phoneVerified: false, hasPassword: true },
+      tokens: { accessToken: 'a.b.c', refreshToken: 'r1', tokenType: 'Bearer', expiresInSeconds: 900 },
+    }
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(success))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await verifyTwoFactorLogin('pending-1', '123456')
+
+    expect(result).toEqual(success)
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/v1/login/2fa-verify')
+    expect((init?.headers as Record<string, string>)['X-Client-Id']).toBe('galgoth-studio')
+    expect(JSON.parse(init?.body as string)).toEqual({ pendingToken: 'pending-1', code: '123456' })
+  })
+
+  it('un código de 2FA incorrecto propaga el ApiError real', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => jsonResponse({ error: 'invalid_token', message: 'The pending token is invalid, expired, or already used' }, 400)))
+
+    await expect(verifyTwoFactorLogin('pending-1', '000000')).rejects.toMatchObject({ status: 400, code: 'invalid_token' })
+  })
+
+  it('demasiados intentos de 2FA propagan el 429 too_many_attempts real', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => jsonResponse({ error: 'too_many_attempts', message: 'Too many attempts' }, 429)))
+
+    await expect(verifyTwoFactorLogin('pending-1', '111111')).rejects.toMatchObject({ status: 429, code: 'too_many_attempts' })
+  })
+
+  it('resendTwoFactorCode hace POST a /api/v1/login/2fa-resend con X-Client-Id', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse(null, 202))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await resendTwoFactorCode('pending-1')
+
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/v1/login/2fa-resend')
+    expect((init?.headers as Record<string, string>)['X-Client-Id']).toBe('galgoth-studio')
+    expect(JSON.parse(init?.body as string)).toEqual({ pendingToken: 'pending-1' })
   })
 })

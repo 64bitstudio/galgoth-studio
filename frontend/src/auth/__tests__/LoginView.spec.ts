@@ -7,7 +7,7 @@ import LoginView from '../LoginView.vue'
 
 vi.mock('../authApi', async () => {
   const actual = await vi.importActual<typeof authApi>('../authApi')
-  return { ...actual, login: vi.fn(), socialLoginUrl: vi.fn() }
+  return { ...actual, login: vi.fn(), socialLoginUrl: vi.fn(), verifyTwoFactorLogin: vi.fn(), resendTwoFactorCode: vi.fn() }
 })
 
 const user: authApi.RegisteredUser = {
@@ -112,7 +112,8 @@ describe('LoginView.vue', () => {
     expect(router.currentRoute.value.path).toBe('/login')
   })
 
-  it('2FA activo muestra el mensaje explícito en vez de navegar', async () => {
+  // Ticket 108 -- ya no muestra un mensaje fijo, sino TwoFactorChallenge.vue.
+  it('2FA activo muestra el paso de código en vez de navegar', async () => {
     vi.mocked(authApi.login).mockResolvedValue({ twoFactorRequired: true, pendingToken: 'p1', method: 'OTP_EMAIL' })
     const router = testRouter()
     await router.push('/login')
@@ -123,8 +124,70 @@ describe('LoginView.vue', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('verificación en dos pasos')
+    expect(wrapper.text()).toContain('Verificación en dos pasos')
     expect(router.currentRoute.value.path).toBe('/login')
+  })
+
+  it('completar el código de 2FA navega al destino final (respeta ?redirect=)', async () => {
+    vi.mocked(authApi.login).mockResolvedValue({ twoFactorRequired: true, pendingToken: 'p1', method: 'TOTP' })
+    vi.mocked(authApi.verifyTwoFactorLogin).mockResolvedValue({
+      user,
+      tokens: { accessToken: 'a1', refreshToken: 'r1', tokenType: 'Bearer', expiresInSeconds: 900 },
+    })
+    const router = testRouter()
+    await router.push('/login?redirect=/projects')
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+
+    await wrapper.find('input[type="text"]').setValue('ada@example.com')
+    await wrapper.find('input[type="password"]').setValue('abcd1234')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    await wrapper.find('input[aria-label="Código de verificación"]').setValue('123456')
+    await wrapper.find('.two-factor').trigger('submit')
+    await flushPromises()
+
+    expect(authApi.verifyTwoFactorLogin).toHaveBeenCalledWith('p1', '123456')
+    expect(router.currentRoute.value.path).toBe('/projects')
+  })
+
+  it('un código de 2FA incorrecto muestra el error real sin navegar', async () => {
+    vi.mocked(authApi.login).mockResolvedValue({ twoFactorRequired: true, pendingToken: 'p1', method: 'TOTP' })
+    vi.mocked(authApi.verifyTwoFactorLogin).mockRejectedValue(
+      new (await import('../../api/ApiError')).ApiError('The pending token is invalid, expired, or already used', 400, 'invalid_token'),
+    )
+    const router = testRouter()
+    await router.push('/login')
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+
+    await wrapper.find('input[type="text"]').setValue('ada@example.com')
+    await wrapper.find('input[type="password"]').setValue('abcd1234')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    await wrapper.find('input[aria-label="Código de verificación"]').setValue('000000')
+    await wrapper.find('.two-factor').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('invalid, expired, or already used')
+    expect(router.currentRoute.value.path).toBe('/login')
+  })
+
+  it('"Volver" desde el paso de 2FA regresa al formulario de login', async () => {
+    vi.mocked(authApi.login).mockResolvedValue({ twoFactorRequired: true, pendingToken: 'p1', method: 'OTP_EMAIL' })
+    const router = testRouter()
+    await router.push('/login')
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+
+    await wrapper.find('input[type="text"]').setValue('ada@example.com')
+    await wrapper.find('input[type="password"]').setValue('abcd1234')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text() === 'Volver')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('input[type="password"]').exists()).toBe(true)
   })
 
   // Ticket 072 de auth-core-mc -- login social real.

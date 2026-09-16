@@ -26,8 +26,7 @@ en el orden que mejor conviniera.
   descarga (ni siquiera como fallback).
 
 ## Hecho
-Implementado, tests reales en verde (no mergeado todavía dentro de esta
-misma sesión de trabajo).
+Implementado, tests reales en verde. Mergeado vía PR #150.
 
 - Migración `V8__user_profile_public_avatar_id.sql`: columna
   `public_avatar_id UUID NOT NULL DEFAULT gen_random_uuid()` + índice

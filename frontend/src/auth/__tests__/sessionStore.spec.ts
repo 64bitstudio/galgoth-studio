@@ -5,7 +5,14 @@ import { useSessionStore } from '../sessionStore'
 
 vi.mock('../authApi', async () => {
   const actual = await vi.importActual<typeof authApi>('../authApi')
-  return { ...actual, register: vi.fn(), login: vi.fn(), refreshAccessToken: vi.fn(), exchangeSocialCode: vi.fn() }
+  return {
+    ...actual,
+    register: vi.fn(),
+    login: vi.fn(),
+    refreshAccessToken: vi.fn(),
+    exchangeSocialCode: vi.fn(),
+    verifyTwoFactorLogin: vi.fn(),
+  }
 })
 
 const user: authApi.RegisteredUser = {
@@ -45,19 +52,20 @@ describe('sessionStore', () => {
 
     const result = await store.login('ada@example.com', 'abcd1234')
 
-    expect(result).toBe('ok')
+    expect(result).toEqual({ status: 'ok' })
     expect(store.isAuthenticated).toBe(true)
     expect(store.accessToken).toBe('a1')
     expect(store.user).toEqual(user)
   })
 
-  it('login con 2FA activo devuelve two-factor-required sin guardar sesión', async () => {
+  // Ticket 108 -- ya no se descarta el pendingToken/method, LoginView/AuthCallbackView los necesitan para TwoFactorChallenge.vue.
+  it('login con 2FA activo devuelve el pendingToken/method reales sin guardar sesión', async () => {
     vi.mocked(authApi.login).mockResolvedValue({ twoFactorRequired: true, pendingToken: 'p1', method: 'OTP_EMAIL' })
     const store = useSessionStore()
 
     const result = await store.login('ada@example.com', 'abcd1234')
 
-    expect(result).toBe('two-factor-required')
+    expect(result).toEqual({ status: 'two-factor-required', pendingToken: 'p1', method: 'OTP_EMAIL' })
     expect(store.isAuthenticated).toBe(false)
   })
 
@@ -72,18 +80,42 @@ describe('sessionStore', () => {
     const result = await store.loginWithSocialCode('code-abc')
 
     expect(authApi.exchangeSocialCode).toHaveBeenCalledWith('code-abc')
-    expect(result).toBe('ok')
+    expect(result).toEqual({ status: 'ok' })
     expect(store.isAuthenticated).toBe(true)
     expect(store.user).toEqual(user)
   })
 
-  it('loginWithSocialCode con 2FA activo devuelve two-factor-required sin guardar sesión', async () => {
+  it('loginWithSocialCode con 2FA activo devuelve el pendingToken/method reales sin guardar sesión', async () => {
     vi.mocked(authApi.exchangeSocialCode).mockResolvedValue({ twoFactorRequired: true, pendingToken: 'p1', method: 'TOTP' })
     const store = useSessionStore()
 
     const result = await store.loginWithSocialCode('code-abc')
 
-    expect(result).toBe('two-factor-required')
+    expect(result).toEqual({ status: 'two-factor-required', pendingToken: 'p1', method: 'TOTP' })
+    expect(store.isAuthenticated).toBe(false)
+  })
+
+  // Ticket 108 -- segundo tramo, completa el login que quedó pendiente de 2FA.
+  it('completeTwoFactorLogin exitoso guarda tokens+user y queda autenticado', async () => {
+    vi.mocked(authApi.verifyTwoFactorLogin).mockResolvedValue({
+      user,
+      tokens: { accessToken: 'a1', refreshToken: 'r1', tokenType: 'Bearer', expiresInSeconds: 900 },
+    })
+    const store = useSessionStore()
+
+    await store.completeTwoFactorLogin('p1', '123456')
+
+    expect(authApi.verifyTwoFactorLogin).toHaveBeenCalledWith('p1', '123456')
+    expect(store.isAuthenticated).toBe(true)
+    expect(store.accessToken).toBe('a1')
+    expect(store.user).toEqual(user)
+  })
+
+  it('completeTwoFactorLogin con código incorrecto propaga el error sin guardar sesión', async () => {
+    vi.mocked(authApi.verifyTwoFactorLogin).mockRejectedValue(new Error('invalid_token'))
+    const store = useSessionStore()
+
+    await expect(store.completeTwoFactorLogin('p1', '000000')).rejects.toThrow('invalid_token')
     expect(store.isAuthenticated).toBe(false)
   })
 

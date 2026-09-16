@@ -4,10 +4,11 @@
  * directa de auth-core-mc -- `sessionStore.login` hace el `POST
  * /api/v1/login` y guarda los tokens si tiene éxito.
  *
- * El caso `202` (2FA activo) se muestra como error explícito en vez de
- * fallar en silencio -- decisión ya tomada en `PROP-GS-AUTH-01` sección
- * 08: esta pantalla no lo maneja en v1 (nadie puede activarlo desde
- * galgoth-studio todavía).
+ * Ticket 108: el caso `202` (2FA activo) muestra `TwoFactorChallenge.vue`
+ * en vez del formulario -- galgoth-studio todavía no ofrece forma de
+ * ACTIVAR 2FA desde acá (ver ese mismo ticket), pero una cuenta que ya
+ * lo activó por otro medio (`cuenta.html` de auth-core-mc) puede
+ * completar el login normalmente.
  *
  * Ticket 081: rediseño visual (logo + fondo aportados por Marco, layout
  * split-screen de la referencia) -- la lógica de arriba no cambia en
@@ -34,6 +35,7 @@ import backgroundUrl from '../assets/auth/auth-hero-background.jpg'
 import logoUrl from '../assets/auth/galgoth-logo.png'
 import * as authApi from './authApi'
 import { useSessionStore } from './sessionStore'
+import TwoFactorChallenge from './TwoFactorChallenge.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -45,6 +47,13 @@ const error = ref<string | null>(null)
 const busy = ref(false)
 const passwordVisible = ref(false)
 const connectingProvider = ref<'google' | 'facebook' | null>(null)
+const pendingTwoFactor = ref<{ pendingToken: string; method: string } | null>(null)
+
+function goToDestination(): void {
+  const redirect = route.query.redirect
+  const isSafeInternalPath = typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
+  router.push(isSafeInternalPath ? redirect : '/')
+}
 
 async function submit(): Promise<void> {
   if (busy.value) {
@@ -54,13 +63,11 @@ async function submit(): Promise<void> {
   busy.value = true
   try {
     const result = await session.login(identifier.value.trim(), password.value)
-    if (result === 'two-factor-required') {
-      error.value = 'Esta cuenta tiene verificación en dos pasos activa -- galgoth-studio todavía no soporta ese flujo.'
+    if (result.status === 'two-factor-required') {
+      pendingTwoFactor.value = { pendingToken: result.pendingToken, method: result.method }
       return
     }
-    const redirect = route.query.redirect
-    const isSafeInternalPath = typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
-    router.push(isSafeInternalPath ? redirect : '/')
+    goToDestination()
   } catch (e) {
     error.value = e instanceof ApiError ? e.message : 'No se pudo iniciar sesión. Intenta de nuevo.'
   } finally {
@@ -118,7 +125,12 @@ async function connectSocial(provider: 'google' | 'facebook'): Promise<void> {
     </section>
 
     <section class="auth-view__panel">
-      <form class="auth-view__card" @submit.prevent="submit">
+      <div v-if="pendingTwoFactor" class="auth-view__card">
+        <img :src="logoUrl" alt="Galgoth Studio" class="auth-view__logo" />
+        <TwoFactorChallenge v-bind="pendingTwoFactor" @success="goToDestination" @cancel="pendingTwoFactor = null" />
+      </div>
+
+      <form v-else class="auth-view__card" @submit.prevent="submit">
         <img :src="logoUrl" alt="Galgoth Studio" class="auth-view__logo" />
         <div class="auth-view__intro">
           <h1 class="auth-view__title">Iniciar sesión</h1>

@@ -15,8 +15,10 @@
  * ticket 037: ese bucket nunca resuelve tenant, así que no puede saber
  * de qué cliente es).
  *
- * El caso 2FA se trata igual que `LoginView.vue`: galgoth-studio todavía
- * no tiene pantalla para completarlo (`PROP-GS-AUTH-01` sección 08).
+ * Ticket 108: el caso 2FA muestra `TwoFactorChallenge.vue`, mismo
+ * componente y contrato que `LoginView.vue` -- el `pendingToken` que
+ * `SocialExchangeController` emite tiene la misma forma que el de
+ * `AuthController` (ambos vía `LoginCompletionService`).
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -24,6 +26,7 @@ import { ApiError } from '../api/ApiError'
 import backgroundUrl from '../assets/auth/auth-hero-background.jpg'
 import logoUrl from '../assets/auth/galgoth-logo.png'
 import { useSessionStore } from './sessionStore'
+import TwoFactorChallenge from './TwoFactorChallenge.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -36,6 +39,7 @@ const code = computed(() => {
 
 const busy = ref(true)
 const error = ref<string | null>(null)
+const pendingTwoFactor = ref<{ pendingToken: string; method: string } | null>(null)
 
 function messageFor(errorParam: string | null): string {
   if (errorParam === 'social_login_cancelled') {
@@ -70,8 +74,8 @@ async function completeLogin(): Promise<void> {
   }
   try {
     const result = await session.loginWithSocialCode(code.value)
-    if (result === 'two-factor-required') {
-      error.value = 'Esta cuenta tiene verificación en dos pasos activa -- galgoth-studio todavía no soporta ese flujo.'
+    if (result.status === 'two-factor-required') {
+      pendingTwoFactor.value = { pendingToken: result.pendingToken, method: result.method }
       busy.value = false
       return
     }
@@ -98,6 +102,11 @@ onMounted(completeLogin)
       <div v-if="busy" class="auth-view__card">
         <img :src="logoUrl" alt="Galgoth Studio" class="auth-view__logo" />
         <h1 class="auth-view__title">Iniciando sesión…</h1>
+      </div>
+
+      <div v-else-if="pendingTwoFactor" class="auth-view__card">
+        <img :src="logoUrl" alt="Galgoth Studio" class="auth-view__logo" />
+        <TwoFactorChallenge v-bind="pendingTwoFactor" @success="redirectAfterLogin" @cancel="router.push('/login')" />
       </div>
 
       <div v-else class="auth-view__card">
