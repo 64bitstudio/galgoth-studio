@@ -81,7 +81,7 @@ const TEXTURE_DENSITY_OPTIONS: GSelectOption[] = [
   { value: 'max', label: 'Máxima (recomendada)' },
 ]
 
-/** Ticket 100, HU-4 -- a diferencia de "Resolución de textura" (arriba), esta selección SÍ viaja al backend y condiciona de verdad el presupuesto de cuboides secundarios (`SecondaryGeometryPlanner`). Default "Detallado"=MEDIUM, decisión ya tomada en el documento de definición. */
+/** Ticket 100, HU-4 -- presupuesto real de cuboides secundarios (`SecondaryGeometryPlanner`), no un ajuste cosmético. Default "Detallado"=MEDIUM, decisión ya tomada en el documento de definición. (Desde el ticket 109, el control de densidad de abajo también tiene efecto real.) */
 const GEOMETRY_DETAIL_OPTIONS: GSelectOption[] = [
   { value: 'LOW', label: 'Simple' },
   { value: 'MEDIUM', label: 'Detallado (recomendado)' },
@@ -174,11 +174,11 @@ function confirm(): void {
       </div>
 
       <div class="configuration-step__label">
-        Resolución de textura
+        Densidad de textura
         <GSelect v-model="textureResolution" :options="TEXTURE_DENSITY_OPTIONS" label="Densidad de textura">
           <template #icon><IconMosaic :size="16" /></template>
         </GSelect>
-        <span class="configuration-step__field-hint">Mayor resolución ofrece más detalle, pero aumenta el tiempo de generación.</span>
+        <span class="configuration-step__field-hint">Más densidad da más téxeles por parte, así el detalle chico (ojos, grietas) tiene dónde dibujarse.</span>
       </div>
 
       <dl class="configuration-step__info-row">
