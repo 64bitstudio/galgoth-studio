@@ -15,7 +15,6 @@ import com.galgothstudio.backend.domain.model.TextureDocument;
 import com.galgothstudio.backend.domain.model.TextureDensity;
 import com.galgothstudio.backend.domain.model.UvLayout;
 import com.galgothstudio.backend.domain.uv.AtlasResolutionCalculator;
-import com.galgothstudio.backend.domain.uv.TexelDensity;
 import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
 import java.util.ArrayList;
 import java.util.List;
