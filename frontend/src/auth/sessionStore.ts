@@ -78,6 +78,16 @@ export const useSessionStore = defineStore('session', () => {
     return 'ok'
   }
 
+  /** Ticket 072 -- mismo contrato que {@link login}, para el canje de código de `/auth/callback`. */
+  async function loginWithSocialCode(code: string): Promise<'ok' | 'two-factor-required'> {
+    const result = await authApi.exchangeSocialCode(code)
+    if (authApi.isTwoFactorRequired(result)) {
+      return 'two-factor-required'
+    }
+    setSession(result.tokens, result.user)
+    return 'ok'
+  }
+
   /**
    * Ticket 078, Fig. 06: se llama ante CUALQUIER 401 de la API propia
    * (ver `authenticatedFetch.ts`), no solo por temporizador -- si
@@ -110,5 +120,5 @@ export const useSessionStore = defineStore('session', () => {
     sessionStorage.removeItem(STORAGE_KEY)
   }
 
-  return { accessToken, refreshToken, user, isAuthenticated, register, login, refresh, logout }
+  return { accessToken, refreshToken, user, isAuthenticated, register, login, loginWithSocialCode, refresh, logout }
 })

@@ -7,7 +7,7 @@ import LoginView from '../LoginView.vue'
 
 vi.mock('../authApi', async () => {
   const actual = await vi.importActual<typeof authApi>('../authApi')
-  return { ...actual, login: vi.fn() }
+  return { ...actual, login: vi.fn(), socialLoginUrl: vi.fn() }
 })
 
 const user: authApi.RegisteredUser = {
@@ -125,5 +125,58 @@ describe('LoginView.vue', () => {
 
     expect(wrapper.text()).toContain('verificación en dos pasos')
     expect(router.currentRoute.value.path).toBe('/login')
+  })
+
+  // Ticket 072 de auth-core-mc -- login social real.
+  it('"Google" navega el navegador completo a la URL real devuelta por el backend', async () => {
+    const realLocation = window.location
+    Object.defineProperty(window, 'location', { value: { ...realLocation, href: '' }, writable: true, configurable: true })
+    vi.mocked(authApi.socialLoginUrl).mockResolvedValue('https://auth-dev.example.com/oauth2/authorization/x::google')
+    const router = testRouter()
+    await router.push('/login')
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+
+    const googleButton = wrapper.findAll('button').find((b) => b.text().includes('Google'))!
+    await googleButton.trigger('click')
+    await flushPromises()
+
+    expect(authApi.socialLoginUrl).toHaveBeenCalledWith('google')
+    expect(window.location.href).toBe('https://auth-dev.example.com/oauth2/authorization/x::google')
+
+    Object.defineProperty(window, 'location', { value: realLocation, writable: true, configurable: true })
+  })
+
+  it('con ?redirect= presente, lo guarda en sessionStorage antes de navegar al login social', async () => {
+    const realLocation = window.location
+    Object.defineProperty(window, 'location', { value: { ...realLocation, href: '' }, writable: true, configurable: true })
+    vi.mocked(authApi.socialLoginUrl).mockResolvedValue('https://auth-dev.example.com/oauth2/authorization/x::facebook')
+    sessionStorage.removeItem('galgoth-studio.postLoginRedirect')
+    const router = testRouter()
+    await router.push('/login?redirect=/projects')
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+
+    const facebookButton = wrapper.findAll('button').find((b) => b.text().includes('Facebook'))!
+    await facebookButton.trigger('click')
+    await flushPromises()
+
+    expect(sessionStorage.getItem('galgoth-studio.postLoginRedirect')).toBe('/projects')
+
+    Object.defineProperty(window, 'location', { value: realLocation, writable: true, configurable: true })
+    sessionStorage.removeItem('galgoth-studio.postLoginRedirect')
+  })
+
+  it('un error al pedir la URL de login social se muestra sin navegar', async () => {
+    vi.mocked(authApi.socialLoginUrl).mockRejectedValue(
+      new (await import('../../api/ApiError')).ApiError('No se pudo iniciar sesión con ese proveedor. Intenta de nuevo.', 500),
+    )
+    const router = testRouter()
+    await router.push('/login')
+    const wrapper = mount(LoginView, { global: { plugins: [router] } })
+
+    const googleButton = wrapper.findAll('button').find((b) => b.text().includes('Google'))!
+    await googleButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('No se pudo iniciar sesión con ese proveedor')
   })
 })
