@@ -101,6 +101,7 @@ public class TextureGenerationService {
 	private final TexturePlanService texturePlanService;
 	private final TextureGenerationSheetPlanner textureGenerationSheetPlanner;
 	private final TextureSheetSlicer textureSheetSlicer;
+	private final TextureEdgeFiller textureEdgeFiller;
 	private final TextureContentValidator textureContentValidator;
 	private final TextureCompositorService textureCompositorService;
 	private final ImageGenerationProvider imageGenerationProvider;
@@ -119,6 +120,7 @@ public class TextureGenerationService {
 			TexturePlanService texturePlanService,
 			TextureGenerationSheetPlanner textureGenerationSheetPlanner,
 			TextureSheetSlicer textureSheetSlicer,
+			TextureEdgeFiller textureEdgeFiller,
 			TextureContentValidator textureContentValidator,
 			TextureCompositorService textureCompositorService,
 			ImageGenerationProvider imageGenerationProvider,
@@ -135,6 +137,7 @@ public class TextureGenerationService {
 		this.texturePlanService = texturePlanService;
 		this.textureGenerationSheetPlanner = textureGenerationSheetPlanner;
 		this.textureSheetSlicer = textureSheetSlicer;
+		this.textureEdgeFiller = textureEdgeFiller;
 		this.textureContentValidator = textureContentValidator;
 		this.textureCompositorService = textureCompositorService;
 		this.imageGenerationProvider = imageGenerationProvider;
@@ -253,6 +256,7 @@ public class TextureGenerationService {
 							new AiProviderResponse(null, imageGenerationProvider.provider(), imageGenerationProvider.model(), PROMPT_VERSION_SHEET, SCHEMA_VERSION_SHEET));
 
 					List<TextureSlice> slices = textureSheetSlicer.slice(sheetBytes, sheet, inflatedSize[0], inflatedSize[1]);
+					fillEdgesAndLog(jobId, slices);
 					logContentFindings(jobId, slices, context.detailLevel(), planResult.texturePlan().palette());
 					currentAtlas = textureCompositorService.compose(currentAtlas, slices);
 
@@ -345,6 +349,33 @@ public class TextureGenerationService {
 			TextureDetailLevel detailLevel) {
 		return TextureSheetPromptComposer.compose(sheet, inflatedWidth, inflatedHeight, texturePlan) + "\n\n" + style.promptInstruction() + "\n"
 				+ detailLevel.promptInstruction();
+	}
+
+	/**
+	 * Ticket 114 -- rellena las bandas negras del borde de cada cara ANTES
+	 * de componerla sobre el atlas. Determinista: no depende de que el
+	 * generador de imagen obedezca la instrucción de llenar el rectángulo
+	 * (el ticket 113 midió que obedece a medias: bajó las bandas ~45% y
+	 * dejó 37% de las caras con banda igual).
+	 *
+	 * <p>El conteo se loguea acá y no en {@code ModelGenerationQualityReport}:
+	 * ese reporte se calcula en el pipeline de GEOMETRÍA y no tiene forma de
+	 * saber qué pasó al texturizar. Mismo criterio que las advertencias de
+	 * {@link TextureContentValidator} (102).
+	 */
+	private void fillEdgesAndLog(UUID jobId, List<TextureSlice> slices) {
+		int rellenadas = 0;
+		int anchas = 0;
+		for (TextureSlice slice : slices) {
+			TextureEdgeFiller.Result result = textureEdgeFiller.fillBlackEdges(slice.image());
+			rellenadas += result.touched() ? 1 : 0;
+			anchas += result.edgesSkipped() > 0 ? 1 : 0;
+		}
+		if (rellenadas > 0 || anchas > 0) {
+			log.info(
+					"Job {}: bordes negros rellenados en {} de {} caras; {} cara(s) con banda demasiado ancha, dejadas como están",
+					jobId, rellenadas, slices.size(), anchas);
+		}
 	}
 
 	/**
