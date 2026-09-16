@@ -176,14 +176,19 @@ class MobGenerationServiceHeartbeatTest {
 
 		assertThat(job.getStatus()).isEqualTo("completed");
 		List<AiJobEventEntity> events = aiJobEventRepository.findByJobIdAndSeqGreaterThanOrderBySeqAsc(jobId, 0);
+		// Ticket 099: la llamada bloqueante que el heartbeat espera ahora es
+		// SecondaryGeometryPlanner (geometría secundaria) -- stage/progreso
+		// propios (generando_cuboides/40%), ya no detectando_silueta/25% (ese
+		// stage/% siguen existiendo, pero para la fase de VISIÓN, que en este
+		// test no es la que se bloquea).
 		List<AiJobEventEntity> heartbeatPings =
-				events.stream().filter(e -> "detectando_silueta".equals(e.getStage()) && e.getMessage().contains("llevamos")).toList();
+				events.stream().filter(e -> "generando_cuboides".equals(e.getStage()) && e.getMessage().contains("llevamos")).toList();
 
 		// Honesto: NUNCA cambia de stage ni de % mientras hace ping -- solo el mensaje.
 		assertThat(heartbeatPings)
 				.as("al menos 2 pings reales durante los 2.5s de espera bloqueante")
 				.hasSizeGreaterThanOrEqualTo(2)
-				.allSatisfy(e -> assertThat(e.getProgressPct()).isEqualTo(25));
+				.allSatisfy(e -> assertThat(e.getProgressPct()).isEqualTo(40));
 		// Mensajes distintos entre sí (el tiempo transcurrido realmente avanza, no es el mismo texto repetido).
 		assertThat(heartbeatPings.stream().map(AiJobEventEntity::getMessage).distinct().count()).isGreaterThanOrEqualTo(2);
 	}

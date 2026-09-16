@@ -116,6 +116,10 @@
             "up": { "$ref": "#/$defs/face" },
             "down": { "$ref": "#/$defs/face" }
           }
+        },
+        "semanticPart": {
+          "description": "Categoría semántica de la parte que este cuboid representa (ej. 'TORSO', 'CLAW') -- ticket 099, HU-2. Campo aditivo: null/ausente para cuboids de antes de este ticket o de caminos que no la necesitan (edición manual/IA sobre un modelo existente). Todavía un string libre, no el enum cerrado SemanticPartCategory (ticket 104).",
+          "type": ["string", "null"]
         }
       }
     },

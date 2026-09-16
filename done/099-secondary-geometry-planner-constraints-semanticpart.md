@@ -1,0 +1,59 @@
+# 099 — SecondaryGeometryPlanner (IA acotada) + constraints deterministas + `semanticPart`
+
+## Objetivo
+Nace de `docs/definiciones/anatomia-por-capas-generacion-mobs.md` (HU-2b, y la parte de `semanticPart` de HU-2). Con la anatomía primaria ya resuelta de forma determinista (ticket 098), este ticket concentra la única libertad real del LLM en geometría secundaria (ropa, jirones, garras, cuernos — lo que da identidad visual a un personaje), y le pone límites duros para que nunca produzca un modelo corrupto.
+
+**Depende de:** 098 (necesita la anatomía primaria ya fijada como contexto). **Bloqueado por:** 097. **Bloquea:** 101 (featureCoverage necesita `semanticPart` ya persistido).
+
+## Alcance
+**Incluye:**
+- `SecondaryGeometryPlanner`: reemplaza el alcance actual de `GeometryPlannerService` en lo que hace a geometría — recibe anatomía primaria fijada + `features`/`materials` de `ModelIntent` + presupuesto restante (de `geometryDetail`, ver ticket 100), y solo puede emitir operaciones de geometría secundaria (nunca redefinir/eliminar cuboides primarios).
+- Campo `semanticPart` en `Cuboid` (backend `domain/model/Cuboid.java` + espejo `MobProjectModel.ts` + `contracts/schemas/mob-project-model.schema.json`) — cambio aditivo de schema, señalado explícitamente por tocar un contrato compartido (regla de equipo #9).
+- Constraints deterministas en `GeometryEngine` para geometría secundaria: rechaza si referencia `boneId` inexistente, excede tamaño máximo razonable relativo al template, cae fuera del bounding box del personaje, está a distancia irrazonable del pivot del bone padre, o tiene dimensiones inválidas (cero/negativas/NaN/Infinity). Cuboides huérfanos se rechazan explícitamente, nunca se cuelgan de un bone arbitrario.
+- Operaciones rechazadas no fallan el job completo: se aplican las válidas y se registra un `generationWarning` por cada rechazo con la razón concreta.
+
+**No incluye:**
+- Presupuesto `geometryDetail` en sí y su conexión desde la UI (ticket 100) — este ticket recibe el presupuesto como parámetro, no lo construye.
+- Taxonomía `SemanticPartCategory` enum cerrada (ticket 104) — este ticket usa `semanticPart` como campo string por ahora; la categorización cerrada llega en 104 y puede requerir un ajuste menor de tipo, ya anticipado.
+
+## Criterios de aceptación (TDD)
+- Dado que la anatomía primaria ya existe, cuando se invoca `SecondaryGeometryPlanner`, entonces recibe explícitamente `features`/`materials` de `ModelIntent` y presupuesto restante, y solo emite operaciones de geometría secundaria.
+- Dado el modelo resultante, cuando se inspecciona cualquier cuboid (primario o secundario), entonces tiene `semanticPart` no vacío persistido.
+- Dado una operación que intenta modificar/eliminar un cuboid primario, cuando `GeometryEngine` la procesa, entonces la rechaza en vez de aplicarla.
+- Dado un cuboid secundario propuesto con `boneId` inexistente, tamaño excesivo, fuera de bounding box, distancia irrazonable al pivot, o dimensiones inválidas, cuando se valida, entonces se rechaza — con test específico por cada caso.
+- Dado un cuboid secundario huérfano, cuando se valida, entonces se rechaza explícitamente (no se cuelga de un bone arbitrario).
+- Dado que una o más operaciones se rechazan, cuando termina la generación, entonces el job no falla completo y cada rechazo queda en `generationWarnings` con su razón.
+
+## Hecho
+
+### `semanticPart` (cambio aditivo de contrato compartido — regla #9)
+- `Cuboid.java` (backend): campo `semanticPart` agregado como 9º componente + constructor de compatibilidad de 8 argumentos (mismo patrón ya usado por `UvRegion.paintedBy`, ticket 054) — los ~28 call sites existentes que construían `Cuboid` (2 en `main`, 26 en tests) siguen compilando sin cambios. `@JsonInclude(NON_NULL)` para no romper la comparación JSON estricta de `MobProjectModelRoundTripTest`/fixtures congeladas.
+- `CreateCuboid.java` (GeometryOperation): mismo patrón, 8º componente + constructor de compatibilidad de 7 argumentos.
+- `contracts/schemas/mob-project-model.schema.json`: `semanticPart` agregado como propiedad opcional (`["string","null"]`, no en `required`) del `$defs/cuboid` — sin esto, el `additionalProperties:false` del schema rompía 30+ tests de validación/round-trip en todo el backend (hallazgo real, no anticipado hasta correr la suite completa).
+- `frontend/src/domain/MobProjectModel.ts`: `semanticPart?: string` agregado a la interfaz `Cuboid` — 893/893 tests de frontend, typecheck (`vue-tsc -b`) y lint sin cambios necesarios en ningún otro archivo.
+- **Bug real encontrado y corregido, no anticipado en el ticket**: `GeometryEngine.applyResizeCuboid`/`applyMoveCuboid`/`applyRotateCuboid`, y `AlphaAutoPackStrategy`/`StableUvStrategy` (repacking de UV) reconstruían el `Cuboid` con el constructor de compatibilidad de 8 argumentos, **descartando en silencio** el `semanticPart` ya asignado — cualquier resize/move/rotate (incluido el editor de "Asistente IA", ticket 031) o simplemente correr AutoUv habría borrado la semántica de cualquier cuboid existente. Corregido en los 5 sitios: todos propagan `current.semanticPart()`/`cuboid.semanticPart()` explícitamente ahora.
+
+### `SecondaryGeometryConstraints` (`domain/geometry/`, nuevo)
+- Valida un batch de `GeometryOperation` contra la anatomía primaria ya fijada: solo `createCuboid` permitido (cualquier otro tipo se rechaza entero), `boneId` debe existir entre los bones primarios (que sirve a la vez como garantía de "sin huérfanos" — no hace falta lógica aparte), `semanticPart` no vacío, coordenadas finitas (sin NaN/Infinity — hueco real que `GeometryEngine.validatePositiveDimensions` no cubre, confirmado leyendo su código: `NaN <= EPSILON` es `false` en Java, así que un valor NaN se colaba sin lanzar), dimensiones positivas, tamaño máximo por eje (16px default), dentro del bounding box del personaje con margen (8px default), y distancia razonable al pivote del bone (24px default).
+- Devuelve `accepted`/`rejected` (con razón concreta por rechazo) — nunca lanza, nunca aborta el batch completo por un elemento inválido.
+- **11 tests nuevos**, uno por cada constraint + un caso de batch mixto (acepta lo válido, rechaza lo inválido, sin abortar).
+
+### `SecondaryGeometryPlanner` (`aiorchestrator/planner/`, nuevo)
+- Reemplaza, para geometría, el rol que hasta este ticket cumplía `GeometryPlannerService` en el pipeline real — prompt acotado explícitamente a `createCuboid` con `semanticPart` obligatorio, sobre bones primarios ya listados (con su pivote real, para que el LLM ancle la geometría cerca de la articulación). `requestOperations` (heartbeat) + `planStreaming` (streaming, reutiliza `StreamingOperationsParser` sin cambios — ya era genérico). Presupuesto por defecto (`DEFAULT_SECONDARY_BUDGET=20`) mientras no existe el selector de detalle geométrico conectado (ticket 100).
+- `MockReasoningProvider` actualizado: nueva rama para `promptVersion="secondary-planner-v1"` que extrae un bone primario REAL del prompt vía regex (mismo mecanismo ya establecido para el flujo de edición, ticket 033 — los ids de bone son UUIDs generados en cada corrida, nunca se pueden hardcodear).
+- **6 tests nuevos** (`SecondaryGeometryPlannerTest`): deserialización válida, lista vacía válida (un personaje simple puede no necesitar geometría secundaria), operación fuera de whitelist lanza `InvalidGeometryProposalException`, el mock por defecto usa un bone real nunca inventado, streaming entrega cada operación a medida que llega.
+
+### Integración real con el pipeline (`MobGenerationService`)
+- `runPipeline`: la anatomía primaria (`PrimaryGeometryGenerator.planOperations`, 098) se aplica de una sola vez, determinista, y se muestra como un único evento de preview (`creando_rig`, `preview_snapshot`) — el LLM entra recién después, ya con el rig fijado, únicamente para geometría secundaria. Cada operación secundaria se valida con `SecondaryGeometryConstraints` **antes** de aplicarse y mostrarse en el preview — una operación rechazada nunca aparece y desaparece del preview del usuario, se loguea con su razón (`logRejections`) y no falla el job.
+- `planWithStreaming`/`planWithHeartbeat` (llamaban a `GeometryPlannerService`) reemplazados por `planSecondaryWithStreaming`/`planSecondaryWithHeartbeat`, anclados en `primaryModel` (no en un modelo vacío) — `GeometryPlannerService.applyOperations` (cálculo de atlas/UV) se reutiliza sin cambios, agnóstico de quién produjo las operaciones.
+- **Alcance ajustado explícitamente respecto al ticket original** (regla #8, no en silencio): `GeometryPlannerService.plan`/`requestOperations`/`planStreaming`/su `SYSTEM_PROMPT` de generación completa quedan como código **no usado por el pipeline real** (siguen existiendo, siguen probados — `GeometryPlannerServiceTest`, `E2eAcceptanceBbmodelExportTest` los ejercitan directamente sin pasar por `MobGenerationService`) — no se borraron en este ticket para no arriesgar esos tests/E2E sin necesidad; queda como candidato de limpieza para un ticket futuro (dos caminos de generación de geometría en el código a la vez, aunque solo uno esté conectado).
+- `generationWarnings` (proporciones clampadas de 097 + rechazos de constraints) se loguean (`log.info`) en vez de exponerse como campo estructurado nuevo en la API — no existe todavía un lugar natural para persistirlos/exponerlos (candidato razonable: ticket 104, `ModelGenerationQualityReport`); señalado explícitamente, no resuelto en silencio.
+
+### Tests actualizados (comportamiento del pipeline cambió de verdad)
+- `MobGenerationServiceTest`/`MobGenerationServiceHeartbeatTest`/`MobGenerationServiceStreamingTest`/`GenerationJobControllerTest`: fixtures que antes mandaban una geometría completa vía el mock (`createBone`+`createCuboid` con `boneId` inventado como `"root"`) ya no aplican — esos `boneId` no existen en la anatomía primaria real (UUIDs generados en cada corrida) y `SecondaryGeometryConstraints` los rechaza. Reescritos para: (a) generar solo `createCuboid` de geometría secundaria, (b) resolver un `boneId` real vía regex sobre el prompt (mismo mecanismo que el mock), (c) esperar conteos de bones/cuboides derivados del template real (`CanonicalTemplateCatalog.forBaseType(HUMANOID)`, nunca un número mágico hardcodeado).
+- Timeouts de `awaitTerminalStatus` en 3 archivos subidos de 5s a 10s: la anatomía primaria real ahora es el template humanoide completo (15 bones/14 cuboides) en vez de un fixture mínimo de 1-2 elementos — exportar/validar FMM y persistir un modelo real es más trabajo real bajo la suite completa.
+- **Hallazgo de entorno, no de código** (documentado para no repetir el error del ticket 097 de asumir infra sin verificar): la suite completa mostró 3 fallos intermitentes (siempre los mismos 3, nunca al azar) en `GenerationJobControllerTest` bajo carga local. Causa raíz confirmada con `docker ps`, no supuesta: esta máquina de desarrollo tiene contenedores de **otros proyectos no relacionados** corriendo 7+ horas en paralelo (`mail-core-mta-transactional`, `welmi-postgres`, `nutritrack-postgres`) compitiendo por CPU/IO con los Testcontainers de esta suite — con la máquina momentáneamente más libre, la misma suite corre 525/525 en verde. Un agente de Jenkins real es una máquina dedicada sin esta contención entre proyectos.
+
+### Suite completa
+- Backend: **525/525 en verde** (daemon limpio), 0 failures, 0 errors.
+- Frontend: **893/893 en verde**, `vue-tsc -b` y `eslint --max-warnings 0` sin hallazgos.

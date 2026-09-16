@@ -228,7 +228,7 @@ public final class StableUvStrategy implements UvLayoutStrategy {
 	private static Cuboid withFaces(Cuboid cuboid, CuboidFaces faces) {
 		return new Cuboid(
 				cuboid.id(), cuboid.name(), cuboid.boneId(), cuboid.from(), cuboid.to(), cuboid.origin(),
-				cuboid.rotation(), faces);
+				cuboid.rotation(), faces, cuboid.semanticPart());
 	}
 
 	/**
