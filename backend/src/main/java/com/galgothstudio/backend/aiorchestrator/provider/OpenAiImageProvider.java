@@ -290,19 +290,20 @@ public class OpenAiImageProvider implements ImageGenerationProvider {
 	 * <p>Con una sola imagen, esta llamada es la misma de siempre
 	 * (051/059-065) salvo por el nombre del campo.
 	 *
-	 * <p><b>Origen del formato y estado de verificación (ticket 102)</b>: el
+	 * <p><b>Origen del formato y verificación en vivo (ticket 102)</b>: el
 	 * nombre de campo {@code image[]} y el soporte multi-imagen (hasta 16)
 	 * salen de la referencia oficial de la API de OpenAI para
-	 * `/v1/images/edits` consultada al implementar este ticket
-	 * (2026-09). Los tickets 059/060/061/063 dejaron el precedente de que
-	 * la documentación SOLA no alcanza -- la API real rechazó tamaños que
-	 * la documentación daba por válidos, tres veces seguidas. La
-	 * verificación en vivo contra `studio-dev` (única forma de ejercitar la
-	 * API real, que nunca se llama desde la suite automatizada) se hace
-	 * DESPUÉS del deploy de este ticket; el resultado concreto queda
-	 * registrado en la sección "Hecho" de
-	 * `done/102-texture-v2-continuidad-atlas-parcial-validacion-contenido.md`
-	 * y, si la API rechaza algo, se corrige acá igual que en 059-063.
+	 * `/v1/images/edits`. Los tickets 059/060/061/063 dejaron el precedente
+	 * de que la documentación SOLA no alcanza -- la API real rechazó
+	 * tamaños que la documentación daba por válidos, tres veces seguidas.
+	 * Por eso este formato NO se dio por bueno hasta comprobarlo:
+	 * <b>verificado en vivo el 16-sep-2026 contra `studio-dev`</b>, con una
+	 * generación de textura de modelo completo sobre un mob real de 15
+	 * bones. La primera sheet de un job viaja con UNA imagen y el resto con
+	 * DOS, así que un rechazo del formato habría fallado el job en el
+	 * segundo bone; el job recorrió los 15 sin error. Detalle en la sección
+	 * "Hecho" de
+	 * `done/102-texture-v2-continuidad-atlas-parcial-validacion-contenido.md`.
 	 */
 	private byte[] callEdits(String prompt, String size, List<byte[]> referenceImages) {
 		requireApiKeyConfigured();
