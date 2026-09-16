@@ -4,6 +4,9 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import javax.imageio.ImageIO;
 
 /**
@@ -30,8 +33,19 @@ public class MockImageProvider implements ImageGenerationProvider {
 	private static final String PROVIDER_NAME = "mock";
 	private static final String DEFAULT_MODEL = "mock-model";
 
+	/**
+	 * Tope de requests recordados (ticket 102) -- este doble es un
+	 * singleton de Spring que vive tanto en tests como en un entorno de
+	 * desarrollo con `AI_IMAGE_PROVIDER=mock`; sin tope, una sesión larga
+	 * de desarrollo acumularía bytes de imagen indefinidamente. 50 alcanza
+	 * de sobra para cualquier aserción de test (un job completo genera una
+	 * sheet por bone).
+	 */
+	private static final int MAX_RECORDED_REQUESTS = 50;
+
 	private byte[] nextImage = new byte[0];
 	private byte[] nextTextureSheet;
+	private final List<TextureGenerationSheetRequest> receivedSheetRequests = Collections.synchronizedList(new ArrayList<>());
 
 	public void setNextImage(byte[] imageBytes) {
 		this.nextImage = imageBytes;
@@ -57,8 +71,36 @@ public class MockImageProvider implements ImageGenerationProvider {
 		return DEFAULT_MODEL;
 	}
 
+	/**
+	 * Requests de sheet recibidas, en orden (ticket 102) -- necesarias para
+	 * verificar de punta a punta que el atlas parcial viaja recién de la
+	 * SEGUNDA llamada de un job en adelante (HU-8), algo que no se puede
+	 * observar desde los bytes devueltos. Copia defensiva.
+	 *
+	 * <p><b>Resetear en {@code @BeforeEach}</b> ({@link #clearReceivedSheetRequests})
+	 * en cualquier test que las lea: este doble es un singleton del contexto
+	 * de Spring CACHEADO y compartido entre clases de test -- mismo hallazgo
+	 * real ya documentado para {@code MockReasoningProvider.explicitResponse}
+	 * (ticket 099), donde no resetear provocó fallos intermitentes ~50%.
+	 */
+	public List<TextureGenerationSheetRequest> receivedSheetRequests() {
+		synchronized (receivedSheetRequests) {
+			return List.copyOf(receivedSheetRequests);
+		}
+	}
+
+	public void clearReceivedSheetRequests() {
+		receivedSheetRequests.clear();
+	}
+
 	@Override
 	public byte[] generateTextureSheet(TextureGenerationSheetRequest request) {
+		synchronized (receivedSheetRequests) {
+			if (receivedSheetRequests.size() >= MAX_RECORDED_REQUESTS) {
+				receivedSheetRequests.removeFirst();
+			}
+			receivedSheetRequests.add(request);
+		}
 		if (nextTextureSheet != null) {
 			return nextTextureSheet;
 		}

@@ -3,7 +3,9 @@ package com.galgothstudio.backend.aiorchestrator.provider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ByteArrayResource;
@@ -87,10 +89,31 @@ public class OpenAiImageProvider implements ImageGenerationProvider {
 	public byte[] generateTextureSheet(TextureGenerationSheetRequest request) {
 		String prompt = composePrompt(request.prompt(), request.style());
 		String size = sizeParam(request.sheetWidth(), request.sheetHeight());
-		if (request.referenceImageBytes() != null && request.referenceImageBytes().length > 0) {
-			return callEdits(prompt, size, request.referenceImageBytes());
+		List<byte[]> images = referenceImagesOf(request);
+		if (!images.isEmpty()) {
+			return callEdits(prompt, size, images);
 		}
 		return callGenerations(prompt, size);
+	}
+
+	/**
+	 * Imágenes de entrada de una llamada de edición, EN ORDEN (ticket 102,
+	 * HU-8): primero la referencia original (la fuente artística -- nunca
+	 * se reemplaza ni se descarta), después el atlas parcial ya compuesto
+	 * del mismo job cuando existe (contexto de continuidad entre bones).
+	 * La API real de OpenAI acepta varias imágenes por llamada de edición
+	 * (campo multipart repetido {@code image[]}) para esta familia de
+	 * modelos -- ver {@link #callEdits}.
+	 */
+	private static List<byte[]> referenceImagesOf(TextureGenerationSheetRequest request) {
+		List<byte[]> images = new ArrayList<>(2);
+		if (request.referenceImageBytes() != null && request.referenceImageBytes().length > 0) {
+			images.add(request.referenceImageBytes());
+		}
+		if (request.partialAtlasBytes() != null && request.partialAtlasBytes().length > 0) {
+			images.add(request.partialAtlasBytes());
+		}
+		return images;
 	}
 
 	/**
@@ -252,20 +275,53 @@ public class OpenAiImageProvider implements ImageGenerationProvider {
 		return extractImageBytes(response);
 	}
 
-	private byte[] callEdits(String prompt, String size, byte[] referenceImageBytes) {
+	/**
+	 * <b>Multi-imagen (ticket 102, HU-8)</b>: {@code /v1/images/edits}
+	 * acepta VARIAS imágenes de entrada por llamada para la familia
+	 * `gpt-image-*` -- se envían como partes multipart REPETIDAS bajo el
+	 * mismo nombre {@code image[]} (nunca un solo campo {@code image} con
+	 * varios archivos concatenados), en el orden en que llegan en la lista:
+	 * referencia original primero, atlas parcial después (ver
+	 * {@link #referenceImagesOf}). Con UNA sola imagen se sigue enviando
+	 * igual bajo {@code image[]} -- el mismo formato de array vale para el
+	 * caso de una sola entrada, así no hay dos caminos distintos que
+	 * mantener.
+	 *
+	 * <p>Con una sola imagen, esta llamada es la misma de siempre
+	 * (051/059-065) salvo por el nombre del campo.
+	 *
+	 * <p><b>Origen del formato y estado de verificación (ticket 102)</b>: el
+	 * nombre de campo {@code image[]} y el soporte multi-imagen (hasta 16)
+	 * salen de la referencia oficial de la API de OpenAI para
+	 * `/v1/images/edits` consultada al implementar este ticket
+	 * (2026-09). Los tickets 059/060/061/063 dejaron el precedente de que
+	 * la documentación SOLA no alcanza -- la API real rechazó tamaños que
+	 * la documentación daba por válidos, tres veces seguidas. La
+	 * verificación en vivo contra `studio-dev` (única forma de ejercitar la
+	 * API real, que nunca se llama desde la suite automatizada) se hace
+	 * DESPUÉS del deploy de este ticket; el resultado concreto queda
+	 * registrado en la sección "Hecho" de
+	 * `done/102-texture-v2-continuidad-atlas-parcial-validacion-contenido.md`
+	 * y, si la API rechaza algo, se corrige acá igual que en 059-063.
+	 */
+	private byte[] callEdits(String prompt, String size, List<byte[]> referenceImages) {
 		requireApiKeyConfigured();
 		MultipartBodyBuilder multipart = new MultipartBodyBuilder();
 		multipart.part("model", model);
 		multipart.part("prompt", prompt);
 		multipart.part("size", size);
-		multipart.part("image", new ByteArrayResource(referenceImageBytes) {
-			@Override
-			public String getFilename() {
-				return "reference.png";
-			}
-		}).contentType(MediaType.IMAGE_PNG);
+		for (int i = 0; i < referenceImages.size(); i++) {
+			byte[] imageBytes = referenceImages.get(i);
+			String filename = i == 0 ? "reference.png" : "partial-atlas-" + i + ".png";
+			multipart.part("image[]", new ByteArrayResource(imageBytes) {
+				@Override
+				public String getFilename() {
+					return filename;
+				}
+			}).contentType(MediaType.IMAGE_PNG);
+		}
 
-		log.info("Llamando a OpenAI Images API (edits) -- model={}", model);
+		log.info("Llamando a OpenAI Images API (edits) -- model={}, imágenes de entrada={}", model, referenceImages.size());
 
 		JsonNode response;
 		try {
