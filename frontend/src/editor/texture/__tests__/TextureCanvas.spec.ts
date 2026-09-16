@@ -221,6 +221,56 @@ describe('TextureCanvas.vue', () => {
     })
 
     /**
+     * Ticket 115 -- LA causa del "atlas vacío", confirmada midiendo en vivo
+     * contra `studio-dev`: el store terminaba con los píxeles correctos
+     * (47.968 opacos, los mismos que el PNG) y el `<canvas>` con 0.
+     *
+     * El `<canvas>` se dimensiona desde el store (`:width="atlasWidth"`), y
+     * `loadModelAtlas` llamaba a `redraw()` de forma SÍNCRONA justo después
+     * de `loadAtlas()`, antes de que Vue aplicara esa actualización: en ese
+     * instante el canvas todavía mide 0x0, `putImageData` recorta a nada
+     * (no lanza), y acto seguido Vue le asigna el tamaño real -- lo que en
+     * un canvas RESETEA el bitmap a transparente. Nada vuelve a pintar.
+     *
+     * Por eso la textura sí se veía al aplicar una generada por IA (el
+     * canvas ya estaba dimensionado de una carga anterior) y desaparecía al
+     * recargar la página.
+     */
+    it('pinta el canvas recién DESPUÉS de que el DOM adoptó las dimensiones del atlas -- no sobre un canvas de 0x0', async () => {
+      const pintadoSobre: Array<{ width: number; height: number }> = []
+      // jsdom no implementa `ImageData` (ni un contexto 2D real) -- acá solo
+      // hace falta que el constructor exista para llegar a `putImageData`.
+      vi.stubGlobal(
+        'ImageData',
+        class {
+          data: Uint8ClampedArray
+          width: number
+          height: number
+          constructor(data: Uint8ClampedArray, width: number, height: number) {
+            this.data = data
+            this.width = width
+            this.height = height
+          }
+        },
+      )
+      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+        return {
+          putImageData: () => {
+            pintadoSobre.push({ width: this.width, height: this.height })
+          },
+        } as unknown as CanvasRenderingContext2D
+      })
+      mockDownloadTexture.mockResolvedValue(new Blob(['fake-png'], { type: 'image/png' }))
+      mockDecode.mockResolvedValue({ pixels: solidPixels(4, 4, [10, 20, 30, 255]), width: 4, height: 4 })
+
+      await mountCanvas(modelWith({ width: 4, height: 4, storageKey: 'textures/abc.png' }))
+      await flushPromises()
+
+      expect(pintadoSobre.length).toBeGreaterThan(0)
+      expect(pintadoSobre[0]).toEqual({ width: 4, height: 4 })
+    })
+
+    /**
      * Ticket 115. `loadModelAtlas` tomaba las dimensiones del UV del modelo
      * y los píxeles del PNG descargado, y los combinaba sin comparar nada.
      * Las dos cosas pueden divergir de verdad: `GeometryPlannerService`

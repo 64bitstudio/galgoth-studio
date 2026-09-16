@@ -597,8 +597,20 @@ async function loadModelAtlas(model: MobProjectModel): Promise<void> {
 
   textureEditorStore.loadAtlas(width, height, pixels)
   syncDataTexture()
-  redraw()
+  // El estado se fija ANTES del await: un atlas recién cargado es, por
+  // definición, igual a lo persistido. Diferirlo junto con el pintado haría
+  // que este 'saved' aterrizara DESPUÉS de un trazo del usuario y le pisara
+  // el "Cambios sin guardar" (lo detectaron dos tests del 058).
   saveState.value = 'saved'
+  // Ticket 115: el `nextTick` NO es cosmético ni defensivo, es la corrección.
+  // El `<canvas>` se dimensiona desde el store (`:width="atlasWidth"`), así
+  // que hasta que Vue no aplique esta carga sigue midiendo 0x0: pintar
+  // ahora haría un `putImageData` que se recorta a nada (sin lanzar), y
+  // acto seguido Vue le asignaría el tamaño real, lo que en un canvas
+  // RESETEA el bitmap a transparente. Resultado medido en vivo: store con
+  // los 47.968 píxeles correctos y canvas con cero, sin ningún error.
+  await nextTick()
+  redraw()
 }
 
 // -- Selección cruzada cuboid<->UV en el preview 3D (ticket 049, HU-25) --
