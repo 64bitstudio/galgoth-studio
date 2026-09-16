@@ -219,6 +219,68 @@ describe('TextureCanvas.vue', () => {
       // bloqueo se verifica sobre `canSave`, expuesto vía defineExpose.
       expect(wrapper.vm.canSave).toBe(false)
     })
+
+    /**
+     * Ticket 115. `loadModelAtlas` tomaba las dimensiones del UV del modelo
+     * y los píxeles del PNG descargado, y los combinaba sin comparar nada.
+     * Las dos cosas pueden divergir de verdad: `GeometryPlannerService`
+     * reescala el atlas al regenerar geometría con otra densidad y CONSERVA
+     * el `storageKey` anterior, así que el modelo declara un tamaño y el PNG
+     * persistido tiene otro.
+     */
+    it('si el PNG persistido no mide lo que el modelo declara, muestra error y BLOQUEA "Guardar" -- no arma un atlas incoherente', async () => {
+      const pngBlob = new Blob(['fake-png'], { type: 'image/png' })
+      mockDownloadTexture.mockResolvedValue(pngBlob)
+      mockDecode.mockResolvedValue({ pixels: solidPixels(2, 2, [9, 9, 9, 255]), width: 2, height: 2 })
+
+      const wrapper = await mountCanvas(modelWith({ width: 4, height: 4, storageKey: 'textures/abc.png' }))
+      await flushPromises()
+
+      expect(wrapper.get('[role="alert"]').text()).toContain('2x2')
+      expect(wrapper.vm.canSave).toBe(false)
+      expect(useTextureEditorStore().atlas).toBeNull()
+    })
+
+    /**
+     * Ticket 115. El mismo agujero por el otro lado: `storageKey` presente
+     * pero el backend responde 404 (el asset no está en el storage).
+     * `downloadTexture` devuelve `null` y el código caía a lienzo en blanco
+     * en silencio, con "Guardar" habilitado -- justo el escenario que
+     * sobrescribe la textura buena.
+     */
+    it('si hay storageKey pero el backend no devuelve el PNG (404), muestra error y BLOQUEA "Guardar" -- nunca lienzo en blanco en silencio', async () => {
+      mockDownloadTexture.mockResolvedValue(null)
+
+      const wrapper = await mountCanvas(modelWith({ storageKey: 'textures/abc.png' }))
+      await flushPromises()
+
+      expect(wrapper.get('[role="alert"]').text()).toContain('No se pudo cargar la textura guardada')
+      expect(wrapper.vm.canSave).toBe(false)
+      expect(useTextureEditorStore().atlas).toBeNull()
+    })
+
+    /**
+     * Ticket 115. El store de textura es global y no se resetea al desmontar
+     * el componente. Si una carga falla y se deja el atlas anterior ahí, el
+     * botón "Guardar" de la tab MODELO (`EditorToolbar.vue`, que no conoce
+     * `atlasLoadError`) sube ese atlas viejo como textura de este mob.
+     * Vaciar el store es lo que cierra ese camino, no solo deshabilitar el
+     * botón de esta tab.
+     */
+    it('una carga fallida vacía el atlas del store -- no deja el del mob anterior disponible para que otro "Guardar" lo suba', async () => {
+      const pixels = solidPixels(4, 4, [7, 7, 7, 255])
+      mockDownloadTexture.mockResolvedValue(new Blob(['fake-png'], { type: 'image/png' }))
+      mockDecode.mockResolvedValue({ pixels, width: 4, height: 4 })
+      await mountCanvas(modelWith({ width: 4, height: 4, storageKey: 'textures/previo.png' }))
+      await flushPromises()
+      expect(useTextureEditorStore().atlas?.pixels).toEqual(pixels)
+
+      mockDownloadTexture.mockRejectedValue(new Error('502 Bad Gateway'))
+      await mountCanvas(modelWith({ width: 4, height: 4, storageKey: 'textures/otro.png' }))
+      await flushPromises()
+
+      expect(useTextureEditorStore().atlas).toBeNull()
+    })
   })
 
   describe('ticket 069: reloadAtlas (tras aplicar una textura generada por IA desde el drawer compartido)', () => {
