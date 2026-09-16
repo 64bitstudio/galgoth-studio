@@ -52,8 +52,12 @@ Implementado, tests reales en verde.
   error).
 - 893 tests, 0 fallos. Build y lint verdes.
 
-**Verificado en vivo, parcial**: confirmé por navegador que el deploy a
-DEV carga sin errores de consola. El consentimiento real de Google/
-Facebook (clic en el botón, pantalla del proveedor, vuelta con `?code=`
-real) requiere una cuenta real de Google/Facebook para probarse de
-punta a punta -- pendiente de que Marco lo confirme en DEV.
+**Verificado en vivo end-to-end**: deploy a DEV sin errores de consola,
+y clic real en "Google" desde `https://studio-dev.galgoth.64bitstudio.com/login`
+navegó al selector de cuentas real de Google (`accounts.google.com`),
+con `client_id`/`redirect_uri`/PKCE correctos -- confirma que el botón,
+`authApi.socialLoginUrl` y el endpoint de auth-core-mc funcionan de
+punta a punta. Detenido ahí a propósito (nunca se completó el
+consentimiento con una cuenta real, ni se probó `/auth/callback` contra
+un `?code=` genuino) -- eso exige que Marco complete el flujo una vez
+con su propia cuenta.
