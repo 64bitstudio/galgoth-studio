@@ -9,6 +9,7 @@ import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEventRepository
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobRepository;
 import com.galgothstudio.backend.aiorchestrator.progress.GenerationEventBroadcaster;
 import com.galgothstudio.backend.domain.model.GeometryDetail;
+import com.galgothstudio.backend.domain.model.TextureResolution;
 import com.galgothstudio.backend.project.draft.ApplyGenerationResponse;
 import java.util.List;
 import java.util.UUID;
@@ -49,7 +50,9 @@ public class GenerationJobController {
 	@PostMapping("/api/mobs/{mobId}/generate")
 	public ResponseEntity<StartGenerationResponse> start(@PathVariable UUID mobId, @RequestBody(required = false) StartGenerationRequest body) {
 		GeometryDetail geometryDetail = body != null && body.geometryDetail() != null ? body.geometryDetail() : GeometryDetail.MEDIUM;
-		UUID jobId = mobGenerationService.startGeneration(mobId, geometryDetail);
+		TextureResolution textureResolution =
+				body != null && body.textureResolution() != null ? body.textureResolution() : TextureResolution.MAX_128;
+		UUID jobId = mobGenerationService.startGeneration(mobId, geometryDetail, textureResolution);
 		return ResponseEntity.accepted().body(new StartGenerationResponse(jobId));
 	}
 

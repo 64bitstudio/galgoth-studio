@@ -38,7 +38,7 @@ import ConfigurationStep from './steps/ConfigurationStep.vue'
 import GenerationStep from './steps/GenerationStep.vue'
 import ResultStep from './steps/ResultStep.vue'
 import { createMob, type BaseType, type MobSummary } from '../projects/mobsApi'
-import type { GeometryDetail } from '../api/generationApi'
+import type { GeometryDetail, TextureResolution } from '../api/generationApi'
 import { uploadReferenceImage } from '../api/referenceImagesApi'
 import { applyGeneration, getGenerationResult, type GenerationResult } from '../api/generationResultApi'
 import { ApiError } from '../api/ApiError'
@@ -110,6 +110,9 @@ const createdMob = ref<MobSummary | null>(resumed?.mob ?? null)
 // (GenerationStep); una reconexión tras refresh no vuelve a llamarlo, así
 // que no necesita sobrevivir en persistResumableState.
 const geometryDetail = ref<GeometryDetail>('MEDIUM')
+// Ticket 103 -- mismo criterio que geometryDetail: solo hace falta en
+// memoria hasta el POST /generate inicial.
+const textureResolution = ref<TextureResolution>('128')
 
 const activeJobId = ref<string | null>(null)
 const finalPreviewModel = ref<MobProjectModel | null>(null)
@@ -132,7 +135,9 @@ function backToReference(): void {
   step.value = 'reference'
 }
 
-async function handleConfigurationConfirm(data: { name: string; baseType: BaseType; geometryDetail: GeometryDetail }): Promise<void> {
+async function handleConfigurationConfirm(
+  data: { name: string; baseType: BaseType; geometryDetail: GeometryDetail; textureResolution: TextureResolution },
+): Promise<void> {
   const file = referenceFile.value
   if (!file) {
     return
@@ -140,6 +145,7 @@ async function handleConfigurationConfirm(data: { name: string; baseType: BaseTy
   submitting.value = true
   submitError.value = null
   geometryDetail.value = data.geometryDetail
+  textureResolution.value = data.textureResolution
   try {
     const mob = await createMob(projectId, data.name, data.baseType)
     await uploadReferenceImage(mob.id, file)
@@ -266,6 +272,7 @@ onBeforeUnmount(() => {
         :mob-name="createdMob.name"
         :base-type="createdMob.baseType"
         :geometry-detail="geometryDetail"
+        :texture-resolution="textureResolution"
         @completed="handleGenerationCompleted"
         @back-to-project="backToProject"
       />

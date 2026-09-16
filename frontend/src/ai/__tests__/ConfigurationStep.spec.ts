@@ -29,7 +29,7 @@ describe('ConfigurationStep.vue', () => {
     await wrapper.find('input[aria-label="Nombre del mob"]').setValue('Carcomido')
     await wrapper.find('button.g-button--primary').trigger('click')
 
-    expect(wrapper.emitted('confirm')).toEqual([[{ name: 'Carcomido', baseType: 'humanoid', geometryDetail: 'MEDIUM' }]])
+    expect(wrapper.emitted('confirm')).toEqual([[{ name: 'Carcomido', baseType: 'humanoid', geometryDetail: 'MEDIUM', textureResolution: '128' }]])
   })
 
   it('elegir otro tipo base lo refleja en el confirm emitido', async () => {
@@ -40,7 +40,7 @@ describe('ConfigurationStep.vue', () => {
     await arachnidButton.trigger('click')
     await wrapper.find('button.g-button--primary').trigger('click')
 
-    expect(wrapper.emitted('confirm')).toEqual([[{ name: 'Tejedora', baseType: 'arachnid', geometryDetail: 'MEDIUM' }]])
+    expect(wrapper.emitted('confirm')).toEqual([[{ name: 'Tejedora', baseType: 'arachnid', geometryDetail: 'MEDIUM', textureResolution: '128' }]])
   })
 
   it('click en "Cambiar imagen" emite "back"', async () => {
@@ -104,7 +104,24 @@ describe('ConfigurationStep.vue', () => {
       await highOption.trigger('click')
       await wrapper.find('button.g-button--primary').trigger('click')
 
-      expect(wrapper.emitted('confirm')).toEqual([[{ name: 'Carcomido', baseType: 'humanoid', geometryDetail: 'HIGH' }]])
+      expect(wrapper.emitted('confirm')).toEqual([[{ name: 'Carcomido', baseType: 'humanoid', geometryDetail: 'HIGH', textureResolution: '128' }]])
+    })
+
+    // Ticket 103, HU-10 -- hasta este ticket la selección de resolución NO
+    // viajaba en el payload (el selector existía pero no estaba cableado).
+    it('elegir otra resolución de textura cambia el textureResolution del confirm emitido', async () => {
+      const wrapper = mountStep()
+      await wrapper.find('input[aria-label="Nombre del mob"]').setValue('Carcomido')
+
+      // aria-label scopea el trigger correcto -- hay 2 GSelect en esta pantalla.
+      await wrapper.find('button[aria-label="Resolución de textura"]').trigger('click')
+      const option = wrapper.findAll('.g-select__option').find((o) => o.text() === '256×256')!
+      await option.trigger('click')
+      await wrapper.find('button.g-button--primary').trigger('click')
+
+      expect(wrapper.emitted('confirm')).toEqual([
+        [{ name: 'Carcomido', baseType: 'humanoid', geometryDetail: 'MEDIUM', textureResolution: '256' }],
+      ])
     })
 
     it('muestra la fila informativa fija (Vista previa / Formato de salida)', () => {

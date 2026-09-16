@@ -12,6 +12,7 @@ import com.galgothstudio.backend.domain.model.Cuboid;
 import com.galgothstudio.backend.domain.model.MobProjectModel;
 import com.galgothstudio.backend.domain.model.ModelIntent;
 import com.galgothstudio.backend.domain.model.TextureDocument;
+import com.galgothstudio.backend.domain.model.TextureResolution;
 import com.galgothstudio.backend.domain.model.UvLayout;
 import com.galgothstudio.backend.domain.uv.AtlasResolutionCalculator;
 import com.galgothstudio.backend.domain.uv.TexelDensity;
@@ -19,6 +20,8 @@ import com.galgothstudio.backend.domain.uv.UvLayoutStrategy;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -35,6 +38,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class GeometryPlannerService {
+
+	private static final Logger log = LoggerFactory.getLogger(GeometryPlannerService.class);
 
 	static final String PROMPT_VERSION = "planner-v1";
 	static final String SCHEMA_VERSION = "geometry-operations-v1";
@@ -160,6 +165,11 @@ public class GeometryPlannerService {
 		return new RawOperationsResult(List.copyOf(collected), response);
 	}
 
+	/** Igual que {@link #applyOperations(List, AiProviderResponse, MobProjectModel, TextureResolution)} con el tope por defecto (ticket 103). */
+	public MobProjectModel applyOperations(List<GeometryOperation> operations, AiProviderResponse providerResponse, MobProjectModel startingModel) {
+		return applyOperations(operations, providerResponse, startingModel, TextureResolution.MAX_128);
+	}
+
 	/**
 	 * Aplicación final CON UV (ticket 006) de un batch ya obtenido de
 	 * {@link #requestOperations} -- nunca vuelve a llamar al proveedor.
@@ -172,17 +182,19 @@ public class GeometryPlannerService {
 	 * {@code TextureDocument} placeholder de {@code startingModel} (antes
 	 * de este ticket, un 128×128 hardcodeado) -- se aplica la geometría en
 	 * dos pasadas: (1) sin UV, solo para conocer los cuboids reales que la
-	 * IA propuso; (2) con el atlas correcto (footprint empaquetado a
-	 * densidad {@link TexelDensity#X1}, potencia de 2 inmediatamente
-	 * contenedora, vía {@link AtlasResolutionCalculator}) ya asignado a
+	 * IA propuso; (2) con el atlas correcto (footprint empaquetado a la
+	 * densidad que resulte de {@code textureResolution}, potencia de 2
+	 * inmediatamente contenedora, vía {@link AtlasResolutionCalculator}) ya asignado a
 	 * {@code TextureDocument.width/height} ANTES de invocar
 	 * {@code uvLayoutStrategy}, que es quien de verdad empaqueta las
 	 * regiones dentro de ese atlas ya bien dimensionado.
 	 */
-	public MobProjectModel applyOperations(List<GeometryOperation> operations, AiProviderResponse providerResponse, MobProjectModel startingModel) {
+	public MobProjectModel applyOperations(
+			List<GeometryOperation> operations, AiProviderResponse providerResponse, MobProjectModel startingModel,
+			TextureResolution textureResolution) {
 		try {
 			List<Cuboid> proposedCuboids = GeometryEngine.apply(startingModel, operations).cuboids();
-			MobProjectModel sizedStartingModel = withInitialAtlas(startingModel, proposedCuboids);
+			MobProjectModel sizedStartingModel = withInitialAtlas(startingModel, proposedCuboids, textureResolution);
 			return GeometryEngine.apply(sizedStartingModel, operations, uvLayoutStrategy);
 		} catch (GeometryValidationException e) {
 			throw new InvalidGeometryProposalException(
@@ -190,15 +202,42 @@ public class GeometryPlannerService {
 		}
 	}
 
-	/** Reemplaza {@code texture}/{@code uv} de {@code startingModel} por el atlas inicial calculado a partir de {@code proposedCuboids} -- el resto del modelo (bones/cuboids todavía sin operar, siempre vacíos en este flujo) queda igual. */
-	private static MobProjectModel withInitialAtlas(MobProjectModel startingModel, List<Cuboid> proposedCuboids) {
-		AtlasResolutionCalculator.AtlasSize atlas = AtlasResolutionCalculator.computeAtlas(proposedCuboids, TexelDensity.X1);
+	/**
+	 * Reemplaza {@code texture}/{@code uv} de {@code startingModel} por el
+	 * atlas inicial calculado a partir de {@code proposedCuboids} -- el
+	 * resto del modelo (bones/cuboids todavía sin operar, siempre vacíos en
+	 * este flujo) queda igual.
+	 *
+	 * <p>Ticket 103 (HU-10): la densidad ya no es el hardcode
+	 * {@code TexelDensity.X1} -- sale de {@code textureResolution}, que
+	 * ACOTA el atlas resultante sin fijarlo (ver {@link TextureResolution}:
+	 * decisión explícita del PO para no contradecir el §7, donde el atlas
+	 * es siempre una consecuencia del packing). Si ni la densidad más baja
+	 * entra en el tope elegido, se usa igual la más baja y se registra la
+	 * advertencia -- nunca se tumba la generación por el tope.
+	 */
+	private static MobProjectModel withInitialAtlas(
+			MobProjectModel startingModel, List<Cuboid> proposedCuboids, TextureResolution textureResolution) {
+		TexelDensity density = textureResolution.highestDensityWithin(
+				candidate -> longestSideAt(proposedCuboids, candidate));
+		AtlasResolutionCalculator.AtlasSize atlas = AtlasResolutionCalculator.computeAtlas(proposedCuboids, density);
+		if (Math.max(atlas.width(), atlas.height()) > textureResolution.maxAtlasSidePx()) {
+			log.info(
+					"El atlas resultante ({}x{}) supera el tope de resolución elegido ({}px por lado) incluso a la densidad más baja -- "
+							+ "se conserva el atlas real, nunca se recorta geometría por el tope.",
+					atlas.width(), atlas.height(), textureResolution.maxAtlasSidePx());
+		}
 		TextureDocument sizedTexture = new TextureDocument(atlas.width(), atlas.height(), startingModel.texture().storageKey());
 		return new MobProjectModel(
 				startingModel.mobId(), startingModel.projectId(), startingModel.name(), startingModel.baseType(),
 				startingModel.units(), startingModel.bones(), startingModel.cuboids(), sizedTexture,
 				new UvLayout(atlas.width(), atlas.height(), startingModel.uv().regions(), startingModel.uv().reservations()),
 				startingModel.animations(), startingModel.exportSettings(), startingModel.referenceImages());
+	}
+
+	private static int longestSideAt(List<Cuboid> cuboids, TexelDensity density) {
+		AtlasResolutionCalculator.AtlasSize atlas = AtlasResolutionCalculator.computeAtlas(cuboids, density);
+		return Math.max(atlas.width(), atlas.height());
 	}
 
 }
