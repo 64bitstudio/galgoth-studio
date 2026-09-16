@@ -52,7 +52,7 @@ class TextureGenerationServicePreviewPatchTest {
 		return new TextureGenerationService(
 				mock(MobRepository.class), mock(ReferenceImageRepository.class), assetStorageService, mock(DraftPersistenceService.class),
 				mock(TexturePlanService.class), mock(TextureGenerationSheetPlanner.class), mock(TextureSheetSlicer.class),
-				mock(TextureContentValidator.class), mock(TextureCompositorService.class), mock(ImageGenerationProvider.class),
+				mock(TextureEdgeFiller.class), mock(TextureContentValidator.class), mock(TextureCompositorService.class), mock(ImageGenerationProvider.class),
 				mock(TextureService.class), mock(AiJobRepository.class),
 				mock(AiJobEventRepository.class), mock(GenerationEventBroadcaster.class), objectMapper, mock(Executor.class));
 	}
