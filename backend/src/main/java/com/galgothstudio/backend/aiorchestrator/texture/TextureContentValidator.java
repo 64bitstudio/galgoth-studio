@@ -4,6 +4,8 @@ import com.galgothstudio.backend.domain.model.TexturePalette;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Stream;
 import org.springframework.stereotype.Component;
 
 /**
@@ -132,53 +134,59 @@ public class TextureContentValidator {
 		if (expectedPalette == null) {
 			return;
 		}
-		int[] dominant = stats.averagePaintedRgb();
-		Double distance = closestPaletteDistance(dominant, expectedPalette);
-		if (distance != null && distance > MAX_PALETTE_DISTANCE) {
-			findings.add(new Finding(cuboidId, face, FindingType.PALETTE_DIVERGENCE, String.format(
-					"color dominante #%02X%02X%02X a distancia %.0f de la paleta declarada (máx. %.0f)", dominant[0], dominant[1], dominant[2],
-					distance, MAX_PALETTE_DISTANCE)));
-		}
+		Rgb dominant = stats.averagePaintedRgb();
+		closestPaletteDistance(dominant, expectedPalette)
+				.filter(distance -> distance > MAX_PALETTE_DISTANCE)
+				.ifPresent(distance -> findings.add(new Finding(cuboidId, face, FindingType.PALETTE_DIVERGENCE, String.format(
+						"color dominante #%02X%02X%02X a distancia %.0f de la paleta declarada (máx. %.0f)", dominant.r(), dominant.g(),
+						dominant.b(), distance, MAX_PALETTE_DISTANCE))));
 	}
 
-	/** {@code null} si la paleta no trae ningún color parseable -- chequeo omitido, nunca un fallo (AC "best-effort"). */
-	private static Double closestPaletteDistance(int[] dominant, TexturePalette palette) {
+	/** Vacío si la paleta no trae ningún color parseable -- chequeo omitido, nunca un fallo (AC "best-effort"). */
+	private static Optional<Double> closestPaletteDistance(Rgb dominant, TexturePalette palette) {
 		Double best = null;
-		for (String hex : new String[] {palette.dominantColorHex(), palette.accentColorHex()}) {
-			int[] rgb = parseHex(hex);
-			if (rgb == null) {
+		for (String hex : Stream.of(palette.dominantColorHex(), palette.accentColorHex()).toList()) {
+			Optional<Rgb> parsed = Rgb.parseHex(hex);
+			if (parsed.isEmpty()) {
 				continue;
 			}
-			double distance = Math.sqrt(
-					Math.pow(dominant[0] - (double) rgb[0], 2) + Math.pow(dominant[1] - (double) rgb[1], 2)
-							+ Math.pow(dominant[2] - (double) rgb[2], 2));
+			double distance = dominant.distanceTo(parsed.get());
 			if (best == null || distance < best) {
 				best = distance;
 			}
 		}
-		return best;
+		return Optional.ofNullable(best);
 	}
 
-	/** {@code null} para cualquier valor no parseable como `#RRGGBB` -- el plan de textura viene de un LLM (052), nunca se asume bien formado. */
-	private static int[] parseHex(String hex) {
-		if (hex == null) {
-			return null;
+	/** Color RGB 0-255 -- un record, nunca un {@code int[]}: un array como valor de retorno/campo arrastra null-checks y equals/hashCode por referencia (S1168/S6218). */
+	private record Rgb(int r, int g, int b) {
+
+		/** Vacío para cualquier valor no parseable como `#RRGGBB` -- el plan de textura viene de un LLM (052), nunca se asume bien formado. */
+		static Optional<Rgb> parseHex(String hex) {
+			if (hex == null) {
+				return Optional.empty();
+			}
+			String value = hex.startsWith("#") ? hex.substring(1) : hex;
+			if (value.length() != 6) {
+				return Optional.empty();
+			}
+			try {
+				return Optional.of(new Rgb(
+						Integer.parseInt(value.substring(0, 2), 16), Integer.parseInt(value.substring(2, 4), 16),
+						Integer.parseInt(value.substring(4, 6), 16)));
+			} catch (NumberFormatException _) {
+				return Optional.empty();
+			}
 		}
-		String value = hex.startsWith("#") ? hex.substring(1) : hex;
-		if (value.length() != 6) {
-			return null;
-		}
-		try {
-			return new int[] {
-					Integer.parseInt(value.substring(0, 2), 16), Integer.parseInt(value.substring(2, 4), 16),
-					Integer.parseInt(value.substring(4, 6), 16)};
-		} catch (NumberFormatException e) {
-			return null;
+
+		double distanceTo(Rgb other) {
+			return Math.sqrt(
+					Math.pow(r - (double) other.r(), 2) + Math.pow(g - (double) other.g(), 2) + Math.pow(b - (double) other.b(), 2));
 		}
 	}
 
 	/** Estadísticas de un solo barrido de píxeles -- recorrer la imagen una vez por slice, no una vez por chequeo. */
-	private record PixelStats(int totalPixels, int paintedPixels, double luminanceStdDev, int[] averagePaintedRgb) {
+	private record PixelStats(int totalPixels, int paintedPixels, double luminanceStdDev, Rgb averagePaintedRgb) {
 
 		static PixelStats of(BufferedImage image) {
 			int total = image.getWidth() * image.getHeight();
@@ -210,11 +218,11 @@ public class TextureContentValidator {
 				}
 			}
 			if (painted == 0) {
-				return new PixelStats(total, 0, 0, new int[] {0, 0, 0});
+				return new PixelStats(total, 0, 0, new Rgb(0, 0, 0));
 			}
 			double meanLum = sumLum / painted;
 			double variance = Math.max(0, sumLumSquared / painted - meanLum * meanLum);
-			int[] average = {(int) (sumR / painted), (int) (sumG / painted), (int) (sumB / painted)};
+			Rgb average = new Rgb((int) (sumR / painted), (int) (sumG / painted), (int) (sumB / painted));
 			return new PixelStats(total, painted, Math.sqrt(variance), average);
 		}
 	}
