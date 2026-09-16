@@ -1,0 +1,35 @@
+{
+  "silhouette": "hunched decayed humanoid with oversized head and long arms",
+  "proportions": {
+    "headScale": 1.35,
+    "armLength": 1.30,
+    "handScale": 1.45,
+    "shoulderWidth": 1.05
+  },
+  "asymmetry": 0.35,
+  "features": [
+    "large cubic head",
+    "protruding jaw",
+    "long arms",
+    "oversized hands with claws",
+    "torn cloth tatters on shoulders and legs",
+    "ragged loincloth skirt",
+    "glowing violet cracks across body",
+    "glowing violet eyes"
+  ],
+  "featureCategories": [
+    "HEAD",
+    "JAW",
+    "ARM",
+    "CLAW",
+    "TORN_CLOTH",
+    "LOINCLOTH",
+    "EMISSIVE_CRACK",
+    "EYE"
+  ],
+  "materials": [
+    "desaturated grey-green decayed skin",
+    "dark brown torn cloth",
+    "violet emissive cracks"
+  ]
+}

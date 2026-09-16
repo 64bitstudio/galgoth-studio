@@ -117,7 +117,7 @@ class MobGenerationServiceTest {
 		mockVision.setNextResponse(Files.readString(new File("../contracts/fixtures/model-intent-example.json").toPath()));
 		mockVision.setOnCall(() -> {
 		});
-		((MockReasoningProvider) reasoningProvider).setNextResponse(null);
+		((MockReasoningProvider) reasoningProvider).reset(); // ticket 105: limpia el estado completo del doble, no solo la respuesta explícita
 	}
 
 	private UUID aProjectAndMobWithReference() {

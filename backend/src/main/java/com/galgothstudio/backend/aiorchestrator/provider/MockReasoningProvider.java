@@ -1,5 +1,6 @@
 package com.galgothstudio.backend.aiorchestrator.provider;
 
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -101,15 +102,64 @@ public class MockReasoningProvider implements StructuredReasoningProvider {
 			""";
 
 	private String explicitResponse;
+	private Function<ReasoningRequest, String> responseFactory;
 
 	public void setNextResponse(String rawJson) {
 		this.explicitResponse = rawJson;
 	}
 
+	/**
+	 * Limpia por completo el estado mutable de este doble de una sola vez -- el
+	 * reset a llamar desde {@code @BeforeEach}.
+	 *
+	 * <p>Existe por un hallazgo real REPETIDO: este es un bean singleton de
+	 * un contexto de Spring CACHEADO y compartido entre clases de test, así
+	 * que lo que una clase deja seteado lo hereda la siguiente (ticket 099,
+	 * fallos intermitentes ~50%; ticket 105, el factory nuevo filtrándose a
+	 * {@code MobGenerationServiceTest}). Resetear campo por campo obliga a
+	 * acordarse de cada campo nuevo en cada clase de test: con este método,
+	 * agregar estado mutable acá lo cubre en todos lados de una sola vez.
+	 */
+	public void reset() {
+		this.explicitResponse = null;
+		this.responseFactory = null;
+	}
+
+	/**
+	 * Respuesta construida A PARTIR del request real (ticket 105) -- hace
+	 * falta cuando el fixture necesita ids que solo existen en runtime: los
+	 * bones primarios se crean con {@code UUID.randomUUID()} en
+	 * {@code GeometryEngine}, así que un fixture fijo jamás podría
+	 * referenciarlos. Mismo espíritu que {@link #defaultSecondaryResponseFor},
+	 * que ya extrae un id real del prompt en vez de inventarlo, pero
+	 * controlado por el test.
+	 *
+	 * <p>Como cualquier estado mutable de este doble: resetear a
+	 * {@code null} en {@code @BeforeEach} (contexto de Spring cacheado y
+	 * compartido entre clases de test -- ver el Javadoc de la clase).
+	 */
+	public void setNextResponseFactory(Function<ReasoningRequest, String> factory) {
+		this.responseFactory = factory;
+	}
+
 	@Override
 	public AiProviderResponse reason(ReasoningRequest request) {
-		String response = explicitResponse != null ? explicitResponse : defaultResponseFor(request);
+		String response = resolveResponse(request);
 		return new AiProviderResponse(response, PROVIDER_NAME, DEFAULT_MODEL, request.promptVersion(), request.schemaVersion());
+	}
+
+	/** Precedencia: respuesta explícita fija -> factory que ve el request -> default según `promptVersion`. */
+	private String resolveResponse(ReasoningRequest request) {
+		if (explicitResponse != null) {
+			return explicitResponse;
+		}
+		if (responseFactory != null) {
+			String fromFactory = responseFactory.apply(request);
+			if (fromFactory != null) {
+				return fromFactory;
+			}
+		}
+		return defaultResponseFor(request);
 	}
 
 	private String defaultResponseFor(ReasoningRequest request) {
