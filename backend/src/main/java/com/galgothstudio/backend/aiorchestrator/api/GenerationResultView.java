@@ -1,5 +1,6 @@
 package com.galgothstudio.backend.aiorchestrator.api;
 
+import com.galgothstudio.backend.aiorchestrator.GenerationWarning;
 import com.galgothstudio.backend.domain.export.validation.ValidationIssue;
 import java.util.List;
 import java.util.UUID;
@@ -21,5 +22,13 @@ public record GenerationResultView(
 		int textureWidth,
 		int textureHeight,
 		boolean fmmCompatible,
-		List<ValidationIssue> fmmIssues) {
+		List<ValidationIssue> fmmIssues,
+		List<GenerationWarning> warnings) {
+
+	/** Sobrecarga de compatibilidad anterior al ticket 116 -- sin advertencias. */
+	public GenerationResultView(
+			UUID jobId, UUID mobId, String mobName, int cuboidCount, int boneCount, int textureWidth, int textureHeight,
+			boolean fmmCompatible, List<ValidationIssue> fmmIssues) {
+		this(jobId, mobId, mobName, cuboidCount, boneCount, textureWidth, textureHeight, fmmCompatible, fmmIssues, List.of());
+	}
 }

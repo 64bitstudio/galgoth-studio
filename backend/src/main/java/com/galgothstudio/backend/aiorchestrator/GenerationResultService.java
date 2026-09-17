@@ -1,5 +1,7 @@
 package com.galgothstudio.backend.aiorchestrator;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.galgothstudio.backend.aiorchestrator.api.GenerationResultView;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEntity;
@@ -13,7 +15,10 @@ import com.galgothstudio.backend.project.draft.DraftPersistenceService;
 import com.galgothstudio.backend.project.draft.MobNotFoundException;
 import com.galgothstudio.backend.project.persistence.MobEntity;
 import com.galgothstudio.backend.project.persistence.MobRepository;
+import java.util.List;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -27,6 +32,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class GenerationResultService {
+
+	private static final Logger log = LoggerFactory.getLogger(GenerationResultService.class);
 
 	private final AiJobRepository aiJobRepository;
 	private final MobRepository mobRepository;
@@ -68,7 +75,37 @@ public class GenerationResultService {
 				model.texture().width(),
 				model.texture().height(),
 				validation.pass(),
-				validation.issues());
+				validation.issues(),
+				readWarnings(job.getWarningsJson()));
+	}
+
+	/**
+	 * Ticket 116 -- la API devuelve siempre una lista, nunca {@code null}.
+	 *
+	 * <p><b>Dónde queda la distinción entre "no hubo advertencias" y "no se
+	 * midió"</b>: en la BASE. `ai_jobs.warnings_jsonb` es nullable a
+	 * propósito -- NULL es un job anterior a este ticket, `[]` es uno que
+	 * midió y no tuvo ninguna -- y ahí es donde sirve para analizar el
+	 * histórico. En la API las dos se ven como `[]`, porque un job viejo sin
+	 * advertencias registradas tampoco tiene nada útil que mostrarle al
+	 * consumidor.
+	 *
+	 * <p>El criterio de aceptación del ticket ("la ausencia de advertencias
+	 * no se confunde con no se midió") se cumple donde importa: un job que SÍ
+	 * corrió siempre escribe `[]`, nunca deja NULL.
+	 */
+	private List<GenerationWarning> readWarnings(String warningsJson) {
+		if (warningsJson == null) {
+			return List.of();
+		}
+		try {
+			return objectMapper.readValue(warningsJson, new TypeReference<List<GenerationWarning>>() {});
+		} catch (JsonProcessingException e) {
+			// Una advertencia ilegible no puede tumbar la consulta del resultado:
+			// lo que el usuario vino a buscar es su modelo.
+			log.warn("No se pudieron leer las advertencias persistidas del job: {}", e.getMessage());
+			return List.of();
+		}
 	}
 
 	/** "Usar este modelo" -- delega en {@link DraftPersistenceService#applyGenerationProposal}, nunca vuelve a ejecutar el pipeline de IA. */

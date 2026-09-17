@@ -1,5 +1,6 @@
 package com.galgothstudio.backend.aiorchestrator.texture;
 
+import com.galgothstudio.backend.aiorchestrator.GenerationWarning;
 import java.util.List;
 import java.util.UUID;
 
@@ -21,5 +22,15 @@ public record TextureGenerationResultView(
 		List<TouchedFace> touchedFaces,
 		boolean hasHandPaintedOverwrite,
 		String beforeAtlasPngBase64,
-		String afterAtlasPngBase64) {
+		String afterAtlasPngBase64,
+		List<GenerationWarning> warnings) {
+
+	/** Sobrecarga de compatibilidad anterior al ticket 116 -- sin advertencias. */
+	public TextureGenerationResultView(
+			UUID jobId, UUID mobId, boolean wholeModel, List<String> touchedBoneIds, List<TouchedFace> touchedFaces,
+			boolean hasHandPaintedOverwrite, String beforeAtlasPngBase64, String afterAtlasPngBase64) {
+		this(
+				jobId, mobId, wholeModel, touchedBoneIds, touchedFaces, hasHandPaintedOverwrite, beforeAtlasPngBase64,
+				afterAtlasPngBase64, List.of());
+	}
 }

@@ -261,9 +261,13 @@ public class MobGenerationService {
 			// 70-90s sin ningún evento. Con streaming=true, cada operación
 			// real dispara su propio evento acá abajo (via applySecondaryStepAndEmit),
 			// en vez de un replay post-hoc instantáneo.
+			// Ticket 121: la densidad llega hasta los constraints para que el
+			// mínimo representable por eje (1/texelsPerUnit) salga de la
+			// densidad REAL del job, no de una constante.
+			int texelsPerUnit = context.textureDensity().texelDensity().texelsPerUnit();
 			GeometryPlanExecution secondaryExecution = geometryStreamingEnabled
-					? planSecondaryWithStreaming(jobId, seq, visionResult.modelIntent(), primaryModel, secondaryBudget)
-					: planSecondaryWithHeartbeat(jobId, seq, visionResult.modelIntent(), primaryModel, secondaryBudget);
+					? planSecondaryWithStreaming(jobId, seq, visionResult.modelIntent(), primaryModel, secondaryBudget, texelsPerUnit)
+					: planSecondaryWithHeartbeat(jobId, seq, visionResult.modelIntent(), primaryModel, secondaryBudget, texelsPerUnit);
 			updateJobProviderInfo(jobId, secondaryExecution.providerResponse());
 			checkCancellation(jobId);
 
@@ -289,7 +293,7 @@ public class MobGenerationService {
 			ModelGenerationQualityReport.Metric fmmMetric = validateFmmCompatibilityInformational(jobId, finalModel);
 			logQualityReport(jobId, visionResult.modelIntent(), finalModel, fmmMetric);
 
-			completeJob(jobId, finalModel);
+			completeJob(jobId, finalModel, secondaryExecution.warnings());
 			emit(jobId, seq, GenerationStage.COMPLETADO, "Generación completada.", 100, previewSnapshotPayload(finalModel));
 		} catch (GenerationCancelledException e) {
 			cancelJob(jobId);
@@ -312,8 +316,16 @@ public class MobGenerationService {
 		}
 	}
 
-	/** Resultado de la fase de planeamiento geométrico (streaming o heartbeat, ticket 038) -- las mismas 2 cosas que antes devolvía {@code requestOperations} (lista cruda + `AiProviderResponse`), ahora sin acoplar la aplicación final de UV a este paso. */
-	private record GeometryPlanExecution(List<GeometryOperation> operations, AiProviderResponse providerResponse) {
+	/**
+	 * Resultado de la fase de planeamiento geométrico (streaming o heartbeat,
+	 * ticket 038) -- lista cruda de operaciones + `AiProviderResponse`, sin
+	 * acoplar la aplicación final de UV a este paso.
+	 *
+	 * <p>Ticket 116: `warnings` viaja acá junto a las operaciones para que
+	 * {@code completeJob} pueda persistirlas -- antes se perdían en el log.
+	 */
+	private record GeometryPlanExecution(
+			List<GeometryOperation> operations, AiProviderResponse providerResponse, List<GenerationWarning> warnings) {
 	}
 
 	/**
@@ -327,9 +339,11 @@ public class MobGenerationService {
 	 * cada rechazo queda como advertencia logueada, no como algo que el
 	 * usuario ve aparecer y luego desaparecer).
 	 */
-	private GeometryPlanExecution planSecondaryWithStreaming(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel primaryModel, int secondaryBudget) {
+	private GeometryPlanExecution planSecondaryWithStreaming(
+			UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel primaryModel, int secondaryBudget, int texelsPerUnit) {
 		List<GeometryOperation> collected = new ArrayList<>();
 		List<SecondaryGeometryConstraints.Rejection> rejections = new ArrayList<>();
+		List<SecondaryGeometryConstraints.Adjustment> adjustments = new ArrayList<>();
 		MobProjectModel[] previewBox = {primaryModel};
 		List<SecondaryGeometryPlanner.BoneDescriptor> primaryBones = boneDescriptorsFrom(primaryModel);
 		AtomicBoolean firstOperationReceived = new AtomicBoolean(false);
@@ -350,21 +364,25 @@ public class MobGenerationService {
 				raw = secondaryGeometryPlanner.planStreaming(modelIntent, primaryBones, secondaryBudget, op -> {
 					checkCancellation(jobId);
 					firstOperationReceived.set(true);
-					SecondaryGeometryConstraints.ValidationResult validated = SecondaryGeometryConstraints.validate(List.of(op), primaryModel);
+					SecondaryGeometryConstraints.ValidationResult validated = SecondaryGeometryConstraints.validate(List.of(op), primaryModel, texelsPerUnit);
+					adjustments.addAll(validated.adjustments());
 					if (validated.accepted().isEmpty()) {
 						rejections.addAll(validated.rejected());
 						return;
 					}
-					collected.add(op);
+					// El aceptado puede ser el op ENGROSADO (ticket 121), no el original.
+					GeometryOperation effective = validated.accepted().get(0);
+					collected.add(effective);
 					int progressPct = Math.min(89, 40 + collected.size());
-					previewBox[0] = applySecondaryStepAndEmit(jobId, seq, primaryModel, collected, previewBox[0], op, progressPct);
+					previewBox[0] = applySecondaryStepAndEmit(jobId, seq, primaryModel, collected, previewBox[0], effective, progressPct);
 				});
 			} finally {
 				heartbeat.cancel(true);
 			}
 		}
 		logRejections(jobId, rejections);
-		return new GeometryPlanExecution(collected, raw.providerResponse());
+		logAdjustments(jobId, adjustments);
+		return new GeometryPlanExecution(collected, raw.providerResponse(), warningsFrom(rejections, adjustments));
 	}
 
 	/**
@@ -372,7 +390,8 @@ public class MobGenerationService {
 	 * (switch operativo apagado): espera la respuesta completa, valida el
 	 * batch entero de una vez, y reproduce SOLO las operaciones aceptadas.
 	 */
-	private GeometryPlanExecution planSecondaryWithHeartbeat(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel primaryModel, int secondaryBudget) {
+	private GeometryPlanExecution planSecondaryWithHeartbeat(
+			UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel primaryModel, int secondaryBudget, int texelsPerUnit) {
 		List<SecondaryGeometryPlanner.BoneDescriptor> primaryBones = boneDescriptorsFrom(primaryModel);
 		RawOperationsResult raw;
 		try (ScheduledExecutorService heartbeatScheduler = Executors.newSingleThreadScheduledExecutor()) {
@@ -393,10 +412,12 @@ public class MobGenerationService {
 		}
 
 		checkCancellation(jobId);
-		SecondaryGeometryConstraints.ValidationResult validated = SecondaryGeometryConstraints.validate(raw.operations(), primaryModel);
+		SecondaryGeometryConstraints.ValidationResult validated = SecondaryGeometryConstraints.validate(raw.operations(), primaryModel, texelsPerUnit);
 		logRejections(jobId, validated.rejected());
+		logAdjustments(jobId, validated.adjustments());
 		replaySecondaryOpsWithPreview(jobId, seq, validated.accepted(), primaryModel);
-		return new GeometryPlanExecution(validated.accepted(), raw.providerResponse());
+		return new GeometryPlanExecution(
+				validated.accepted(), raw.providerResponse(), warningsFrom(validated.rejected(), validated.adjustments()));
 	}
 
 	/** Reproduce SOLO operaciones ya validadas (nunca vuelve a llamar al proveedor) de a una por vez -- usado en modo heartbeat; en modo streaming, {@link #applySecondaryStepAndEmit} se llama directo a medida que cada operación llega y pasa la validación. */
@@ -440,10 +461,54 @@ public class MobGenerationService {
 		return descriptors;
 	}
 
-	/** Ningún rechazo de {@link SecondaryGeometryConstraints} tumba el job (HU-2b) -- se loguean con su razón concreta para diagnóstico; exponerlos en la API como `generationWarnings` estructurados queda para un ticket futuro (candidato natural: 104, `ModelGenerationQualityReport`). */
+	/**
+	 * Ticket 116 -- traduce lo que los constraints decidieron a advertencias
+	 * estructuradas y persistibles. El log sigue existiendo (sirve para
+	 * diagnosticar en el momento), pero ya no es el único lugar donde queda
+	 * registro: tres tickets distintos (099, 102, 114) habían dejado escrito
+	 * el mismo pendiente, y el 121 se quedó sin poder cerrar un criterio de
+	 * aceptación por esto.
+	 */
+	private static List<GenerationWarning> warningsFrom(
+			List<SecondaryGeometryConstraints.Rejection> rejections, List<SecondaryGeometryConstraints.Adjustment> adjustments) {
+		List<GenerationWarning> warnings = new ArrayList<>(rejections.size() + adjustments.size());
+		for (SecondaryGeometryConstraints.Adjustment adjustment : adjustments) {
+			warnings.add(new GenerationWarning(
+					GenerationWarning.Type.GEOMETRIA_ENGROSADA, adjustment.reason(), nameOf(adjustment.original())));
+		}
+		for (SecondaryGeometryConstraints.Rejection rejection : rejections) {
+			warnings.add(new GenerationWarning(
+					GenerationWarning.Type.GEOMETRIA_RECHAZADA, rejection.reason(), nameOf(rejection.operation())));
+		}
+		return warnings;
+	}
+
+	private static String nameOf(GeometryOperation operation) {
+		return operation instanceof CreateCuboid cuboid ? cuboid.name() : null;
+	}
+
+	/** Ningún rechazo de {@link SecondaryGeometryConstraints} tumba el job (HU-2b) -- se loguean con su razón concreta para diagnóstico inmediato, y desde el ticket 116 además se persisten vía {@link #warningsFrom}. */
 	private void logRejections(UUID jobId, List<SecondaryGeometryConstraints.Rejection> rejections) {
 		for (SecondaryGeometryConstraints.Rejection rejection : rejections) {
 			log.info("Job {}: geometría secundaria rechazada -- {}", jobId, rejection.reason());
+		}
+	}
+
+	/**
+	 * Ticket 121 -- una pieza que la IA propuso más fina de lo que la
+	 * densidad puede representar se engrosa al mínimo, y eso NUNCA pasa en
+	 * silencio: cambiarle la geometría propuesta al usuario sin decírselo
+	 * sería exactamente el tipo de parche que la regla 8 prohíbe.
+	 *
+	 * <p>Queda en el log, igual que {@link #logRejections}. Exponerlo de
+	 * forma consultable fuera del log es alcance del ticket 116 (el canal de
+	 * advertencias que hoy no existe), no de este.
+	 */
+	private void logAdjustments(UUID jobId, List<SecondaryGeometryConstraints.Adjustment> adjustments) {
+		for (SecondaryGeometryConstraints.Adjustment adjustment : adjustments) {
+			log.info(
+					"Job {}: geometría secundaria engrosada al mínimo representable -- {} [{}]", jobId, adjustment.reason(),
+					adjustment.adjusted());
 		}
 	}
 
@@ -612,10 +677,13 @@ public class MobGenerationService {
 		aiJobRepository.save(job);
 	}
 
-	private void completeJob(UUID jobId, MobProjectModel model) {
+	private void completeJob(UUID jobId, MobProjectModel model, List<GenerationWarning> warnings) {
 		AiJobEntity job = aiJobRepository.findById(jobId).orElseThrow();
 		job.setStatus(STATUS_COMPLETED);
 		job.setProposalJson(writeJson(model));
+		// Ticket 116: `[]` es un valor con significado -- "se midio y no hubo
+		// advertencias" -- distinto de `null`, que es "job anterior al ticket".
+		job.setWarningsJson(writeJson(warnings));
 		job.setFinishedAt(Instant.now());
 		aiJobRepository.save(job);
 	}

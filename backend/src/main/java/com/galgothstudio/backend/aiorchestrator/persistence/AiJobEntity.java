@@ -68,6 +68,17 @@ public class AiJobEntity {
 	@Column(name = "proposal_jsonb", columnDefinition = "jsonb")
 	private String proposalJson;
 
+	/**
+	 * Ticket 116 -- advertencias estructuradas del pipeline.
+	 * <b>{@code null} y {@code []} significan cosas distintas</b>: null es un
+	 * job anterior al ticket (nunca se midió), {@code []} es un job que se
+	 * midió y no tuvo ninguna advertencia. Confundirlos haría que "no hubo
+	 * problemas" y "no sabemos" se vean igual.
+	 */
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(name = "warnings_jsonb", columnDefinition = "jsonb")
+	private String warningsJson;
+
 	@Column
 	private String error;
 
@@ -186,6 +197,15 @@ public class AiJobEntity {
 
 	public void setProposalJson(String proposalJson) {
 		this.proposalJson = proposalJson;
+	}
+
+	/** Ticket 116 -- {@code null} = job que nunca midió advertencias; {@code "[]"} = midió y no hubo ninguna. */
+	public String getWarningsJson() {
+		return warningsJson;
+	}
+
+	public void setWarningsJson(String warningsJson) {
+		this.warningsJson = warningsJson;
 	}
 
 	public String getError() {

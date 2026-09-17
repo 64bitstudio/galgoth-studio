@@ -1,5 +1,7 @@
 package com.galgothstudio.backend.aiorchestrator.texture;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -7,6 +9,7 @@ import com.galgothstudio.backend.aiorchestrator.JobNotCompletedException;
 import com.galgothstudio.backend.aiorchestrator.JobNotFoundException;
 import com.galgothstudio.backend.aiorchestrator.NoReferenceImageException;
 import com.galgothstudio.backend.aiorchestrator.edit.NoBaseRevisionException;
+import com.galgothstudio.backend.aiorchestrator.GenerationWarning;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEntity;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEventEntity;
 import com.galgothstudio.backend.aiorchestrator.persistence.AiJobEventRepository;
@@ -198,6 +201,9 @@ public class TextureGenerationService {
 		UUID jobId = context.jobId();
 		AtomicInteger seq = new AtomicInteger(0);
 		AtomicInteger progressCounter = new AtomicInteger(0);
+		// Ticket 116 -- se acumulan a lo largo del pipeline completo y se
+		// persisten al terminar: hasta este ticket morían en `log.info`.
+		List<GenerationWarning> warnings = new ArrayList<>();
 		try {
 			emit(jobId, seq, GenerationStage.ANALIZANDO_PALETA, "Analizando paleta y material de la imagen de referencia…", nextProgress(progressCounter), null);
 
@@ -256,12 +262,12 @@ public class TextureGenerationService {
 							new AiProviderResponse(null, imageGenerationProvider.provider(), imageGenerationProvider.model(), PROMPT_VERSION_SHEET, SCHEMA_VERSION_SHEET));
 
 					List<TextureSlice> slices = textureSheetSlicer.slice(sheetBytes, sheet, inflatedSize[0], inflatedSize[1]);
-					logContentFindings(jobId, slices, context.detailLevel(), planResult.texturePlan().palette());
+					logContentFindings(jobId, slices, context.detailLevel(), planResult.texturePlan().palette(), warnings);
 					currentAtlas = textureCompositorService.compose(currentAtlas, slices);
 					// Ticket 114 -- después de componer, no antes: ver Javadoc de
 					// `fillEdgesAndLog`. El validador de contenido de arriba sigue
 					// viendo el slice CRUDO, que es lo que el generador produjo.
-					currentAtlas = fillEdgesAndLog(jobId, currentAtlas, sheet.placements());
+					currentAtlas = fillEdgesAndLog(jobId, currentAtlas, sheet.placements(), warnings);
 
 					for (CuboidFacePlacement placement : sheet.placements()) {
 						boolean handOverwrite = isHandPaintedOrUnknownOrigin(context.model().uv(), placement.cuboidId(), placement.face());
@@ -292,7 +298,7 @@ public class TextureGenerationService {
 			TextureGenerationProposal proposal = new TextureGenerationProposal(
 					proposalModel, base64(currentAtlas), context.wholeModel(), context.targetBoneIds(), touchedFaces, base64(beforeAtlas));
 
-			completeJob(jobId, proposal);
+			completeJob(jobId, proposal, warnings);
 			emit(jobId, seq, GenerationStage.COMPLETADO, "Generación de textura completada.", 100, null);
 		} catch (RuntimeException e) {
 			log.error("Fallo inesperado en el pipeline de generación de textura del job {}", jobId, e);
@@ -310,7 +316,20 @@ public class TextureGenerationService {
 		boolean hasHandPaintedOverwrite = proposal.touchedFaces().stream().anyMatch(TouchedFace::handPaintedOverwrite);
 		return new TextureGenerationResultView(
 				job.getId(), job.getMobId(), proposal.wholeModel(), proposal.touchedBoneIds(), proposal.touchedFaces(), hasHandPaintedOverwrite,
-				proposal.beforeAtlasPngBase64(), proposal.composedAtlasPngBase64());
+				proposal.beforeAtlasPngBase64(), proposal.composedAtlasPngBase64(), readWarnings(job.getWarningsJson()));
+	}
+
+	/** Ticket 116 -- siempre una lista, nunca {@code null}; la distinción entre "no hubo" y "no se midió" vive en la BASE (`warnings_jsonb` nullable), ver {@code GenerationResultService.readWarnings}. */
+	private List<GenerationWarning> readWarnings(String warningsJson) {
+		if (warningsJson == null) {
+			return List.of();
+		}
+		try {
+			return objectMapper.readValue(warningsJson, new TypeReference<List<GenerationWarning>>() {});
+		} catch (JsonProcessingException e) {
+			log.warn("No se pudieron leer las advertencias persistidas del job de textura: {}", e.getMessage());
+			return List.of();
+		}
 	}
 
 	/**
@@ -390,7 +409,7 @@ public class TextureGenerationService {
 	 * @return el atlas con los bordes rellenados, o el mismo {@code atlasBytes}
 	 *         recibido si no hubo una sola escritura (no se re-codifica de gusto).
 	 */
-	private byte[] fillEdgesAndLog(UUID jobId, byte[] atlasBytes, List<CuboidFacePlacement> placements) {
+	private byte[] fillEdgesAndLog(UUID jobId, byte[] atlasBytes, List<CuboidFacePlacement> placements, List<GenerationWarning> warnings) {
 		BufferedImage atlas = decodePng(atlasBytes);
 		int rellenadas = 0;
 		int anchas = 0;
@@ -407,6 +426,17 @@ public class TextureGenerationService {
 			log.info(
 					"Job {}: bordes negros rellenados en {} de {} caras; {} cara(s) con banda demasiado ancha, dejadas como están",
 					jobId, rellenadas, placements.size(), anchas);
+			// Ticket 116: además del log, consultable desde la API.
+			if (rellenadas > 0) {
+				warnings.add(new GenerationWarning(
+						GenerationWarning.Type.BORDES_RELLENADOS,
+						"bordes negros rellenados en " + rellenadas + " de " + placements.size() + " caras"));
+			}
+			if (anchas > 0) {
+				warnings.add(new GenerationWarning(
+						GenerationWarning.Type.BANDA_NEGRA_ANCHA,
+						anchas + " cara(s) con una banda negra demasiado ancha para tratarla como costura -- se dejaron intactas a propósito"));
+			}
 		}
 		return rellenadas > 0 ? encodePng(atlas) : atlasBytes;
 	}
@@ -442,12 +472,17 @@ public class TextureGenerationService {
 	 * `generationWarnings` estructurados en la API es alcance del ticket
 	 * 104, no de este.
 	 */
-	private void logContentFindings(UUID jobId, List<TextureSlice> slices, TextureDetailLevel detailLevel, TexturePalette palette) {
+	private void logContentFindings(
+			UUID jobId, List<TextureSlice> slices, TextureDetailLevel detailLevel, TexturePalette palette,
+			List<GenerationWarning> warnings) {
 		for (TextureSlice slice : slices) {
 			for (TextureContentValidator.Finding finding : textureContentValidator.validate(slice, detailLevel, palette)) {
 				log.info(
 						"Job {}: contenido de textura sospechoso [{}] -- cuboid {} cara {}: {}", jobId, finding.type(), finding.cuboidId(),
 						finding.face(), finding.detail());
+				warnings.add(new GenerationWarning(
+						GenerationWarning.Type.CONTENIDO_SOSPECHOSO, finding.type() + ": " + finding.detail(),
+						finding.cuboidId() + " (" + finding.face() + ")"));
 			}
 		}
 	}
@@ -682,10 +717,12 @@ public class TextureGenerationService {
 		aiJobRepository.save(job);
 	}
 
-	private void completeJob(UUID jobId, TextureGenerationProposal proposal) {
+	private void completeJob(UUID jobId, TextureGenerationProposal proposal, List<GenerationWarning> warnings) {
 		AiJobEntity job = aiJobRepository.findById(jobId).orElseThrow();
 		job.setStatus(STATUS_COMPLETED);
 		job.setProposalJson(writeJson(proposal));
+		// Ticket 116: `[]` significa "se midió y no hubo advertencias", distinto de `null`.
+		job.setWarningsJson(writeJson(warnings));
 		job.setFinishedAt(Instant.now());
 		aiJobRepository.save(job);
 	}

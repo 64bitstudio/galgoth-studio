@@ -420,6 +420,20 @@ POST   /api/internal/users/{userId}/purge-projects  -- borra en cascada al elimi
   **Ticket `106`, hallazgo real de seguridad (auth-core-mc#071):** hasta esta corrección la ruta era `{userId}` -- el mismo `sub` real del JWT de auth-core-mc, expuesto sin sesión a cualquiera vía `avatarUrl`. Encadenado con un hueco ya cerrado del lado de auth-core-mc (endpoints que confiaban un `userId` sin autenticar), esto era el dato que hacía explotable un secuestro de cuenta. Ahora la ruta usa `publicAvatarId`: un id de servicio aparte (`user_profile.public_avatar_id`, `V8`), generado una vez por perfil, sin relación reconstruible con la identidad real.
 - **`POST /api/internal/users/{userId}/purge-projects`** — llamado por auth-core-mc (ticket 064, eliminar cuenta) **síncronamente antes de confirmar la baja**: si esta llamada falla, la cuenta NO se elimina (decisión de Marco, "se eliminan junto con la cuenta"). Autenticado por el header `X-Internal-Secret` contra `galgoth.internal.secret` (`GALGOTH_INTERNAL_SECRET`), **nunca por JWT** -- el caller es otro backend, no un navegador con sesión de usuario; comparado en tiempo constante (`MessageDigest.isEqual`). `401 Unauthorized` (`INVALID_INTERNAL_SECRET`) si falta o no coincide, sin tocar nada. Con el secreto correcto: soft-deletea TODOS los proyectos del usuario (públicos Y privados por igual -- ningún proyecto público debe quedar huérfano visible en Explorar) y borra su fila de `user_profile`. `204 No Content`, sea o no que el usuario tuviera algo que purgar (idempotente).
 
+## Advertencias de generación (`warnings`) — ticket 116
+
+`GET /api/jobs/{jobId}/result` y `GET /api/jobs/{jobId}/texture-result` devuelven un campo **aditivo** `warnings`: la lista de decisiones que el pipeline tomó sobre lo que la IA propuso. Es `{type, detail, subject}`, donde `type` es un enum cerrado (`GEOMETRIA_ENGROSADA`, `GEOMETRIA_RECHAZADA`, `BORDES_RELLENADOS`, `BANDA_NEGRA_ANCHA`, `CONTENIDO_SOSPECHOSO`) para poder filtrar sin parsear texto, y `subject` es el elemento afectado (cuboide/cara) o `null` si la advertencia es del job entero.
+
+**La API siempre devuelve una lista, nunca `null`.** Un job que corrió y no tuvo advertencias devuelve `[]` — la ausencia de advertencias nunca se confunde con "no se midió", porque un job que corre **siempre** escribe algo.
+
+La distinción entre *"no hubo"* y *"no se midió"* vive en la **base**, no en la API: `ai_jobs.warnings_jsonb` es nullable, y `NULL` queda reservado para los jobs anteriores a este ticket — útil para analizar el histórico. La API normaliza ambos casos a `[]`, porque un job viejo sin advertencias registradas no tiene nada útil que mostrarle al consumidor.
+
+**Por qué acá y no en `ModelGenerationQualityReport`** (la pregunta que el ticket 114 dejó abierta): ese reporte se calcula en el pipeline de **geometría** y no tiene forma de saber qué pasó al texturizar. Y las advertencias no son una métrica del modelo resultante: son el registro de decisiones del pipeline. Son cosas distintas y viven en lugares distintos.
+
+**Por qué no se reusó el stream de eventos (`ai_job_events`)**: lo consume la UI de progreso, que mapea `stage` a pasos vía `findStageIndex` (`frontend/src/ai/generationStages.ts`) y devuelve `-1` para un stage desconocido — meter advertencias ahí le reiniciaría la barra de progreso al usuario. Se verificó en el código antes de descartarlo.
+
+Persistencia: `ai_jobs.warnings_jsonb` (migración `V9`).
+
 ## Rutas previstas (según `docs/definiciones/galgoth-studio-mvp.md`, sección 19 del master prompt)
 
 ```text

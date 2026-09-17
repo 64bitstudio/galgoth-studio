@@ -137,4 +137,89 @@ class SecondaryGeometryConstraintsTest {
 		assertThat(result.accepted()).hasSize(1);
 		assertThat(result.rejected()).hasSize(1);
 	}
+
+	// -- Ticket 121: geometría más fina que un téxel ------------------------
+
+	/** Grieta de 0,1 unidades de espesor en Z, como las que la IA generó de verdad en `Carcomido v4`. */
+	private static CreateCuboid grietaFinisima() {
+		return new CreateCuboid(
+				"crack-1", "Chest Crack", "hand", new Vec3(3, 8, -3), new Vec3(5, 10, -2.9), new Vec3(4, 9, -3), Vec3.of(0, 0, 0), "CRACK");
+	}
+
+	/**
+	 * AC del 121: a X4 el mínimo representable es 1/4 = 0,25 unidades. Un eje
+	 * de 0,1 se lleva a 0,25 en vez de producir una cara degenerada -- medido
+	 * en el `done/118`: 10 ejes colapsados y 40 caras degeneradas por esto.
+	 */
+	@Test
+	void unEjeMasFinoQueUnTexel_seLlevaAlMinimoRepresentable_AC() {
+		ValidationResult result = SecondaryGeometryConstraints.validate(List.of(grietaFinisima()), primaryModel(), 4);
+
+		assertThat(result.accepted()).hasSize(1);
+		CreateCuboid ajustado = (CreateCuboid) result.accepted().get(0);
+		double espesorZ = ajustado.to().z() - ajustado.from().z();
+		assertThat(espesorZ).isEqualTo(0.25);
+	}
+
+	/** AC del 121: el ajuste conserva el CENTRO de la pieza -- una grieta pegada a una superficie no puede saltar de lugar. */
+	@Test
+	void elAjusteConservaElCentroDelEje_AC() {
+		CreateCuboid original = grietaFinisima();
+		double centroOriginal = (original.from().z() + original.to().z()) / 2;
+
+		ValidationResult result = SecondaryGeometryConstraints.validate(List.of(original), primaryModel(), 4);
+
+		CreateCuboid ajustado = (CreateCuboid) result.accepted().get(0);
+		assertThat((ajustado.from().z() + ajustado.to().z()) / 2).isEqualTo(centroOriginal);
+	}
+
+	/** AC del 121: el umbral sale de la DENSIDAD, no de una constante. A X1 el mínimo es 1 unidad entera. */
+	@Test
+	void elMinimoSaleDeLaDensidad_aX1EsUnaUnidadEntera_AC() {
+		ValidationResult result = SecondaryGeometryConstraints.validate(List.of(grietaFinisima()), primaryModel(), 1);
+
+		CreateCuboid ajustado = (CreateCuboid) result.accepted().get(0);
+		assertThat(ajustado.to().z() - ajustado.from().z()).isEqualTo(1.0);
+	}
+
+	/** AC del 121: lo que ya es representable no se toca -- el constraint no modifica lo que está bien. */
+	@Test
+	void unCuboidQueYaEsRepresentableNoSeModifica_AC() {
+		CreateCuboid original = validClaw();
+
+		ValidationResult result = SecondaryGeometryConstraints.validate(List.of(original), primaryModel(), 4);
+
+		assertThat(result.accepted().get(0)).isSameAs(original);
+		assertThat(result.adjustments()).isEmpty();
+	}
+
+	/** AC del 121: el ajuste NUNCA es silencioso -- queda registrado con el eje y los dos tamaños. */
+	@Test
+	void elAjusteQuedaRegistrado_nuncaEnSilencio_AC() {
+		ValidationResult result = SecondaryGeometryConstraints.validate(List.of(grietaFinisima()), primaryModel(), 4);
+
+		assertThat(result.adjustments()).hasSize(1);
+		assertThat(result.adjustments().get(0).reason()).contains("0.25").contains("z");
+	}
+
+	/** Un cuboid degenerado de verdad (eje en cero) se sigue RECHAZANDO: no hay nada que ajustar, y taparlo escondería el problema. */
+	@Test
+	void unEjeEnCeroSeSigueRechazando_noSeAjusta() {
+		CreateCuboid plano =
+				new CreateCuboid("flat", "plano", "hand", new Vec3(3, 8, -3), new Vec3(5, 10, -3), new Vec3(4, 9, -3), Vec3.of(0, 0, 0), "CRACK");
+
+		ValidationResult result = SecondaryGeometryConstraints.validate(List.of(plano), primaryModel(), 4);
+
+		assertThat(result.accepted()).isEmpty();
+		assertThat(result.rejected()).hasSize(1);
+	}
+
+	/** La sobrecarga sin densidad sigue comportándose como antes del 121 (X1), sin romper a ningún caller existente. */
+	@Test
+	void laSobrecargaSinDensidadSiguePortandoseComoAntes() {
+		ValidationResult result = SecondaryGeometryConstraints.validate(List.of(validClaw()), primaryModel());
+
+		assertThat(result.accepted()).hasSize(1);
+		assertThat(result.adjustments()).isEmpty();
+	}
 }
