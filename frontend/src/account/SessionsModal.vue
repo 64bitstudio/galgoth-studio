@@ -12,7 +12,7 @@
  * "Cerrar sesión" vive en un `GMenu.vue` por fila (mismo componente que
  * el mockup usa para el "···" de cada sesión) en vez del botón inline
  * que tenía el 093 -- la sesión actual muestra el ítem deshabilitado con
- * su razón visible, nunca lo oculta del todo (mismo criterio de
+ * su razón visible, nunca lo esconde por completo (mismo criterio de
  * accesibilidad ya establecido en GMenu/GTabs).
  */
 import GButton from '../design-system/components/GButton.vue'

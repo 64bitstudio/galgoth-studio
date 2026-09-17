@@ -109,6 +109,111 @@ class BoxUvMathTest {
 		assertUv(faces.west(), 10, 18, 18, 26);
 	}
 
+	// -- Ticket 118: la densidad se aplica ANTES de redondear --------------
+
+	/** Cuboid con tamaños distintos (y posiblemente fraccionarios) por eje, anclado en el origen. */
+	private static Cuboid box(String id, double sx, double sy, double sz) {
+		Face placeholder = new Face(null, null);
+		CuboidFaces emptyFaces = new CuboidFaces(placeholder, placeholder, placeholder, placeholder, placeholder, placeholder);
+		return new Cuboid(
+				id, "box-" + id, "bone-1", new Vec3(0, 0, 0), new Vec3(sx, sy, sz), new Vec3(0, 0, 0), new Vec3(0, 0, 0),
+				emptyFaces);
+	}
+
+	/**
+	 * AC del 118. Antes: {@code round(0,4) * 4 = 0} -- el eje colapsaba a
+	 * CERO y la cara salía degenerada a cualquier densidad, que es lo
+	 * contrario de lo que promete subir la densidad.
+	 */
+	@Test
+	void unEjeSubUnitarioYaNoColapsaACero_seEscalaAntesDeRedondear_AC() {
+		BoxUvMath.Footprint footprint = BoxUvMath.footprintOf(box("ojo", 0.4, 0.4, 0.4), TexelDensity.X4);
+
+		// round(0,4 * 4) = 2 por eje -> ancho 2*(2+2)=8, alto 2+2=4.
+		assertThat(footprint).isEqualTo(new BoxUvMath.Footprint(8, 4));
+	}
+
+	/** AC del 118: un eje fraccionario deja de perder resolución -- round(1,4*4)=6, no round(1,4)*4=4. */
+	@Test
+	void unEjeFraccionarioUsaLaResolucionQueLeCorresponde_AC() {
+		CuboidFaces faces = BoxUvMath.boxUnwrapFaces(box("grieta", 1.4, 1.4, 1.4), 0, 0, TexelDensity.X4);
+
+		// x = y = z = round(1,4 * 4) = 6. north empieza en (z, z) y mide x por y.
+		assertUv(faces.north(), 6, 6, 12, 12);
+	}
+
+	/**
+	 * AC del 118, el invariante que no se puede romper: lo que el packer
+	 * RESERVA (`footprintOf`) y lo que se COLOCA (`boxUnwrapFaces`) tienen
+	 * que seguir coincidiendo exactamente, porque las dos rutas hacen el
+	 * mismo cálculo por separado.
+	 */
+	@Test
+	void footprintYCarasColocadasSiguenCoincidiendo_enTodaDensidadYConEjesFraccionarios_AC() {
+		for (TexelDensity density : TexelDensity.values()) {
+			for (Cuboid cuboid : new Cuboid[] {box("a", 0.4, 7.6, 2.5), box("b", 8, 8, 8), box("c", 1.4, 0.6, 3.2)}) {
+				BoxUvMath.Footprint footprint = BoxUvMath.footprintOf(cuboid, density);
+				CuboidFaces faces = BoxUvMath.boxUnwrapFaces(cuboid, 0, 0, density);
+
+				double maxU = Math.max(faces.south().uv().c(), faces.down().uv().c());
+				double maxV = Math.max(faces.south().uv().d(), faces.west().uv().d());
+				assertThat(maxU).as("ancho reservado vs colocado, densidad %s", density).isEqualTo((double) footprint.width());
+				assertThat(maxV).as("alto reservado vs colocado, densidad %s", density).isEqualTo((double) footprint.height());
+			}
+		}
+	}
+
+	/**
+	 * AC del 118: a X1 nada cambia (`round(v * 1)` es `round(v)`), así que
+	 * las fixtures de los tickets 006/007 siguen valiendo sin tocarlas.
+	 */
+	@Test
+	void aDensidadX1ElComportamientoEsIdenticoAlAnterior_AC() {
+		Cuboid raro = box("raro", 1.4, 0.6, 7.5);
+
+		BoxUvMath.Footprint footprint = BoxUvMath.footprintOf(raro, TexelDensity.X1);
+
+		// round(1,4)=1, round(0,6)=1, round(7,5)=8 -> ancho 2*(1+8)=18, alto 8+1=9.
+		assertThat(footprint).isEqualTo(new BoxUvMath.Footprint(18, 9));
+	}
+
+	/**
+	 * Decisión explícita del 118, revertida sobre la marcha y por eso vale
+	 * fijarla con un test: NO hay piso mínimo de 1 texel. Un eje que aun
+	 * escalado redondea a cero queda en cero, y el reporte de calidad lo
+	 * cuenta como cara degenerada.
+	 *
+	 * <p>Forzar 1 texel habría cambiado el layout a X1 de los modelos
+	 * existentes con ejes menores a 0,5 -- lo que {@link StableUvStrategy}
+	 * existe para evitar -- y habría hecho divergir al frontend, que tiene
+	 * su propia copia de esta matemática siempre a X1
+	 * ({@code frontend/src/domain/autoUv.ts}).
+	 */
+	@Test
+	void noHayPisoMinimo_unEjeQueRedondeaACeroQuedaEnCero_yLoReportaElReporteDeCalidad() {
+		// 0,05 a X1 redondea a 0; a X4 (0,2) también. Sin piso, ambos dan cero.
+		assertThat(BoxUvMath.footprintOf(box("pelusa", 0.05, 0.05, 0.05), TexelDensity.X1))
+				.isEqualTo(new BoxUvMath.Footprint(0, 0));
+		assertThat(BoxUvMath.footprintOf(box("pelusa", 0.05, 0.05, 0.05), TexelDensity.X4))
+				.isEqualTo(new BoxUvMath.Footprint(0, 0));
+		// Pero 0,4 a X4 SÍ se recupera (round(1,6)=2): ese es el caso que el ticket ataca.
+		assertThat(BoxUvMath.footprintOf(box("ojo", 0.4, 0.4, 0.4), TexelDensity.X4))
+				.isEqualTo(new BoxUvMath.Footprint(8, 4));
+	}
+
+	/**
+	 * AC del 118: a X1 el resultado es EXACTAMENTE el anterior, incluidos
+	 * los ejes menores a 0,5 que antes daban cero -- si esto cambiara, se
+	 * movería el layout de los modelos ya pintados y el frontend
+	 * ({@code autoUv.ts}, siempre X1) dejaría de coincidir con el backend.
+	 */
+	@Test
+	void aX1LosEjesMenoresAMedioSiguenDandoCero_comoAntesDelTicket_AC() {
+		assertThat(BoxUvMath.scaledAxis(0, 0.4, 1)).isZero();
+		assertThat(BoxUvMath.scaledAxis(0, 0.6, 1)).isEqualTo(1);
+		assertThat(BoxUvMath.scaledAxis(0, 7.5, 1)).isEqualTo(8);
+	}
+
 	private static void assertUv(Face face, double u0, double v0, double u1, double v1) {
 		assertThat(face.uv().a()).isEqualTo(u0);
 		assertThat(face.uv().b()).isEqualTo(v0);
