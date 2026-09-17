@@ -25,15 +25,10 @@ public record GenerationResultView(
 		List<ValidationIssue> fmmIssues,
 		List<GenerationWarning> warnings) {
 
-	/**
-	 * Sobrecarga de compatibilidad anterior al ticket 116. {@code null}
-	 * -- no {@code List.of()} -- porque un job que nunca midió advertencias
-	 * no es lo mismo que uno que midió y no tuvo ninguna, y la API no debería
-	 * hacerlos ver igual.
-	 */
+	/** Sobrecarga de compatibilidad anterior al ticket 116 -- sin advertencias. */
 	public GenerationResultView(
 			UUID jobId, UUID mobId, String mobName, int cuboidCount, int boneCount, int textureWidth, int textureHeight,
 			boolean fmmCompatible, List<ValidationIssue> fmmIssues) {
-		this(jobId, mobId, mobName, cuboidCount, boneCount, textureWidth, textureHeight, fmmCompatible, fmmIssues, null);
+		this(jobId, mobId, mobName, cuboidCount, boneCount, textureWidth, textureHeight, fmmCompatible, fmmIssues, List.of());
 	}
 }

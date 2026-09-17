@@ -32,15 +32,12 @@ Las dos alternativas se evaluaron y se descartaron con razón concreta, no por p
 - **`ModelGenerationQualityReport`** (lo que el ticket proponía): se calcula en el pipeline de **geometría** y no tiene forma de saber qué pasó al texturizar. Además, las advertencias **no son una métrica del modelo**: son el registro de decisiones que el pipeline tomó sobre lo que la IA propuso. Son cosas distintas y merecen lugares distintos.
 - **Reusar `ai_job_events`**: lo consume la UI de progreso, que mapea `stage` a pasos vía `findStageIndex` (`frontend/src/ai/generationStages.ts`) y devuelve **-1** para un stage desconocido. Un evento de advertencia le **reiniciaría la barra de progreso** al usuario. Se verificó en el código antes de descartarlo.
 
-### `null` y `[]` significan cosas distintas
-Es el criterio de aceptación #2 y quedó implementado a propósito en los tres niveles (columna nullable, entidad, API):
+### La ausencia de advertencias no se confunde con "no se midió" (criterio #2)
+Un job que **corre** siempre escribe algo: `[]` cuando no hubo advertencias. Nunca deja `NULL`. Ese es el criterio de aceptación y se cumple.
 
-| valor | significado |
-|---|---|
-| `null` | job anterior a este ticket — **nunca se midió** |
-| `[]` | se midió y **no hubo** advertencias |
+La distinción entre *"no hubo"* y *"no se midió"* quedó en la **base**: `warnings_jsonb` es nullable y `NULL` está reservado para los jobs anteriores a este ticket, que sirve para analizar el histórico. **La API normaliza ambos a `[]`.**
 
-Confundirlos haría que "no hubo problemas" y "no sabemos" se vean igual, que es justo lo que este ticket vino a arreglar.
+Esa última parte fue una corrección sobre la marcha: la primera versión propagaba `null` hasta la API para que el consumidor también viera la diferencia, y el Quality Gate de Sonar la rechazó (S1168, "return an empty collection instead of null") en 4 lugares. La regla tiene razón: devolver colecciones nulas obliga a todos los consumidores a defenderse. Se cedió ahí y se conservó la distinción donde de verdad tiene valor.
 
 ### Qué se registra hoy
 `GenerationWarning(type, detail, subject)` con `type` como **enum cerrado** — no string libre — para poder filtrar sin volver a parsear texto:

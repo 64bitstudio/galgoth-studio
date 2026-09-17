@@ -50,15 +50,19 @@ class GenerationWarningTest {
 	}
 
 	/**
-	 * AC del 116, y la razón por la que `warnings_jsonb` es nullable: la
-	 * ausencia de advertencias NO se puede confundir con "no se midió". Una
-	 * lista vacía serializa a `[]`, que es un valor con significado propio y
-	 * distinto de `null`.
+	 * AC del 116, y la razón por la que `warnings_jsonb` es nullable: un job
+	 * que CORRIÓ siempre escribe `[]` -- nunca deja NULL -- así que "no hubo
+	 * advertencias" no se confunde con "no se midió".
+	 *
+	 * <p>La distinción vive en la BASE, no en la API: NULL queda reservado
+	 * para los jobs anteriores a este ticket, y sirve para analizar el
+	 * histórico. La API normaliza las dos a `[]`, porque un job viejo sin
+	 * advertencias registradas no tiene nada útil que mostrarle al consumidor
+	 * (y porque devolver colecciones nulas es, con razón, un smell).
 	 */
 	@Test
-	void listaVaciaYNullSonCosasDistintasAlSerializar_AC() throws Exception {
+	void unJobQueCorrioSerializaListaVacia_nuncaNull_AC() throws Exception {
 		assertThat(objectMapper.writeValueAsString(List.<GenerationWarning>of())).isEqualTo("[]");
-		assertThat(objectMapper.writeValueAsString(null)).isEqualTo("null");
 	}
 
 }

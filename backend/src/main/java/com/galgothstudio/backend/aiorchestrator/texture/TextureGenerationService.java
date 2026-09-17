@@ -319,20 +319,16 @@ public class TextureGenerationService {
 				proposal.beforeAtlasPngBase64(), proposal.composedAtlasPngBase64(), readWarnings(job.getWarningsJson()));
 	}
 
-	/**
-	 * Ticket 116 -- {@code null} se propaga como {@code null} a propósito: un
-	 * job anterior a este ticket nunca midió advertencias, y una lista vacía
-	 * diría "medimos y no hubo ninguna", que es otra cosa.
-	 */
+	/** Ticket 116 -- siempre una lista, nunca {@code null}; la distinción entre "no hubo" y "no se midió" vive en la BASE (`warnings_jsonb` nullable), ver {@code GenerationResultService.readWarnings}. */
 	private List<GenerationWarning> readWarnings(String warningsJson) {
 		if (warningsJson == null) {
-			return null;
+			return List.of();
 		}
 		try {
 			return objectMapper.readValue(warningsJson, new TypeReference<List<GenerationWarning>>() {});
 		} catch (JsonProcessingException e) {
 			log.warn("No se pudieron leer las advertencias persistidas del job de textura: {}", e.getMessage());
-			return null;
+			return List.of();
 		}
 	}
 

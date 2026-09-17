@@ -25,16 +25,12 @@ public record TextureGenerationResultView(
 		String afterAtlasPngBase64,
 		List<GenerationWarning> warnings) {
 
-	/**
-	 * Sobrecarga de compatibilidad anterior al ticket 116. {@code null} --
-	 * no {@code List.of()} -- porque un job que nunca midió advertencias no
-	 * es lo mismo que uno que midió y no tuvo ninguna.
-	 */
+	/** Sobrecarga de compatibilidad anterior al ticket 116 -- sin advertencias. */
 	public TextureGenerationResultView(
 			UUID jobId, UUID mobId, boolean wholeModel, List<String> touchedBoneIds, List<TouchedFace> touchedFaces,
 			boolean hasHandPaintedOverwrite, String beforeAtlasPngBase64, String afterAtlasPngBase64) {
 		this(
 				jobId, mobId, wholeModel, touchedBoneIds, touchedFaces, hasHandPaintedOverwrite, beforeAtlasPngBase64,
-				afterAtlasPngBase64, null);
+				afterAtlasPngBase64, List.of());
 	}
 }

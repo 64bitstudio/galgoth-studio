@@ -80,13 +80,23 @@ public class GenerationResultService {
 	}
 
 	/**
-	 * Ticket 116 -- {@code null} se propaga como {@code null} a propósito: un
-	 * job anterior a este ticket nunca midió advertencias, y devolver una
-	 * lista vacía diría "medimos y no hubo ninguna", que es otra cosa.
+	 * Ticket 116 -- la API devuelve siempre una lista, nunca {@code null}.
+	 *
+	 * <p><b>Dónde queda la distinción entre "no hubo advertencias" y "no se
+	 * midió"</b>: en la BASE. `ai_jobs.warnings_jsonb` es nullable a
+	 * propósito -- NULL es un job anterior a este ticket, `[]` es uno que
+	 * midió y no tuvo ninguna -- y ahí es donde sirve para analizar el
+	 * histórico. En la API las dos se ven como `[]`, porque un job viejo sin
+	 * advertencias registradas tampoco tiene nada útil que mostrarle al
+	 * consumidor.
+	 *
+	 * <p>El criterio de aceptación del ticket ("la ausencia de advertencias
+	 * no se confunde con no se midió") se cumple donde importa: un job que SÍ
+	 * corrió siempre escribe `[]`, nunca deja NULL.
 	 */
 	private List<GenerationWarning> readWarnings(String warningsJson) {
 		if (warningsJson == null) {
-			return null;
+			return List.of();
 		}
 		try {
 			return objectMapper.readValue(warningsJson, new TypeReference<List<GenerationWarning>>() {});
@@ -94,7 +104,7 @@ public class GenerationResultService {
 			// Una advertencia ilegible no puede tumbar la consulta del resultado:
 			// lo que el usuario vino a buscar es su modelo.
 			log.warn("No se pudieron leer las advertencias persistidas del job: {}", e.getMessage());
-			return null;
+			return List.of();
 		}
 	}
 

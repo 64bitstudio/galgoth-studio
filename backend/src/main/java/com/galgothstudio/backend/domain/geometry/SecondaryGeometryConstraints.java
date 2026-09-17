@@ -154,12 +154,12 @@ public final class SecondaryGeometryConstraints {
 			double center = (from[axis] + to[axis]) / 2;
 			from[axis] = center - min / 2;
 			to[axis] = center + min / 2;
-			if (ajustados.length() > 0) {
+			if (!ajustados.isEmpty()) {
 				ajustados.append(", ");
 			}
 			ajustados.append("eje ").append("xyz".charAt(axis)).append(": ").append(size).append(" -> ").append(min);
 		}
-		if (ajustados.length() == 0) {
+		if (ajustados.isEmpty()) {
 			return op;
 		}
 		CreateCuboid adjusted = new CreateCuboid(

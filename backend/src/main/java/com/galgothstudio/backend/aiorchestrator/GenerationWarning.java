@@ -11,7 +11,7 @@ package com.galgothstudio.backend.aiorchestrator;
  * constraints (099), un borde negro rellenado (114), un contenido de
  * textura sospechoso (102).
  *
- * <p><b>Por qué existe</b>: hasta este ticket, todo eso terminaba en
+ * <p><b>Por qué existe</b>: hasta este ticket, cada uno de esos casos terminaba en
  * {@code log.info} y nada más. Tres tickets distintos dejaron escrito el
  * mismo pendiente ("exponerlos como generationWarnings estructurados queda
  * para un ticket futuro"), y el 121 se quedó sin poder cerrar un criterio

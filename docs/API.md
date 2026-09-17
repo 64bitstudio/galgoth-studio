@@ -424,14 +424,9 @@ POST   /api/internal/users/{userId}/purge-projects  -- borra en cascada al elimi
 
 `GET /api/jobs/{jobId}/result` y `GET /api/jobs/{jobId}/texture-result` devuelven un campo **aditivo** `warnings`: la lista de decisiones que el pipeline tomó sobre lo que la IA propuso. Es `{type, detail, subject}`, donde `type` es un enum cerrado (`GEOMETRIA_ENGROSADA`, `GEOMETRIA_RECHAZADA`, `BORDES_RELLENADOS`, `BANDA_NEGRA_ANCHA`, `CONTENIDO_SOSPECHOSO`) para poder filtrar sin parsear texto, y `subject` es el elemento afectado (cuboide/cara) o `null` si la advertencia es del job entero.
 
-**`null` y `[]` significan cosas distintas, y la diferencia importa:**
+**La API siempre devuelve una lista, nunca `null`.** Un job que corrió y no tuvo advertencias devuelve `[]` — la ausencia de advertencias nunca se confunde con "no se midió", porque un job que corre **siempre** escribe algo.
 
-| valor | significado |
-|---|---|
-| `null` | job anterior al ticket 116 — **nunca se midió** |
-| `[]` | se midió y **no hubo** ninguna advertencia |
-
-Confundirlos haría que "no hubo problemas" y "no sabemos" se vean igual, que es justo lo que este ticket vino a arreglar.
+La distinción entre *"no hubo"* y *"no se midió"* vive en la **base**, no en la API: `ai_jobs.warnings_jsonb` es nullable, y `NULL` queda reservado para los jobs anteriores a este ticket — útil para analizar el histórico. La API normaliza ambos casos a `[]`, porque un job viejo sin advertencias registradas no tiene nada útil que mostrarle al consumidor.
 
 **Por qué acá y no en `ModelGenerationQualityReport`** (la pregunta que el ticket 114 dejó abierta): ese reporte se calcula en el pipeline de **geometría** y no tiene forma de saber qué pasó al texturizar. Y las advertencias no son una métrica del modelo resultante: son el registro de decisiones del pipeline. Son cosas distintas y viven en lugares distintos.
 

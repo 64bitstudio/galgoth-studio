@@ -316,8 +316,14 @@ public class MobGenerationService {
 		}
 	}
 
-	/** Resultado de la fase de planeamiento geométrico (streaming o heartbeat, ticket 038) -- las mismas 2 cosas que antes devolvía {@code requestOperations} (lista cruda + `AiProviderResponse`), ahora sin acoplar la aplicación final de UV a este paso. */
-	/** Ticket 116: `warnings` viaja junto a las operaciones para que `completeJob` pueda persistirlas -- antes se perdian en el log. */
+	/**
+	 * Resultado de la fase de planeamiento geométrico (streaming o heartbeat,
+	 * ticket 038) -- lista cruda de operaciones + `AiProviderResponse`, sin
+	 * acoplar la aplicación final de UV a este paso.
+	 *
+	 * <p>Ticket 116: `warnings` viaja acá junto a las operaciones para que
+	 * {@code completeJob} pueda persistirlas -- antes se perdían en el log.
+	 */
 	private record GeometryPlanExecution(
 			List<GeometryOperation> operations, AiProviderResponse providerResponse, List<GenerationWarning> warnings) {
 	}
@@ -455,7 +461,6 @@ public class MobGenerationService {
 		return descriptors;
 	}
 
-	/** Ningún rechazo de {@link SecondaryGeometryConstraints} tumba el job (HU-2b) -- se loguean con su razón concreta para diagnóstico; exponerlos en la API como `generationWarnings` estructurados queda para un ticket futuro (candidato natural: 104, `ModelGenerationQualityReport`). */
 	/**
 	 * Ticket 116 -- traduce lo que los constraints decidieron a advertencias
 	 * estructuradas y persistibles. El log sigue existiendo (sirve para
@@ -482,6 +487,7 @@ public class MobGenerationService {
 		return operation instanceof CreateCuboid cuboid ? cuboid.name() : null;
 	}
 
+	/** Ningún rechazo de {@link SecondaryGeometryConstraints} tumba el job (HU-2b) -- se loguean con su razón concreta para diagnóstico inmediato, y desde el ticket 116 además se persisten vía {@link #warningsFrom}. */
 	private void logRejections(UUID jobId, List<SecondaryGeometryConstraints.Rejection> rejections) {
 		for (SecondaryGeometryConstraints.Rejection rejection : rejections) {
 			log.info("Job {}: geometría secundaria rechazada -- {}", jobId, rejection.reason());
