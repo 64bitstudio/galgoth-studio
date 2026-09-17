@@ -261,9 +261,13 @@ public class MobGenerationService {
 			// 70-90s sin ningún evento. Con streaming=true, cada operación
 			// real dispara su propio evento acá abajo (via applySecondaryStepAndEmit),
 			// en vez de un replay post-hoc instantáneo.
+			// Ticket 121: la densidad llega hasta los constraints para que el
+			// mínimo representable por eje (1/texelsPerUnit) salga de la
+			// densidad REAL del job, no de una constante.
+			int texelsPerUnit = context.textureDensity().texelDensity().texelsPerUnit();
 			GeometryPlanExecution secondaryExecution = geometryStreamingEnabled
-					? planSecondaryWithStreaming(jobId, seq, visionResult.modelIntent(), primaryModel, secondaryBudget)
-					: planSecondaryWithHeartbeat(jobId, seq, visionResult.modelIntent(), primaryModel, secondaryBudget);
+					? planSecondaryWithStreaming(jobId, seq, visionResult.modelIntent(), primaryModel, secondaryBudget, texelsPerUnit)
+					: planSecondaryWithHeartbeat(jobId, seq, visionResult.modelIntent(), primaryModel, secondaryBudget, texelsPerUnit);
 			updateJobProviderInfo(jobId, secondaryExecution.providerResponse());
 			checkCancellation(jobId);
 
@@ -327,9 +331,11 @@ public class MobGenerationService {
 	 * cada rechazo queda como advertencia logueada, no como algo que el
 	 * usuario ve aparecer y luego desaparecer).
 	 */
-	private GeometryPlanExecution planSecondaryWithStreaming(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel primaryModel, int secondaryBudget) {
+	private GeometryPlanExecution planSecondaryWithStreaming(
+			UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel primaryModel, int secondaryBudget, int texelsPerUnit) {
 		List<GeometryOperation> collected = new ArrayList<>();
 		List<SecondaryGeometryConstraints.Rejection> rejections = new ArrayList<>();
+		List<SecondaryGeometryConstraints.Adjustment> adjustments = new ArrayList<>();
 		MobProjectModel[] previewBox = {primaryModel};
 		List<SecondaryGeometryPlanner.BoneDescriptor> primaryBones = boneDescriptorsFrom(primaryModel);
 		AtomicBoolean firstOperationReceived = new AtomicBoolean(false);
@@ -350,20 +356,24 @@ public class MobGenerationService {
 				raw = secondaryGeometryPlanner.planStreaming(modelIntent, primaryBones, secondaryBudget, op -> {
 					checkCancellation(jobId);
 					firstOperationReceived.set(true);
-					SecondaryGeometryConstraints.ValidationResult validated = SecondaryGeometryConstraints.validate(List.of(op), primaryModel);
+					SecondaryGeometryConstraints.ValidationResult validated = SecondaryGeometryConstraints.validate(List.of(op), primaryModel, texelsPerUnit);
+					adjustments.addAll(validated.adjustments());
 					if (validated.accepted().isEmpty()) {
 						rejections.addAll(validated.rejected());
 						return;
 					}
-					collected.add(op);
+					// El aceptado puede ser el op ENGROSADO (ticket 121), no el original.
+					GeometryOperation effective = validated.accepted().get(0);
+					collected.add(effective);
 					int progressPct = Math.min(89, 40 + collected.size());
-					previewBox[0] = applySecondaryStepAndEmit(jobId, seq, primaryModel, collected, previewBox[0], op, progressPct);
+					previewBox[0] = applySecondaryStepAndEmit(jobId, seq, primaryModel, collected, previewBox[0], effective, progressPct);
 				});
 			} finally {
 				heartbeat.cancel(true);
 			}
 		}
 		logRejections(jobId, rejections);
+		logAdjustments(jobId, adjustments);
 		return new GeometryPlanExecution(collected, raw.providerResponse());
 	}
 
@@ -372,7 +382,8 @@ public class MobGenerationService {
 	 * (switch operativo apagado): espera la respuesta completa, valida el
 	 * batch entero de una vez, y reproduce SOLO las operaciones aceptadas.
 	 */
-	private GeometryPlanExecution planSecondaryWithHeartbeat(UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel primaryModel, int secondaryBudget) {
+	private GeometryPlanExecution planSecondaryWithHeartbeat(
+			UUID jobId, AtomicInteger seq, ModelIntent modelIntent, MobProjectModel primaryModel, int secondaryBudget, int texelsPerUnit) {
 		List<SecondaryGeometryPlanner.BoneDescriptor> primaryBones = boneDescriptorsFrom(primaryModel);
 		RawOperationsResult raw;
 		try (ScheduledExecutorService heartbeatScheduler = Executors.newSingleThreadScheduledExecutor()) {
@@ -393,8 +404,9 @@ public class MobGenerationService {
 		}
 
 		checkCancellation(jobId);
-		SecondaryGeometryConstraints.ValidationResult validated = SecondaryGeometryConstraints.validate(raw.operations(), primaryModel);
+		SecondaryGeometryConstraints.ValidationResult validated = SecondaryGeometryConstraints.validate(raw.operations(), primaryModel, texelsPerUnit);
 		logRejections(jobId, validated.rejected());
+		logAdjustments(jobId, validated.adjustments());
 		replaySecondaryOpsWithPreview(jobId, seq, validated.accepted(), primaryModel);
 		return new GeometryPlanExecution(validated.accepted(), raw.providerResponse());
 	}
@@ -444,6 +456,24 @@ public class MobGenerationService {
 	private void logRejections(UUID jobId, List<SecondaryGeometryConstraints.Rejection> rejections) {
 		for (SecondaryGeometryConstraints.Rejection rejection : rejections) {
 			log.info("Job {}: geometría secundaria rechazada -- {}", jobId, rejection.reason());
+		}
+	}
+
+	/**
+	 * Ticket 121 -- una pieza que la IA propuso más fina de lo que la
+	 * densidad puede representar se engrosa al mínimo, y eso NUNCA pasa en
+	 * silencio: cambiarle la geometría propuesta al usuario sin decírselo
+	 * sería exactamente el tipo de parche que la regla 8 prohíbe.
+	 *
+	 * <p>Queda en el log, igual que {@link #logRejections}. Exponerlo de
+	 * forma consultable fuera del log es alcance del ticket 116 (el canal de
+	 * advertencias que hoy no existe), no de este.
+	 */
+	private void logAdjustments(UUID jobId, List<SecondaryGeometryConstraints.Adjustment> adjustments) {
+		for (SecondaryGeometryConstraints.Adjustment adjustment : adjustments) {
+			log.info(
+					"Job {}: geometría secundaria engrosada al mínimo representable -- {} [{}]", jobId, adjustment.reason(),
+					adjustment.adjusted());
 		}
 	}
 
