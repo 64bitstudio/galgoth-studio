@@ -29,3 +29,32 @@ El problema de fondo no es el redondeo: es que **el planner puede proponer geome
 - Verificación en vivo: regenerar el benchmark y medir las caras degeneradas contra las **40** del `Carcomido v4` (y las 56 que habría habido sin el 118).
 
 ## Hecho
+
+### Qué se implementó
+`SecondaryGeometryConstraints` recibe `texelsPerUnit` y lleva al mínimo representable (`1/texelsPerUnit`) los ejes más finos que un téxel. El umbral sale de la **densidad real del job** (`context.textureDensity()` viaja hasta los constraints), no de una constante: a X4 el mínimo es 0,25 unidades; a X1, 1 unidad entera.
+
+**Se ajusta, no se rechaza** (decisión del PO). El tradeoff —la pieza queda algo más gruesa de lo propuesto— se compensa con tres cosas:
+- El ajuste **conserva el centro** del eje: una grieta pegada a una superficie no salta de lugar al engrosarse.
+- **Nunca es silencioso**: queda en `ValidationResult.adjustments()` con el eje y los dos tamaños, se loguea, y desde el `done/116` se **persiste y es consultable** vía el campo `warnings` de la API.
+- Un eje de tamaño **cero o negativo se sigue rechazando**: ahí no hay intención que preservar.
+
+Lo que ya es representable no se toca: se devuelve la misma instancia, sin copiar.
+
+### Verificación en vivo: qué probó y qué NO
+Mob nuevo `Carcomido v5`, misma imagen de referencia, geometría `MEDIUM` y densidad `max`:
+
+| | v4 (antes) | v5 (con el 121) |
+|---|---|---|
+| Caras degeneradas | 40 | **0** |
+| Ejes sub-unitarios | 31 | 25 |
+| Ejes por debajo del mínimo (0,25) | 10 | **0** |
+| Ejes ajustados a exactamente 0,25 | — | **0** |
+
+**Las 0 caras degeneradas NO son atribuibles a este ticket.** Como no hubo ningún eje por debajo de 0,25, el código de ajuste **no llegó a ejecutarse**: la IA no propuso grietas finísimas en esta corrida. Es una buena noticia sobre el estado del modelo, no una prueba del fix.
+
+Lo que la corrida **sí** probó: que el cableado de la densidad hasta los constraints no rompe el pipeline (44 cuboides, 15 bones, FMM compatible, 0 caras degeneradas) y que el canal de advertencias del `done/116` funciona de punta a punta (`"warnings": []` en la respuesta real de la API).
+
+Lo que **queda sin probar en vivo**: el camino de ajuste en sí. Está cubierto por 7 tests unitarios, uno por criterio de aceptación, incluido el caso real medido (grieta de 0,1 unidades a X4 → 0,25). Forzar una corrida que lo ejercite requeriría que la IA volviera a proponer geometría sub-téxel, que no es controlable desde acá. **Se cierra así, dicho explícitamente, en vez de presentar un 0 afortunado como verificación.**
+
+### Tests
+7 tests nuevos en `SecondaryGeometryConstraintsTest`, uno por criterio de aceptación: el ajuste al mínimo, la conservación del centro, que el umbral salga de la densidad (X1 vs X4), que lo representable no se modifique, que el ajuste quede registrado, que un eje en cero se siga rechazando, y que la sobrecarga sin densidad no cambie de comportamiento. Backend completo: **607/607 en verde**.
