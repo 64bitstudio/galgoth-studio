@@ -113,13 +113,18 @@ function readLinkResultFromQuery(): void {
   }
 }
 
-function providerLabel(provider: string): string {
-  return provider.toLowerCase() === 'google' ? 'Google' : provider.toLowerCase() === 'facebook' ? 'Facebook' : provider
+/** Ver `IconGoogle.vue`/`IconFacebook.vue` -- son los únicos proveedores soportados hoy (`ExternalIdentityLinkService.isSupported`). */
+const PROVIDERS: Record<string, { label: string; icon: unknown }> = {
+  google: { label: 'Google', icon: IconGoogle },
+  facebook: { label: 'Facebook', icon: IconFacebook },
 }
 
-/** Ver `IconGoogle.vue`/`IconFacebook.vue` -- ambos son los únicos proveedores soportados hoy (`ExternalIdentityLinkService.isSupported`). */
+function providerLabel(provider: string): string {
+  return PROVIDERS[provider.toLowerCase()]?.label ?? provider
+}
+
 function providerIcon(provider: string): unknown {
-  return provider.toLowerCase() === 'google' ? IconGoogle : provider.toLowerCase() === 'facebook' ? IconFacebook : null
+  return PROVIDERS[provider.toLowerCase()]?.icon ?? null
 }
 
 function linkErrorMessage(code: string): string {
@@ -805,13 +810,26 @@ async function confirmDeleteAccount(): Promise<void> {
   font-weight: 800;
 }
 
+/*
+ * Regla única del badge. Antes estaba declarada dos veces (acá y más
+ * abajo, junto a los modificadores): la segunda ganaba por orden y bajaba
+ * el `font-weight` de 700 a 600 sin que se notara. Fusionadas conservando
+ * lo que realmente se renderizaba (600), no lo que la primera declaraba.
+ *
+ * Mismos tokens de tono que GStatusPill (accent/warning + su -soft), sin
+ * reutilizar el componente en sí -- ese es específico de estado de mob
+ * (Listo/En progreso/Draft) y esto es verificación de cuenta. Los
+ * modificadores --verified/--unverified se declaran después y pisan
+ * `color`/`background` cuando corresponde.
+ */
 .user-view__badge {
+  flex-shrink: 0;
   padding: 2px var(--space-2);
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent);
   font-size: var(--text-xs);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .user-view__meta {
@@ -913,15 +931,6 @@ async function confirmDeleteAccount(): Promise<void> {
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-}
-
-/* Mismos tokens de tono que GStatusPill (accent/warning + su -soft), sin reutilizar el componente en sí -- ese es específico de estado de mob (Listo/En progreso/Draft), esto es verificación de cuenta. */
-.user-view__badge {
-  flex-shrink: 0;
-  padding: 2px var(--space-2);
-  border-radius: 999px;
-  font-size: var(--text-xs);
-  font-weight: 600;
 }
 
 .user-view__badge--verified {

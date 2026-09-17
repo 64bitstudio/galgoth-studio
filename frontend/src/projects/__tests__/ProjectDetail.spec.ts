@@ -431,7 +431,7 @@ describe('ProjectDetail.vue', () => {
         expect(fetchMock.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === 'PATCH' && String(c[0]).includes('/visibility'))).toBe(true)
         expect(wrapper.text()).toContain('Público')
         // Sin recargar: solo la carga inicial (project+mobs) más el PATCH -- ningún GET adicional a /api/projects/p1.
-        expect(fetchMock.mock.calls.filter((c) => !String(c[0]).includes('/mobs') && !(c[1] as RequestInit | undefined)?.method).length).toBe(1)
+        expect(fetchMock.mock.calls.filter((c) => !String(c[0]).includes('/mobs') && !(c[1] as RequestInit | undefined)?.method)).toHaveLength(1)
       })
 
       it('Eliminar muestra una confirmación explícita, y confirmar llama a DELETE y navega a /projects', async () => {

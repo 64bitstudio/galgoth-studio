@@ -156,7 +156,7 @@ export function confirmEmailChange(token: string): Promise<void> {
  * confirm` y `/password-reset/confirm`), pero nunca existió la función/
  * vista que lo consume -- una cuenta nueva no podía confirmar su correo
  * desde la UI. `/api/v1/verify-email/confirm` tampoco exige `X-Client-Id`
- * (mismo criterio que los otros `/confirm`, el token ya identifica todo).
+ * (mismo criterio que los otros `/confirm`: el token ya trae la identidad).
  */
 export function confirmEmailVerification(token: string): Promise<void> {
   return requestJson<void>('/api/v1/verify-email/confirm', { token }, false)

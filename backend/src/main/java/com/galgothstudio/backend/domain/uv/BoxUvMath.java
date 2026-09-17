@@ -91,7 +91,7 @@ public final class BoxUvMath {
 	 *   <li>A {@link TexelDensity#X1} habría CAMBIADO el layout de los
 	 *       modelos existentes con ejes menores a 0,5 -- justo lo que
 	 *       {@link StableUvStrategy} existe para evitar, porque mover un
-	 *       footprint corre todo el packing y desalinea la textura ya
+	 *       footprint desplaza el packing entero y desalinea la textura ya
 	 *       pintada.</li>
 	 *   <li>El frontend tiene su propia copia de esta matemática
 	 *       ({@code frontend/src/domain/autoUv.ts}, siempre a X1) y un piso
