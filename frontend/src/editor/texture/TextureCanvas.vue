@@ -498,6 +498,13 @@ function syncDataTexture(): void {
     nextTexture.magFilter = NearestFilter
     nextTexture.minFilter = NearestFilter
     nextTexture.generateMipmaps = false
+    // Ticket 117: marcar la textura RECIÉN creada no es redundante, es LA
+    // corrección. Sin esto three.js nunca sube los píxeles a la GPU y el
+    // material muestrea una textura vacía -- el modelo 3D se ve negro aunque
+    // el atlas esté completo y el canvas 2D lo pinte bien. Se encontró
+    // pintando en vivo: el primer trazo hacía aparecer el modelo entero,
+    // porque el trazo cae en la rama de abajo, que sí marcaba.
+    nextTexture.needsUpdate = true
     dataTexture = nextTexture
     dataTexturePixelsRef = atlas.pixels
     applyPreviewModel()

@@ -246,6 +246,31 @@ describe('TextureCanvas.vue', () => {
     })
 
     /**
+     * Ticket 117 -- LA causa, encontrada pintando un trazo en vivo: el modelo
+     * 3D se veía negro hasta que se pintaba, y con el primer trazo aparecía
+     * entero. El propio `syncDataTexture` tenía el A/B adentro: la rama que
+     * CREA la textura no marcaba `needsUpdate`, y la rama que la reusa (la
+     * que toma un trazo) sí. Sin esa marca, three.js nunca sube los píxeles
+     * a la GPU y el material muestrea una textura vacía -- que se ve negra.
+     *
+     * `needsUpdate` incrementa `version`, así que una textura recién creada
+     * y sin marcar queda en `version === 0`.
+     */
+    it('la textura recién creada queda marcada para subir a la GPU -- si no, el modelo 3D se ve negro', async () => {
+      mockDownloadTexture.mockResolvedValue(new Blob(['fake-png'], { type: 'image/png' }))
+      mockDecode.mockResolvedValue({ pixels: solidPixels(8, 8, [120, 40, 200, 255]), width: 8, height: 8 })
+      const model = modelWith({ width: 8, height: 8, storageKey: 'textures/abc.png', cuboids: [cuboid('c1', 'Cabeza')] })
+
+      await mountCanvas(model)
+      await flushPromises()
+
+      const mobGroup = threeViewportService.scene.children.find((c) => c.name === model.name)!
+      const mesh = mobGroup.children.find((c) => c.userData.cuboidId === 'c1') as Mesh
+      const material = (mesh.material as MeshStandardMaterial[])[0]!
+      expect(material.map!.version, 'needsUpdate incrementa version; en 0 significa que nunca se marcó').toBeGreaterThan(0)
+    })
+
+    /**
      * Ticket 115 -- LA causa del "atlas vacío", confirmada midiendo en vivo
      * contra `studio-dev`: el store terminaba con los píxeles correctos
      * (47.968 opacos, los mismos que el PNG) y el `<canvas>` con 0.
