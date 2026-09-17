@@ -293,7 +293,7 @@ public class MobGenerationService {
 			ModelGenerationQualityReport.Metric fmmMetric = validateFmmCompatibilityInformational(jobId, finalModel);
 			logQualityReport(jobId, visionResult.modelIntent(), finalModel, fmmMetric);
 
-			completeJob(jobId, finalModel);
+			completeJob(jobId, finalModel, secondaryExecution.warnings());
 			emit(jobId, seq, GenerationStage.COMPLETADO, "Generación completada.", 100, previewSnapshotPayload(finalModel));
 		} catch (GenerationCancelledException e) {
 			cancelJob(jobId);
@@ -317,7 +317,9 @@ public class MobGenerationService {
 	}
 
 	/** Resultado de la fase de planeamiento geométrico (streaming o heartbeat, ticket 038) -- las mismas 2 cosas que antes devolvía {@code requestOperations} (lista cruda + `AiProviderResponse`), ahora sin acoplar la aplicación final de UV a este paso. */
-	private record GeometryPlanExecution(List<GeometryOperation> operations, AiProviderResponse providerResponse) {
+	/** Ticket 116: `warnings` viaja junto a las operaciones para que `completeJob` pueda persistirlas -- antes se perdian en el log. */
+	private record GeometryPlanExecution(
+			List<GeometryOperation> operations, AiProviderResponse providerResponse, List<GenerationWarning> warnings) {
 	}
 
 	/**
@@ -374,7 +376,7 @@ public class MobGenerationService {
 		}
 		logRejections(jobId, rejections);
 		logAdjustments(jobId, adjustments);
-		return new GeometryPlanExecution(collected, raw.providerResponse());
+		return new GeometryPlanExecution(collected, raw.providerResponse(), warningsFrom(rejections, adjustments));
 	}
 
 	/**
@@ -408,7 +410,8 @@ public class MobGenerationService {
 		logRejections(jobId, validated.rejected());
 		logAdjustments(jobId, validated.adjustments());
 		replaySecondaryOpsWithPreview(jobId, seq, validated.accepted(), primaryModel);
-		return new GeometryPlanExecution(validated.accepted(), raw.providerResponse());
+		return new GeometryPlanExecution(
+				validated.accepted(), raw.providerResponse(), warningsFrom(validated.rejected(), validated.adjustments()));
 	}
 
 	/** Reproduce SOLO operaciones ya validadas (nunca vuelve a llamar al proveedor) de a una por vez -- usado en modo heartbeat; en modo streaming, {@link #applySecondaryStepAndEmit} se llama directo a medida que cada operación llega y pasa la validación. */
@@ -453,6 +456,32 @@ public class MobGenerationService {
 	}
 
 	/** Ningún rechazo de {@link SecondaryGeometryConstraints} tumba el job (HU-2b) -- se loguean con su razón concreta para diagnóstico; exponerlos en la API como `generationWarnings` estructurados queda para un ticket futuro (candidato natural: 104, `ModelGenerationQualityReport`). */
+	/**
+	 * Ticket 116 -- traduce lo que los constraints decidieron a advertencias
+	 * estructuradas y persistibles. El log sigue existiendo (sirve para
+	 * diagnosticar en el momento), pero ya no es el único lugar donde queda
+	 * registro: tres tickets distintos (099, 102, 114) habían dejado escrito
+	 * el mismo pendiente, y el 121 se quedó sin poder cerrar un criterio de
+	 * aceptación por esto.
+	 */
+	private static List<GenerationWarning> warningsFrom(
+			List<SecondaryGeometryConstraints.Rejection> rejections, List<SecondaryGeometryConstraints.Adjustment> adjustments) {
+		List<GenerationWarning> warnings = new ArrayList<>(rejections.size() + adjustments.size());
+		for (SecondaryGeometryConstraints.Adjustment adjustment : adjustments) {
+			warnings.add(new GenerationWarning(
+					GenerationWarning.Type.GEOMETRIA_ENGROSADA, adjustment.reason(), nameOf(adjustment.original())));
+		}
+		for (SecondaryGeometryConstraints.Rejection rejection : rejections) {
+			warnings.add(new GenerationWarning(
+					GenerationWarning.Type.GEOMETRIA_RECHAZADA, rejection.reason(), nameOf(rejection.operation())));
+		}
+		return warnings;
+	}
+
+	private static String nameOf(GeometryOperation operation) {
+		return operation instanceof CreateCuboid cuboid ? cuboid.name() : null;
+	}
+
 	private void logRejections(UUID jobId, List<SecondaryGeometryConstraints.Rejection> rejections) {
 		for (SecondaryGeometryConstraints.Rejection rejection : rejections) {
 			log.info("Job {}: geometría secundaria rechazada -- {}", jobId, rejection.reason());
@@ -642,10 +671,13 @@ public class MobGenerationService {
 		aiJobRepository.save(job);
 	}
 
-	private void completeJob(UUID jobId, MobProjectModel model) {
+	private void completeJob(UUID jobId, MobProjectModel model, List<GenerationWarning> warnings) {
 		AiJobEntity job = aiJobRepository.findById(jobId).orElseThrow();
 		job.setStatus(STATUS_COMPLETED);
 		job.setProposalJson(writeJson(model));
+		// Ticket 116: `[]` es un valor con significado -- "se midio y no hubo
+		// advertencias" -- distinto de `null`, que es "job anterior al ticket".
+		job.setWarningsJson(writeJson(warnings));
 		job.setFinishedAt(Instant.now());
 		aiJobRepository.save(job);
 	}
