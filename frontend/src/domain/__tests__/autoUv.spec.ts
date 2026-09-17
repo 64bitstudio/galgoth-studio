@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { layoutUv, UvAtlasOverflowError } from '../autoUv'
+import { inferTexelsPerUnit, layoutUv, UvAtlasOverflowError } from '../autoUv'
 import type { Cuboid, FaceName } from '../MobProjectModel'
 
 // Ver nota en schema.spec.ts: process.cwd() en vez de import.meta.url.
@@ -29,6 +29,51 @@ function cube(id: string, boneId: string, size: number): Cuboid {
     faces: EMPTY_FACES,
   }
 }
+
+/**
+ * Ticket 119. El modelo no transporta su densidad de téxel (`TextureDensity`
+ * es un parámetro de generación del backend y no se persiste), así que el
+ * editor la deduce del layout que el modelo ya tiene. Sin esto, recalcular
+ * el UV al crear o duplicar un cuboid rehacía el atlas a X1 y desalineaba la
+ * textura ya pintada.
+ */
+describe('inferTexelsPerUnit (ticket 119)', () => {
+  function conAncho(id: string, sizeUnidades: number, anchoTexelsNorth: number): Cuboid {
+    const half = sizeUnidades / 2
+    return {
+      id,
+      name: id,
+      boneId: 'b',
+      from: [-half, -half, -half],
+      to: [half, half, half],
+      origin: [0, 0, 0],
+      rotation: [0, 0, 0],
+      faces: { ...EMPTY_FACES, north: { uv: [0, 0, anchoTexelsNorth, 4] as [number, number, number, number], texture: 0 } },
+    }
+  }
+
+  it('deduce X4 de un layout generado a X4', () => {
+    expect(inferTexelsPerUnit([conAncho('a', 8, 32)])).toBe(4)
+  })
+
+  it('deduce X1 de un layout clásico', () => {
+    expect(inferTexelsPerUnit([conAncho('a', 8, 8)])).toBe(1)
+  })
+
+  it('sin cuboids medibles devuelve 1 -- exactamente el comportamiento anterior al ticket', () => {
+    expect(inferTexelsPerUnit([])).toBe(1)
+    expect(inferTexelsPerUnit([cube('a', 'b', 8)])).toBe(1)
+  })
+
+  it('una cara degenerada no decide por todo el modelo: gana la densidad más votada', () => {
+    expect(inferTexelsPerUnit([conAncho('a', 8, 32), conAncho('b', 8, 32), conAncho('c', 8, 0)])).toBe(4)
+  })
+
+  it('una relación que no corresponde a ninguna densidad real cae a 1, no se inventa una', () => {
+    // 8 unidades -> 24 téxels sería X3, que no existe en TexelDensity.
+    expect(inferTexelsPerUnit([conAncho('a', 8, 24)])).toBe(1)
+  })
+})
 
 describe('AutoUv (TS) -- AlphaAutoPackStrategy', () => {
   it('un solo cuboid recibe el desenvolvimiento de caja estándar de Minecraft', () => {

@@ -58,15 +58,69 @@ interface PackResult {
   maxRowWidth: number
 }
 
-function boxSizeAxis(from: number, to: number): number {
-  return Math.round(Math.abs(to - from))
+/**
+ * Tamaño de un eje YA EN TÉXELS. Escala ANTES de redondear, igual que
+ * `BoxUvMath.scaledAxis` del backend (ticket 118) -- si se redondeara
+ * primero, la densidad no podría recuperar lo que el redondeo destruyó.
+ * A `texelsPerUnit = 1` el resultado es idéntico al de siempre.
+ */
+function scaledAxis(from: number, to: number, texelsPerUnit: number): number {
+  return Math.round(Math.abs(to - from) * texelsPerUnit)
 }
 
-function footprintOf(cuboid: Cuboid): Footprint {
-  const x = boxSizeAxis(cuboid.from[0], cuboid.to[0])
-  const y = boxSizeAxis(cuboid.from[1], cuboid.to[1])
-  const z = boxSizeAxis(cuboid.from[2], cuboid.to[2])
+function footprintOf(cuboid: Cuboid, texelsPerUnit: number): Footprint {
+  const x = scaledAxis(cuboid.from[0], cuboid.to[0], texelsPerUnit)
+  const y = scaledAxis(cuboid.from[1], cuboid.to[1], texelsPerUnit)
+  const z = scaledAxis(cuboid.from[2], cuboid.to[2], texelsPerUnit)
   return { width: 2 * (x + z), height: z + y }
+}
+
+/** Densidades que el backend puede haber usado (`TexelDensity`). Inferir cualquier otro valor sería inventar. */
+const DENSIDADES_POSIBLES = [1, 2, 4]
+
+/**
+ * Deduce la densidad de téxel del layout que YA tiene el modelo, comparando
+ * el ancho real de una cara contra el tamaño del cuboid en unidades --
+ * ticket 119.
+ *
+ * <p>Existe porque el modelo no transporta su densidad: `TextureDensity` es
+ * un parámetro de generación del backend y no se persiste en
+ * `MobProjectModel`. Sin esto, cualquier recálculo de UV en el editor
+ * rehace el atlas a X1 y desalinea la textura ya pintada de un mob generado
+ * a X4.
+ *
+ * <p>Se toma la densidad más frecuente entre los cuboids medibles, no la
+ * del primero: una sola cara degenerada o un cuboid raro no puede decidir
+ * por todo el modelo. Sin cuboids medibles devuelve 1, que es exactamente
+ * el comportamiento anterior a este ticket.
+ */
+export function inferTexelsPerUnit(cuboids: Cuboid[]): number {
+  const votos = new Map<number, number>()
+  for (const cuboid of cuboids) {
+    const anchoUnidades = Math.abs(cuboid.to[0] - cuboid.from[0])
+    const rect = cuboid.faces?.north?.uv
+    if (!rect || anchoUnidades === 0) {
+      continue
+    }
+    const anchoTexels = rect[2] - rect[0]
+    if (anchoTexels <= 0) {
+      continue
+    }
+    const candidata = anchoTexels / anchoUnidades
+    const cercana = DENSIDADES_POSIBLES.find((d) => Math.abs(candidata - d) < 0.01)
+    if (cercana) {
+      votos.set(cercana, (votos.get(cercana) ?? 0) + 1)
+    }
+  }
+  let mejor = 1
+  let maxVotos = 0
+  for (const [densidad, n] of votos) {
+    if (n > maxVotos) {
+      mejor = densidad
+      maxVotos = n
+    }
+  }
+  return mejor
 }
 
 /** Shelf-packing sin límite de alto -- envuelve de fila cuando se excede `width`. */
@@ -97,10 +151,10 @@ function faceAt(u0: number, v0: number, width: number, height: number): Face {
   return { uv: [u0, v0, u0 + width, v0 + height], texture: SINGLE_TEXTURE_INDEX }
 }
 
-function boxUnwrapFaces(cuboid: Cuboid, offsetX: number, offsetY: number): CuboidFaces {
-  const x = boxSizeAxis(cuboid.from[0], cuboid.to[0])
-  const y = boxSizeAxis(cuboid.from[1], cuboid.to[1])
-  const z = boxSizeAxis(cuboid.from[2], cuboid.to[2])
+function boxUnwrapFaces(cuboid: Cuboid, offsetX: number, offsetY: number, texelsPerUnit: number): CuboidFaces {
+  const x = scaledAxis(cuboid.from[0], cuboid.to[0], texelsPerUnit)
+  const y = scaledAxis(cuboid.from[1], cuboid.to[1], texelsPerUnit)
+  const z = scaledAxis(cuboid.from[2], cuboid.to[2], texelsPerUnit)
 
   return {
     up: faceAt(offsetX + z, offsetY, x, z),
@@ -122,8 +176,13 @@ const FACE_NAMES: FaceName[] = ['north', 'south', 'east', 'west', 'up', 'down']
  * @throws {UvAtlasOverflowError} si el conjunto no cabe en `textureWidth`x`textureHeight`
  *         -- el atlas nunca crece en silencio.
  */
-export function layoutUv(cuboids: Cuboid[], textureWidth: number, textureHeight: number): UvLayoutResult {
-  const footprints = cuboids.map(footprintOf)
+export function layoutUv(
+  cuboids: Cuboid[],
+  textureWidth: number,
+  textureHeight: number,
+  texelsPerUnit: number = 1,
+): UvLayoutResult {
+  const footprints = cuboids.map((cuboid) => footprintOf(cuboid, texelsPerUnit))
 
   const attempt = packWithinWidth(footprints, textureWidth)
   if (attempt.totalHeight > textureHeight || attempt.maxRowWidth > textureWidth) {
@@ -137,7 +196,7 @@ export function layoutUv(cuboids: Cuboid[], textureWidth: number, textureHeight:
   const regions: UvRegion[] = []
   cuboids.forEach((cuboid, i) => {
     const placement = attempt.placements[i]!
-    const faces = boxUnwrapFaces(cuboid, placement.x, placement.y)
+    const faces = boxUnwrapFaces(cuboid, placement.x, placement.y, texelsPerUnit)
     updatedCuboids.push({ ...cuboid, faces })
     for (const faceName of FACE_NAMES) {
       // status: 'unpainted' -- AutoUv siempre recomputa desde cero (Fase 1+2,

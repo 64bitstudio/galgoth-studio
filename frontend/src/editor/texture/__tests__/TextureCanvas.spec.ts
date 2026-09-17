@@ -242,7 +242,7 @@ describe('TextureCanvas.vue', () => {
       const mesh = mobGroup!.children.find((c) => c.userData.cuboidId === 'c1') as Mesh
       const material = (mesh.material as MeshStandardMaterial[])[0]!
       expect(material.map, 'el material del cuboid tiene que tener el atlas como map').not.toBeNull()
-      expect(material.map!.image.data).toEqual(pixels)
+      expect((material.map!.image as { data: Uint8ClampedArray }).data).toEqual(pixels)
     })
 
     /**
