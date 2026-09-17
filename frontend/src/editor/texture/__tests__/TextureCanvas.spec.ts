@@ -221,6 +221,31 @@ describe('TextureCanvas.vue', () => {
     })
 
     /**
+     * Ticket 117. El test de HU-26 que ya existía monta con `storageKey`
+     * nulo, es decir por el camino SÍNCRONO (atlas en blanco, sin descarga
+     * de por medio). El camino real de un mob con textura persistida
+     * **espera** la descarga, y es justo donde un problema de orden no se
+     * vería. Acá se fija que el preview 3D termine con la textura puesta
+     * también por ese camino.
+     */
+    it('con textura persistida, el preview 3D queda con el atlas descargado como map -- no solo en el camino sin descarga', async () => {
+      const pixels = solidPixels(8, 8, [120, 40, 200, 255])
+      mockDownloadTexture.mockResolvedValue(new Blob(['fake-png'], { type: 'image/png' }))
+      mockDecode.mockResolvedValue({ pixels, width: 8, height: 8 })
+      const model = modelWith({ width: 8, height: 8, storageKey: 'textures/abc.png', cuboids: [cuboid('c1', 'Cabeza')] })
+
+      await mountCanvas(model)
+      await flushPromises()
+
+      const mobGroup = threeViewportService.scene.children.find((c) => c.name === model.name)
+      expect(mobGroup, 'el grupo del mob tiene que estar en la escena').toBeDefined()
+      const mesh = mobGroup!.children.find((c) => c.userData.cuboidId === 'c1') as Mesh
+      const material = (mesh.material as MeshStandardMaterial[])[0]!
+      expect(material.map, 'el material del cuboid tiene que tener el atlas como map').not.toBeNull()
+      expect(material.map!.image.data).toEqual(pixels)
+    })
+
+    /**
      * Ticket 115 -- LA causa del "atlas vacío", confirmada midiendo en vivo
      * contra `studio-dev`: el store terminaba con los píxeles correctos
      * (47.968 opacos, los mismos que el PNG) y el `<canvas>` con 0.
