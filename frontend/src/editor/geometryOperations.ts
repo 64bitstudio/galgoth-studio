@@ -13,7 +13,7 @@
  * siendo la autoridad canónica final (revalida cada operación por completo
  * en Guardar/Apply/export).
  */
-import { layoutUv } from '../domain/autoUv'
+import { inferTexelsPerUnit, layoutUv } from '../domain/autoUv'
 import type { Bone, Cuboid, MobProjectModel, Vec3 } from '../domain/MobProjectModel'
 
 export class InvalidGeometryError extends Error {
@@ -59,9 +59,23 @@ function requireBone(model: MobProjectModel, boneId: string): Bone {
   return bone
 }
 
-/** Recalcula la UV de TODOS los cuboids -- misma autoridad determinista que 006/007, nunca UV a medias. */
+/**
+ * Recalcula la UV de TODOS los cuboids -- misma autoridad determinista que
+ * 006/007, nunca UV a medias.
+ *
+ * <p>Ticket 119: la densidad de téxel se DEDUCE del layout que el modelo ya
+ * tiene (`inferTexelsPerUnit`), no se asume 1. `MobProjectModel` no
+ * transporta su densidad -- `TextureDensity` es un parámetro de generación
+ * del backend -- así que antes de esto, crear o duplicar un cuboid en un mob
+ * generado a X4 rehacía el atlas entero a X1: cuatro veces más chico por
+ * eje, con la textura ya pintada desalineada.
+ *
+ * <p>Solo corre en crear/duplicar, que son las dos operaciones que cambian
+ * el conjunto a empaquetar. Mover, redimensionar y rotar NO pasan por acá.
+ */
 function refreshUv(model: MobProjectModel): MobProjectModel {
-  const result = layoutUv(model.cuboids, model.uv.textureWidth, model.uv.textureHeight)
+  const texelsPerUnit = inferTexelsPerUnit(model.cuboids)
+  const result = layoutUv(model.cuboids, model.uv.textureWidth, model.uv.textureHeight, texelsPerUnit)
   return { ...model, cuboids: result.cuboids, uv: { ...model.uv, regions: result.regions } }
 }
 

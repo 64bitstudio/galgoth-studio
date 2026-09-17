@@ -58,6 +58,86 @@ function modelWith(bones: Bone[], cuboids: Cuboid[]): MobProjectModel {
   }
 }
 
+/**
+ * Ticket 119. Un mob generado a densidad X4 tiene sus caras 4 veces más
+ * grandes por eje. `refreshUv` recalcula el UV de TODOS los cuboids en cada
+ * operación manual del editor, y `autoUv.ts` no conoce la densidad: siempre
+ * calculaba a X1. Mover un solo cuboid recalculaba todo a X1, tirando abajo
+ * el trabajo del ticket 109 y desalineando la textura ya pintada.
+ */
+describe('ticket 119: las operaciones manuales no degradan la densidad de téxel', () => {
+  /** Cuboid de 8x12x4 unidades. A X4 su cruz de box-unwrap mide 2*(32+16)=96 de ancho y 16+48=64 de alto. */
+  function modelAX4(): MobProjectModel {
+    const c = cuboid('c', 'b')
+    const x4 = {
+      // Layout X4 en offset (0,0): up/down arriba (alto z=16), el resto abajo (alto y=48).
+      up: { uv: [16, 0, 48, 16] as [number, number, number, number], texture: 0 },
+      down: { uv: [48, 0, 80, 16] as [number, number, number, number], texture: 0 },
+      west: { uv: [0, 16, 16, 64] as [number, number, number, number], texture: 0 },
+      north: { uv: [16, 16, 48, 64] as [number, number, number, number], texture: 0 },
+      east: { uv: [48, 16, 64, 64] as [number, number, number, number], texture: 0 },
+      south: { uv: [64, 16, 96, 64] as [number, number, number, number], texture: 0 },
+    }
+    const model = modelWith([bone('b', null)], [{ ...c, faces: x4 }])
+    return {
+      ...model,
+      texture: { width: 256, height: 256, storageKey: 'textures/pintada.png' },
+      uv: {
+        textureWidth: 256,
+        textureHeight: 256,
+        regions: (['north', 'south', 'east', 'west', 'up', 'down'] as const).map((face) => ({
+          cuboidId: 'c',
+          face,
+          rect: x4[face].uv,
+          status: 'painted' as const,
+        })),
+        reservations: [],
+      },
+    }
+  }
+
+  /**
+   * Precisión que costó un test: `refreshUv` NO corre en mover/redimensionar/
+   * rotar (esas van por `replaceCuboid` a secas). Corre solo al **crear** y
+   * **duplicar** un cuboid, que son las dos operaciones que cambian el
+   * conjunto a empaquetar. Ahí es donde el layout entero se rehace a X1.
+   */
+  it('crear un cuboid conserva la escala X4 de los cuboids que ya existían', () => {
+    const model = modelAX4()
+
+    const { model: result } = createCuboid(model, 'b', 'nuevo', [0, 0, 0], [4, 4, 4], [0, 0, 0])
+
+    const existente = result.cuboids.find((c) => c.id === 'c')!
+    const north = existente.faces.north.uv
+    // Un cuboid de 8x12 mide 32x48 a X4; a X1 mediría 8x12.
+    expect(north[2] - north[0], 'ancho de la cara north en téxels').toBe(32)
+    expect(north[3] - north[1], 'alto de la cara north en téxels').toBe(48)
+  })
+
+  it('duplicar un cuboid conserva la escala X4 del original', () => {
+    const model = modelAX4()
+
+    const { model: result } = duplicateCuboid(model, 'c')
+
+    const original = result.cuboids.find((c) => c.id === 'c')!
+    const north = original.faces.north.uv
+    expect(north[2] - north[0]).toBe(32)
+    expect(north[3] - north[1]).toBe(48)
+  })
+
+  it('las operaciones que NO cambian el conjunto (mover) no tocan el UV en absoluto', () => {
+    const model = modelAX4()
+    const antes = model.cuboids[0]!.faces
+
+    const result = moveCuboid(model, 'c', [3, -2, 1])
+
+    const despues = result.cuboids[0]!.faces
+    for (const face of ['north', 'south', 'east', 'west', 'up', 'down'] as const) {
+      expect(despues[face].uv, `la cara ${face} no debería moverse en el atlas`).toEqual(antes[face].uv)
+    }
+  })
+})
+
 describe('moveCuboid', () => {
   it('traslada from/to/origin por igual (traslación rígida)', () => {
     const model = modelWith([bone('b', null)], [cuboid('c', 'b')])
