@@ -70,11 +70,6 @@ public final class BoxUvMath {
 		return new Footprint(2 * (x + z), z + y);
 	}
 
-	/** Tamaño de un eje en unidades de modelo, redondeado a entero. Sin densidad: ver {@link #scaledAxis}. */
-	public static int boxSizeAxis(double from, double to) {
-		return (int) Math.round(Math.abs(to - from));
-	}
-
 	/**
 	 * Tamaño de un eje YA EN TEXELS -- ticket 118. El orden de las dos
 	 * operaciones no es un detalle: antes se redondeaba a unidades enteras y
@@ -89,24 +84,29 @@ public final class BoxUvMath {
 	 * (110) y 22 caras enteramente negras en la verificación en vivo del
 	 * 114, 12 de ellas de 4x4 y ninguna mayor a 16x8 -- todas caras chicas.
 	 *
-	 * <p><b>Piso de 1 texel, decisión explícita del 118</b>: un eje que
-	 * EXISTE pero es tan chico que aun escalado redondea a cero recibe 1
-	 * texel. Una cara de tamaño cero no se puede pintar ni mostrar, así que
-	 * dejarla en cero es perder la pieza; darle un texel es lo mínimo
-	 * honesto. Un eje de tamaño REAL cero (cuboid plano de verdad) sigue
-	 * dando cero: ahí no hay nada que inventar, y el reporte de calidad ya
-	 * lo cuenta como degenerado en vez de taparlo.
+	 * <p><b>Sin piso mínimo, y es deliberado</b> (la primera versión del 118
+	 * forzaba 1 texel para un eje que redondeaba a cero; se revirtió por dos
+	 * razones concretas, no por prudencia genérica):
+	 * <ul>
+	 *   <li>A {@link TexelDensity#X1} habría CAMBIADO el layout de los
+	 *       modelos existentes con ejes menores a 0,5 -- justo lo que
+	 *       {@link StableUvStrategy} existe para evitar, porque mover un
+	 *       footprint corre todo el packing y desalinea la textura ya
+	 *       pintada.</li>
+	 *   <li>El frontend tiene su propia copia de esta matemática
+	 *       ({@code frontend/src/domain/autoUv.ts}, siempre a X1) y un piso
+	 *       acá la habría hecho divergir en exactamente esos cuboids.</li>
+	 * </ul>
+	 * Un eje que aun escalado redondea a cero queda en cero y el reporte de
+	 * calidad lo cuenta como cara degenerada: mostrarlo es mejor que taparlo
+	 * con un texel inventado.
 	 *
-	 * <p>A {@link TexelDensity#X1} el resultado es idéntico al anterior
-	 * ({@code round(v * 1)} es {@code round(v)}), así que las fixtures de los
-	 * tickets 006/007 siguen valiendo sin tocarlas.
+	 * <p>Así, a {@link TexelDensity#X1} el resultado es EXACTAMENTE el
+	 * anterior ({@code round(v * 1)} es {@code round(v)}) y las fixtures de
+	 * los tickets 006/007 siguen valiendo sin tocarlas.
 	 */
 	public static int scaledAxis(double from, double to, int texelsPerUnit) {
-		double size = Math.abs(to - from);
-		if (size == 0) {
-			return 0;
-		}
-		return Math.max(1, (int) Math.round(size * texelsPerUnit));
+		return (int) Math.round(Math.abs(to - from) * texelsPerUnit);
 	}
 
 	/**

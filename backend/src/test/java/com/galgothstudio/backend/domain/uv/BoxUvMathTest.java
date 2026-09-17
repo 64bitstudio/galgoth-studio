@@ -178,19 +178,40 @@ class BoxUvMathTest {
 	}
 
 	/**
-	 * Decisión tomada en el 118 y explícita, no un efecto colateral: un eje
-	 * que EXISTE pero es tan chico que aun escalado redondea a cero recibe
-	 * 1 texel, nunca cero -- una cara degenerada no se puede pintar ni
-	 * mostrar. Un eje de tamaño REAL cero (cuboid plano de verdad) sigue
-	 * dando cero: ahí no hay nada que inventar, y el reporte de calidad lo
-	 * cuenta como degenerado.
+	 * Decisión explícita del 118, revertida sobre la marcha y por eso vale
+	 * fijarla con un test: NO hay piso mínimo de 1 texel. Un eje que aun
+	 * escalado redondea a cero queda en cero, y el reporte de calidad lo
+	 * cuenta como cara degenerada.
+	 *
+	 * <p>Forzar 1 texel habría cambiado el layout a X1 de los modelos
+	 * existentes con ejes menores a 0,5 -- lo que {@link StableUvStrategy}
+	 * existe para evitar -- y habría hecho divergir al frontend, que tiene
+	 * su propia copia de esta matemática siempre a X1
+	 * ({@code frontend/src/domain/autoUv.ts}).
 	 */
 	@Test
-	void unEjeMinusculoPeroRealRecibeUnTexel_unoDeTamanoCeroSigueEnCero() {
+	void noHayPisoMinimo_unEjeQueRedondeaACeroQuedaEnCero_yLoReportaElReporteDeCalidad() {
+		// 0,05 a X1 redondea a 0; a X4 (0,2) también. Sin piso, ambos dan cero.
 		assertThat(BoxUvMath.footprintOf(box("pelusa", 0.05, 0.05, 0.05), TexelDensity.X1))
-				.isEqualTo(new BoxUvMath.Footprint(4, 2));
-		assertThat(BoxUvMath.footprintOf(box("plano", 0, 8, 8), TexelDensity.X1))
-				.isEqualTo(new BoxUvMath.Footprint(16, 16));
+				.isEqualTo(new BoxUvMath.Footprint(0, 0));
+		assertThat(BoxUvMath.footprintOf(box("pelusa", 0.05, 0.05, 0.05), TexelDensity.X4))
+				.isEqualTo(new BoxUvMath.Footprint(0, 0));
+		// Pero 0,4 a X4 SÍ se recupera (round(1,6)=2): ese es el caso que el ticket ataca.
+		assertThat(BoxUvMath.footprintOf(box("ojo", 0.4, 0.4, 0.4), TexelDensity.X4))
+				.isEqualTo(new BoxUvMath.Footprint(8, 4));
+	}
+
+	/**
+	 * AC del 118: a X1 el resultado es EXACTAMENTE el anterior, incluidos
+	 * los ejes menores a 0,5 que antes daban cero -- si esto cambiara, se
+	 * movería el layout de los modelos ya pintados y el frontend
+	 * ({@code autoUv.ts}, siempre X1) dejaría de coincidir con el backend.
+	 */
+	@Test
+	void aX1LosEjesMenoresAMedioSiguenDandoCero_comoAntesDelTicket_AC() {
+		assertThat(BoxUvMath.scaledAxis(0, 0.4, 1)).isZero();
+		assertThat(BoxUvMath.scaledAxis(0, 0.6, 1)).isEqualTo(1);
+		assertThat(BoxUvMath.scaledAxis(0, 7.5, 1)).isEqualTo(8);
 	}
 
 	private static void assertUv(Face face, double u0, double v0, double u1, double v1) {
